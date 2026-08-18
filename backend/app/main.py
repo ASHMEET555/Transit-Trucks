@@ -1,5 +1,5 @@
 # backend/app/main.py
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 # Add these imports to your existing backend/app/main.py
@@ -11,6 +11,7 @@ from app.modules.trips import router as trips_router
 from app.modules.maintenance import router as maintenance_router
 from app.modules.finance import router as finance_router
 from app.modules.dashboard import router as dashboard_router
+from app.core.realtime import fleet_events
 
 
 app = FastAPI(
@@ -40,3 +41,14 @@ app.include_router(dashboard_router)
 @app.get("/")
 def read_root():
     return {"status": "online", "system": "TransitOps Backend Architecture Operational"}
+
+
+@app.websocket("/ws/fleet")
+async def fleet_events_ws(websocket: WebSocket):
+    await fleet_events.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive; clients may send pings/no-op text.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        fleet_events.disconnect(websocket)

@@ -81,6 +81,17 @@ class TripResponse(TripCreate):
     id: int
     status: str
 
+
+class TripSuggestionResponse(BaseModel):
+    source_name: str
+    destination_name: str
+    cargo_weight: float
+    suggested_vehicle_reg: str
+    suggested_driver_license: str
+    suggested_driver_name: str
+    capacity_utilization: float
+    heuristic_score: float
+
 # --- Maintenance ---
 class MaintenanceCreate(BaseModel):
     vehicle_reg: str

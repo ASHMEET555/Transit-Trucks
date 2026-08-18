@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 import datetime
 from app.db.session import db
 from app.core.dependencies import get_current_user, RoleChecker
-from app.modules.schemas import TripCreate, TripResponse
+from app.core.realtime import fleet_events
+from app.modules.schemas import TripCreate, TripResponse, TripSuggestionResponse
 from typing import List
 
 router = APIRouter(prefix="/api/trips", tags=["Trip Dispatch Management"])
@@ -12,8 +13,67 @@ router = APIRouter(prefix="/api/trips", tags=["Trip Dispatch Management"])
 def list_all_trips(current_user: dict = Depends(get_current_user)):
     return db.get_all_trips()
 
+
+@router.post("/suggest", response_model=TripSuggestionResponse)
+def suggest_trip_assignment(
+    payload: TripCreate,
+    current_user: dict = Depends(RoleChecker(["Fleet Manager", "Driver"])),
+):
+    if payload.source_name == payload.destination_name:
+        raise HTTPException(status_code=400, detail="Source and destination must be different.")
+
+    today = datetime.date.today().isoformat()
+    vehicles = [
+        v
+        for v in db.get_all_vehicles()
+        if v["status"] == "Available" and v["max_load_capacity"] >= payload.cargo_weight
+    ]
+    if not vehicles:
+        raise HTTPException(status_code=404, detail="No available vehicle can carry this cargo.")
+
+    drivers = [
+        d
+        for d in db.get_all_drivers()
+        if d["status"] == "Available" and d["license_expiry_date"] > today
+    ]
+    if not drivers:
+        raise HTTPException(status_code=404, detail="No available and compliant driver found.")
+
+    # Heuristic:
+    # - Prefer tighter capacity fit (less unused capacity)
+    # - Prefer higher safety score
+    # - Prefer lower odometer to balance fleet usage
+    best = None
+    for vehicle in vehicles:
+        unused_capacity = vehicle["max_load_capacity"] - payload.cargo_weight
+        utilization = payload.cargo_weight / vehicle["max_load_capacity"]
+        for driver in drivers:
+            score = (
+                utilization * 100
+                + float(driver.get("safety_score", 0)) * 0.6
+                - float(vehicle.get("odometer", 0)) / 100000.0
+                - unused_capacity / 1000.0
+            )
+            if best is None or score > best["score"]:
+                best = {"vehicle": vehicle, "driver": driver, "score": score, "utilization": utilization}
+
+    if best is None:
+        raise HTTPException(status_code=404, detail="No feasible assignment found.")
+
+    return TripSuggestionResponse(
+        source_name=payload.source_name,
+        destination_name=payload.destination_name,
+        cargo_weight=payload.cargo_weight,
+        suggested_vehicle_reg=best["vehicle"]["registration_number"],
+        suggested_driver_license=best["driver"]["license_number"],
+        suggested_driver_name=best["driver"]["name"],
+        capacity_utilization=round(best["utilization"], 4),
+        heuristic_score=round(best["score"], 2),
+    )
+
+
 @router.post("/", response_model=TripResponse, status_code=status.HTTP_201_CREATED)
-def dispatch_new_trip(payload: TripCreate, current_user: dict = Depends(RoleChecker(["Fleet Manager", "Driver"]))):
+async def dispatch_new_trip(payload: TripCreate, current_user: dict = Depends(RoleChecker(["Fleet Manager", "Driver"]))):
     # 1. Fetch Target Asset Contexts
     vehicle = db.get_vehicle_by_reg(payload.vehicle_reg)
     driver = db.get_driver_by_license(payload.driver_license)
@@ -53,10 +113,19 @@ def dispatch_new_trip(payload: TripCreate, current_user: dict = Depends(RoleChec
     db.update_vehicle_status(payload.vehicle_reg, "On Trip")
     db.update_driver_status(payload.driver_license, "On Trip")
     
+    await fleet_events.broadcast(
+        "trip.dispatched",
+        {
+            "trip_id": created_trip["id"],
+            "vehicle_reg": payload.vehicle_reg,
+            "driver_license": payload.driver_license,
+            "status": "Dispatched",
+        },
+    )
     return created_trip
 
 @router.put("/{trip_id}/complete")
-def complete_active_transit(trip_id: int, final_odometer: float, current_user: dict = Depends(get_current_user)):
+async def complete_active_transit(trip_id: int, final_odometer: float, current_user: dict = Depends(get_current_user)):
     # Find all active trips matching this ID
     trips = db.get_all_trips()
     target_trip = next((t for t in trips if t["id"] == trip_id), None)
@@ -81,11 +150,21 @@ def complete_active_transit(trip_id: int, final_odometer: float, current_user: d
     # 3. Release Driver[cite: 1]
     db.update_driver_status(target_trip["driver_license"], "Available")
     
+    await fleet_events.broadcast(
+        "trip.completed",
+        {
+            "trip_id": trip_id,
+            "vehicle_reg": target_trip["vehicle_reg"],
+            "driver_license": target_trip["driver_license"],
+            "status": "Completed",
+            "final_odometer": final_odometer,
+        },
+    )
     return {"message": "Trip completed successfully. Resources released back to active pools[cite: 1]."}
 
 
 @router.put("/{trip_id}/cancel")
-def cancel_active_transit(trip_id: int, current_user: dict = Depends(get_current_user)):
+async def cancel_active_transit(trip_id: int, current_user: dict = Depends(get_current_user)):
     trips = db.get_all_trips()
     target_trip = next((t for t in trips if t["id"] == trip_id), None)
 
@@ -101,4 +180,13 @@ def cancel_active_transit(trip_id: int, current_user: dict = Depends(get_current
     db.update_vehicle_status(target_trip["vehicle_reg"], "Available")
     db.update_driver_status(target_trip["driver_license"], "Available")
 
+    await fleet_events.broadcast(
+        "trip.cancelled",
+        {
+            "trip_id": trip_id,
+            "vehicle_reg": target_trip["vehicle_reg"],
+            "driver_license": target_trip["driver_license"],
+            "status": "Cancelled",
+        },
+    )
     return {"message": "Trip cancelled. Vehicle and driver restored to Available."}

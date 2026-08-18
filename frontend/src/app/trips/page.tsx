@@ -21,6 +21,7 @@ import {
 import { ApiError, apiRequest } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
 import { canWrite } from "@/lib/rbacConfig"
+import { BACKEND_URL } from "@/data/data"
 
 type Destination = { name: string; region: string }
 type Vehicle = {
@@ -48,6 +49,14 @@ type Trip = {
   status: string
 }
 
+type TripSuggestion = {
+  suggested_vehicle_reg: string
+  suggested_driver_license: string
+  suggested_driver_name: string
+  capacity_utilization: number
+  heuristic_score: number
+}
+
 export default function TripsPage() {
   const { currentProfile } = useProfile()
   const canManage = canWrite(currentProfile?.role || "", "trips")
@@ -63,6 +72,9 @@ export default function TripsPage() {
   const [destinationFilter, setDestinationFilter] = useState("All")
   const [vehicleFilter, setVehicleFilter] = useState("All")
   const [driverFilter, setDriverFilter] = useState("All")
+  const [liveEvent, setLiveEvent] = useState<string | null>(null)
+  const [suggestion, setSuggestion] = useState<TripSuggestion | null>(null)
+  const [suggesting, setSuggesting] = useState(false)
   const [form, setForm] = useState({
     source_name: "",
     destination_name: "",
@@ -93,6 +105,22 @@ export default function TripsPage() {
 
   useEffect(() => {
     load()
+  }, [])
+
+  useEffect(() => {
+    const wsUrl = BACKEND_URL.replace("/api", "/ws/fleet").replace("http", "ws")
+    const socket = new WebSocket(wsUrl)
+    socket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data) as { event?: string }
+        if (!msg.event) return
+        setLiveEvent(msg.event)
+        load()
+      } catch {
+        // Ignore malformed messages.
+      }
+    }
+    return () => socket.close()
   }, [])
 
   const availableVehicles = useMemo(
@@ -184,9 +212,48 @@ export default function TripsPage() {
         planned_distance: "",
         revenue: "0",
       })
+      setSuggestion(null)
       await load()
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to create trip")
+    }
+  }
+
+  async function suggestTripAssignment() {
+    if (
+      !form.source_name ||
+      !form.destination_name ||
+      !form.cargo_weight ||
+      !form.planned_distance
+    ) {
+      setError("Select source, destination, cargo weight and planned distance first.")
+      return
+    }
+    setSuggesting(true)
+    try {
+      const suggested = await apiRequest<TripSuggestion>("/trips/suggest", {
+        method: "POST",
+        body: {
+          source_name: form.source_name,
+          destination_name: form.destination_name,
+          vehicle_reg: form.vehicle_reg || "pending",
+          driver_license: form.driver_license || "pending",
+          cargo_weight: Number(form.cargo_weight),
+          planned_distance: Number(form.planned_distance),
+          revenue: Number(form.revenue || "0"),
+        },
+      })
+      setSuggestion(suggested)
+      setForm((prev) => ({
+        ...prev,
+        vehicle_reg: suggested.suggested_vehicle_reg,
+        driver_license: suggested.suggested_driver_license,
+      }))
+      setError(null)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Failed to suggest assignment")
+    } finally {
+      setSuggesting(false)
     }
   }
 
@@ -247,6 +314,11 @@ export default function TripsPage() {
       {error && (
         <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
           {error}
+        </div>
+      )}
+      {liveEvent && (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
+          Live update: <span className="font-medium">{liveEvent}</span>
         </div>
       )}
 
@@ -391,6 +463,14 @@ export default function TripsPage() {
               />
             </div>
             <div className="flex items-end gap-2 md:col-span-2 lg:col-span-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={suggestTripAssignment}
+                disabled={suggesting}
+              >
+                {suggesting ? "Suggesting..." : "Suggest Vehicle & Driver"}
+              </Button>
               <Button type="submit" disabled={overload}>
                 Dispatch Trip
               </Button>
@@ -402,6 +482,13 @@ export default function TripsPage() {
                 Cancel
               </Button>
             </div>
+            {suggestion && (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 md:col-span-2 lg:col-span-3">
+                Suggested: {suggestion.suggested_vehicle_reg} +{" "}
+                {suggestion.suggested_driver_name} ({suggestion.suggested_driver_license}) ·
+                Capacity utilization {(suggestion.capacity_utilization * 100).toFixed(1)}%
+              </div>
+            )}
           </form>
         </div>
       )}

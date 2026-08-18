@@ -29,7 +29,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} h-full bg-white antialiased dark:bg-gray-950`}
+        className={`${geistSans.variable} ${geistMono.variable} h-full bg-surface-0 antialiased text-gray-50`}
       >
         <ThemeProvider
           defaultTheme="system"

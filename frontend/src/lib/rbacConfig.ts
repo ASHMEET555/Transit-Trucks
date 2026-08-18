@@ -2,6 +2,7 @@ export type PermissionLevel = "no_access" | "read_only" | "read_write" | "admin"
 
 export interface RoutePermissions {
   dashboard: PermissionLevel
+  liveMap: PermissionLevel
   fleet: PermissionLevel
   drivers: PermissionLevel
   trips: PermissionLevel
@@ -22,6 +23,7 @@ export const RBAC_CONFIG: Record<string, RoleConfig> = {
     name: "Admin",
     permissions: {
       dashboard: "admin",
+      liveMap: "admin",
       fleet: "admin",
       drivers: "admin",
       trips: "admin",
@@ -35,6 +37,7 @@ export const RBAC_CONFIG: Record<string, RoleConfig> = {
     name: "Fleet Manager",
     permissions: {
       dashboard: "read_write",
+      liveMap: "read_write",
       fleet: "read_write",
       drivers: "read_write",
       trips: "read_write",
@@ -48,6 +51,7 @@ export const RBAC_CONFIG: Record<string, RoleConfig> = {
     name: "Driver",
     permissions: {
       dashboard: "read_write",
+      liveMap: "read_write",
       fleet: "read_only",
       drivers: "read_only",
       trips: "read_write",
@@ -61,6 +65,7 @@ export const RBAC_CONFIG: Record<string, RoleConfig> = {
     name: "Safety Officer",
     permissions: {
       dashboard: "read_only",
+      liveMap: "read_only",
       fleet: "read_only",
       drivers: "read_write",
       trips: "read_only",
@@ -74,6 +79,7 @@ export const RBAC_CONFIG: Record<string, RoleConfig> = {
     name: "Financial Analyst",
     permissions: {
       dashboard: "read_only",
+      liveMap: "read_only",
       fleet: "read_only",
       drivers: "no_access",
       trips: "read_only",

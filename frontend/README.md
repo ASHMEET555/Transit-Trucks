@@ -1,47 +1,125 @@
-# Tremor – Planner
+# TransitOps Frontend
 
-`Planner` is a SaaS application template from [Tremor](https://tremor.so). It's built
-using [`Tremor`](https://tremor.so/docs/getting-started/installation) and
-[Next.js](https://nextjs.org).
+Next.js client for the **TransitOps** Smart Transport Operations Platform (Odoo Hackathon 2026).
 
-## Getting started
+This app talks to the FastAPI backend over JWT (`/api/*`). Full project docs and end-to-end setup live in the **[root README](../README.md)**.
 
-1. Install the dependencies. We recommend using pnpm. If you want to use `npm`,
-   just replace `pnpm` with `npm`.
+---
+
+## What this frontend covers
+
+- **Login / Register** — JWT session; create account with role selection
+- **App shell** — sidebar + RBAC-aware navigation
+- **Dashboard** — KPIs and vehicle ROI chart
+- **Fleet / Drivers / Trips / Maintenance / Fuel & Expenses** — CRUD and workflows wired to the API
+- **Analytics** — ROI, fuel efficiency, driver safety, odometer, route capacity map (independent filters per chart)
+- **Settings** — profile / preferences surface
+
+---
+
+## Stack
+
+| Piece | Version / notes |
+|-------|-----------------|
+| Next.js | 15 (App Router) |
+| React | 19 |
+| TypeScript | yes |
+| Styling | Tailwind CSS 3 |
+| UI | Tremor-style components (Button, Input, Select, Table, Sidebar, BarChart, …) |
+| Charts | Recharts via Tremor `BarChart` + custom SVG route map |
+| Icons | Lucide / Remixicon |
+| Themes | `next-themes` (light/dark) |
+
+API base URL: `src/data/data.ts` → `http://localhost:8000/api` (or `NEXT_PUBLIC_API_URL`).
+
+Auth helper: `src/lib/api.ts` (Bearer token, login/register helpers).  
+Roles: `src/lib/rbacConfig.ts`.
+
+---
+
+## Prerequisites
+
+- Node.js **18+** and **npm**
+- Backend running on **http://127.0.0.1:8000** (see root README)
+
+---
+
+## Setup
+
+From the repo root:
 
 ```bash
-pnpm install
+cd frontend
+npm install
+npm run dev
 ```
 
-2. Then, start the development server:
+Open **http://localhost:3000**.
+
+You will be redirected to `/login` until authenticated.
+
+### Demo accounts
+
+Password: **`password123`**
+
+| Email | Role |
+|-------|------|
+| `manager@transitops.com` | Fleet Manager |
+| `safety@transitops.com` | Safety Officer |
+| `finance@transitops.com` | Financial Analyst |
+| `admin@transitops.com` | Admin |
+
+Or use **Create account** → `/register`.
+
+---
+
+## Scripts
 
 ```bash
-pnpm run dev
+npm run dev      # development server (port 3000)
+npm run build    # production build
+npm run start    # serve production build
+npm run lint     # ESLint
 ```
 
-3. Visit [http://localhost:3000](http://localhost:3000) in your browser to view
-   the template.
+---
+
+## Folder map
+
+```text
+frontend/
+├── public/
+├── src/
+│   ├── app/                    # routes
+│   │   ├── login/
+│   │   ├── register/
+│   │   ├── dashboard/
+│   │   ├── fleet/
+│   │   ├── drivers/
+│   │   ├── trips/
+│   │   ├── maintenance/
+│   │   ├── fuel-and-expenses/
+│   │   ├── analytics/
+│   │   └── settings/
+│   ├── components/
+│   │   ├── AppShell.tsx        # auth gate + layout
+│   │   ├── ui/navigation/      # sidebar, breadcrumbs, profile
+│   │   └── …                   # Tremor primitives + charts
+│   ├── data/data.ts            # BACKEND_URL
+│   ├── lib/
+│   │   ├── api.ts              # fetch + JWT
+│   │   ├── ProfileContext.tsx
+│   │   └── rbacConfig.ts
+│   └── types/
+├── package.json
+└── README.md
+```
+
+---
 
 ## Notes
 
-This project uses
-[`next/font`](https://nextjs.org/docs/basic-features/font-optimization) to
-automatically optimize and load Geist, a custom Google Font.
-
-This project uses
-[`Tremor`](https://raw.tremor.so/docs/getting-started/installation) components
-for the UI.
-
-## License
-
-This site template is a commercial product and is licensed under the
-[Tremor License](https://blocks.tremor.so/license).
-
-## Learn more
-
-For a deeper understanding of the technologies used in this template, check out
-the resources listed below:
-
-- [Tailwind CSS v4 beta](https://tailwindcss.com/docs/v4-beta) - A utility-first CSS framework
-- [Next.js](https://nextjs.org/docs) - Next.js documentation
-- [Radix UI](https://www.radix-ui.com) - Radix UI Website
+- Start the **backend first**, then this app.
+- If pages show unauthorized / empty data, check the API is up and `BACKEND_URL` matches.
+- UI components originated from the [Tremor Planner](https://tremor.so) template; product branding and pages are TransitOps-specific.
+- For architecture, seed data, and backend commands, see the [main project README](../README.md).

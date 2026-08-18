@@ -11,7 +11,7 @@ import {
   SidebarMenu,
   SidebarMenuItem,
 } from "@/components/Sidebar"
-import { Gauge, Truck, PersonStanding, Route, Wrench, Fuel, ChartColumn, Settings } from "lucide-react"
+import { Gauge, Truck, PersonStanding, Route, Wrench, Fuel, ChartColumn, Settings, Map } from "lucide-react"
 import * as React from "react"
 import { usePathname } from "next/navigation"
 import { Logo } from "../../../../public/Logo"
@@ -40,6 +40,13 @@ const navigation2 = [
     icon: PersonStanding,
     active: false,
     routeKey: "drivers" as const
+  },
+  {
+    name: "Live Map",
+    href: "/live-map",
+    icon: Map,
+    active: false,
+    routeKey: "liveMap" as const
   },
   {
     name: "Trips",
@@ -90,7 +97,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }, [currentProfile])
 
   return (
-    <Sidebar {...props} className="bg-gray-50 dark:bg-gray-925">
+    <Sidebar {...props} className="app-sidebar bg-gray-50 dark:bg-gray-925">
       <SidebarHeader className="px-3 py-4">
         <div className="flex items-center gap-3">
           <span className="flex size-9 items-center justify-center rounded-md bg-white p-1.5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-800">

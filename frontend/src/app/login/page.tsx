@@ -8,7 +8,7 @@ import { Logo } from "../../../public/Logo"
 import Link from "next/link"
 import { FormEvent, useState } from "react"
 import { useTheme } from "next-themes"
-import { Moon, Sun, Monitor } from "lucide-react"
+import { ArrowLeft, Moon, Sun, Monitor, Truck } from "lucide-react"
 
 export default function LoginPage() {
   const { login } = useProfile()
@@ -33,79 +33,101 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 dark:bg-gray-950">
-      <div className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-800 dark:bg-gray-925">
-        <div className="mb-8 flex flex-col items-center gap-3">
-          <div className="flex w-full justify-end">
+    <div className="auth-page">
+      <div className="auth-visual">
+        <div className="auth-visual-content">
+          <Link href="/" className="auth-back-link">
+            <ArrowLeft className="size-4" />
+            Back to home
+          </Link>
+          <div className="auth-visual-icon">
+            <Truck className="size-10 text-cyan-400" />
+          </div>
+          <h2>Fleet command center</h2>
+          <p>
+            Sign in to dispatch trips, track trucks on the live map, manage
+            maintenance, and view analytics — based on your role.
+          </p>
+          <ul className="auth-visual-list">
+            <li>Live map for dispatched trips</li>
+            <li>Smart vehicle & driver suggestions</li>
+            <li>Role-based dashboards</li>
+          </ul>
+        </div>
+      </div>
+
+      <div className="auth-form-panel">
+        <div className="auth-card">
+          <div className="mb-6 flex justify-end">
             <button
               onClick={() => {
                 if (theme === "light") setTheme("dark")
                 else if (theme === "dark") setTheme("system")
                 else setTheme("light")
               }}
-              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+              className="rounded-lg p-2 text-gray-400 hover:bg-white/5"
               title="Toggle theme"
+              type="button"
             >
               {theme === "light" && <Moon className="size-5" />}
               {theme === "dark" && <Sun className="size-5" />}
               {theme === "system" && <Monitor className="size-5" />}
             </button>
           </div>
-          <span className="flex size-12 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
-            <Logo className="size-7" />
-          </span>
-          <div className="text-center">
-            <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-50">
-              TransitOps
-            </h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Sign in with your backend account
-            </p>
+
+          <div className="auth-brand">
+            <span className="auth-brand-icon">
+              <Logo className="size-7 text-cyan-400" />
+            </span>
+            <div>
+              <h1>Welcome back</h1>
+              <p className="auth-subtitle">Log in to TransitOps</p>
+            </div>
           </div>
+
+          <form onSubmit={onSubmit} className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-sm text-gray-300">
+                Email
+              </label>
+              <Input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm text-gray-300">
+                Password
+              </label>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+            {error && (
+              <p className="rounded-md bg-red-500/10 px-3 py-2 text-sm text-red-400">
+                {error}
+              </p>
+            )}
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? "Signing in..." : "Sign in"}
+            </Button>
+          </form>
+
+          <p className="mt-6 text-center text-sm text-gray-400">
+            Don&apos;t have an account?{" "}
+            <Link
+              href="/register"
+              className="font-medium text-cyan-400 hover:text-cyan-300"
+            >
+              Create account
+            </Link>
+          </p>
         </div>
-
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div>
-            <label className="mb-1.5 block text-sm text-gray-700 dark:text-gray-300">
-              Email
-            </label>
-            <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-sm text-gray-700 dark:text-gray-300">
-              Password
-            </label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-          {error && (
-            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-400">
-              {error}
-            </p>
-          )}
-          <Button type="submit" className="w-full" disabled={submitting}>
-            {submitting ? "Signing in..." : "Sign in"}
-          </Button>
-        </form>
-
-        <p className="mt-6 text-center text-sm text-gray-500">
-          Don&apos;t have an account?{" "}
-          <Link
-            href="/register"
-            className="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400"
-          >
-            Create account
-          </Link>
-        </p>
       </div>
     </div>
   )

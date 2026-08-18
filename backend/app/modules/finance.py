@@ -4,6 +4,7 @@ from typing import List
 
 from app.db.session import db
 from app.core.dependencies import RoleChecker, get_current_user
+from app.core.realtime import fleet_events
 from app.modules.schemas import ExpenseCreate, ExpenseResponse
 
 router = APIRouter(prefix="/api/finance", tags=["Finance & Expenses"])
@@ -12,7 +13,7 @@ ALLOWED_EXPENSE_TYPES = {"Fuel", "Toll", "Maintenance-Surge", "Other"}
 
 
 @router.post("/expenses", response_model=ExpenseResponse, status_code=status.HTTP_201_CREATED)
-def create_expense(
+async def create_expense(
     payload: ExpenseCreate,
     current_user: dict = Depends(RoleChecker(["Financial Analyst", "Fleet Manager"])),
 ):
@@ -30,7 +31,17 @@ def create_expense(
     if payload.type == "Fuel" and (payload.liters is None or payload.liters <= 0):
         raise HTTPException(status_code=400, detail="Fuel expenses require liters > 0.")
 
-    return db.add_expense(payload.model_dump())
+    created = db.add_expense(payload.model_dump())
+    await fleet_events.broadcast(
+        "expense.created",
+        {
+            "expense_id": created["id"],
+            "trip_id": created["trip_id"],
+            "type": created["type"],
+            "cost": created["cost"],
+        },
+    )
+    return created
 
 
 @router.get("/expenses/{trip_id}", response_model=List[ExpenseResponse])

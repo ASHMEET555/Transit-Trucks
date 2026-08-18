@@ -1,9 +1,8 @@
 export const siteConfig = {
   name: "TransitOps",
   url: "transitops",
-  description: "Help organise large fleets.",
-  baseLinks: {
-  },
+  description: "Live fleet intelligence — road-accurate tracking, smart dispatch, and executive analytics.",
+  baseLinks: {},
 }
 
 export type siteConfig = typeof siteConfig

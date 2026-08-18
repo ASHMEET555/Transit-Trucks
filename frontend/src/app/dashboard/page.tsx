@@ -1,7 +1,9 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useState } from "react"
 import { BarChart } from "@/components/BarChart"
+import { LiveFleetMap } from "@/components/map/LiveFleetMap"
 import {
   Select,
   SelectContent,
@@ -18,6 +20,8 @@ import {
   TableRow,
 } from "@/components/Table"
 import { ApiError, apiRequest } from "@/lib/api"
+import { BACKEND_URL } from "@/data/data"
+import type { Destination, Trip } from "@/lib/tripTypes"
 
 type DashboardKPIs = {
   active_vehicles: number
@@ -42,25 +46,62 @@ type DashboardKPIs = {
 
 function Kpi({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
-      <p className="text-sm text-gray-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold">{value}</p>
+    <div className="kpi-card">
+      <p>{label}</p>
+      <p>{value}</p>
     </div>
   )
 }
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardKPIs | null>(null)
+  const [trips, setTrips] = useState<Trip[]>([])
+  const [destinations, setDestinations] = useState<Destination[]>([])
   const [error, setError] = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [lastRealtimeEvent, setLastRealtimeEvent] = useState<string | null>(null)
 
-  useEffect(() => {
+  const loadKpis = () =>
     apiRequest<DashboardKPIs>("/dashboard/kpis")
       .then(setData)
       .catch((err) =>
         setError(err instanceof ApiError ? err.detail : "Failed to load KPIs"),
       )
+
+  const loadMapData = () =>
+    Promise.all([
+      apiRequest<Trip[]>("/trips/"),
+      apiRequest<Destination[]>("/destinations/"),
+    ])
+      .then(([t, d]) => {
+        setTrips(t)
+        setDestinations(d)
+      })
+      .catch(() => {
+        // Map is optional on dashboard
+      })
+
+  useEffect(() => {
+    loadKpis()
+    loadMapData()
+  }, [])
+
+  useEffect(() => {
+    const wsUrl = BACKEND_URL.replace("/api", "/ws/fleet").replace("http", "ws")
+    const socket = new WebSocket(wsUrl)
+    socket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data) as { event?: string }
+        if (!msg.event) return
+        setLastRealtimeEvent(msg.event)
+        loadKpis()
+        loadMapData()
+      } catch {
+        // Ignore malformed messages.
+      }
+    }
+    return () => socket.close()
   }, [])
 
   if (error) return <div className="p-6 text-red-500">{error}</div>
@@ -80,12 +121,31 @@ export default function DashboardPage() {
   const types = Array.from(new Set(data.vehicles.map((v) => v.type)))
 
   return (
-    <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="mt-1 text-gray-600 dark:text-gray-400">
-          Welcome to the TransitOps dashboard.
-        </p>
+    <div className="page-shell space-y-6">
+      <div className="page-header">
+        <div>
+          <p className="page-eyebrow">Command center</p>
+          <h1 className="page-title">Dashboard</h1>
+          <p className="page-subtitle">
+            Fleet overview with live map, KPIs, and vehicle performance.
+          </p>
+          {lastRealtimeEvent && (
+            <p className="mt-2 text-xs text-cyan-400">
+              Live event: {lastRealtimeEvent}
+            </p>
+          )}
+        </div>
+        <Link href="/live-map" className="landing-cta-sm">
+          Full screen map
+        </Link>
+      </div>
+
+      <div className="dashboard-map-embed">
+        <LiveFleetMap
+          trips={trips}
+          destinations={destinations}
+          height="360px"
+        />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

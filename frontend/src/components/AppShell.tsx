@@ -11,17 +11,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { isAuthenticated, isLoaded } = useProfile()
+  const isPublicPage =
+    pathname === "/" || pathname === "/login" || pathname === "/register"
   const isAuthPage = pathname === "/login" || pathname === "/register"
 
   useEffect(() => {
     if (!isLoaded) return
-    if (!isAuthPage && !isAuthenticated) {
+    if (!isPublicPage && !isAuthenticated) {
       router.replace("/login")
     }
     if (isAuthPage && isAuthenticated) {
       router.replace("/dashboard")
     }
-  }, [isLoaded, isAuthPage, isAuthenticated, router])
+  }, [isLoaded, isPublicPage, isAuthPage, isAuthenticated, router])
 
   if (!isLoaded) {
     return (
@@ -31,7 +33,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     )
   }
 
-  if (isAuthPage) {
+  if (isPublicPage && !isAuthenticated) {
     return <>{children}</>
   }
 
@@ -43,12 +45,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <SidebarProvider defaultOpen={true}>
       <AppSidebar />
       <div className="w-full">
-        <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-950">
+        <header className="app-main-header sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 px-4">
           <SidebarTrigger className="-ml-1" />
-          <div className="mr-2 h-4 w-px bg-gray-200 dark:bg-gray-800" />
+          <div className="mr-2 h-4 w-px bg-gray-700" />
           <Breadcrumbs />
         </header>
-        <main>{children}</main>
+        <main className="app-main-content">{children}</main>
       </div>
     </SidebarProvider>
   )
