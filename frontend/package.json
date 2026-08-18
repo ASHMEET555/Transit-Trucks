@@ -20,6 +20,7 @@
     "@remixicon/react": "^4.6.0",
     "@types/leaflet": "^1.9.22",
     "clsx": "^2.1.1",
+    "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.473.0",
     "next": "15.1.9",

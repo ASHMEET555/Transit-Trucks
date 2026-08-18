@@ -4,6 +4,13 @@ import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/Button"
 import { Input } from "@/components/Input"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/Select"
+import {
   Table,
   TableBody,
   TableCell,
@@ -14,6 +21,7 @@ import {
 import { ApiError, apiRequest } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
 import { canWrite } from "@/lib/rbacConfig"
+import jsPDF from "jspdf"
 
 type Vehicle = {
   registration_number: string
@@ -40,6 +48,7 @@ export default function MaintenancePage() {
   const [showForm, setShowForm] = useState(false)
   const [vehicleSearch, setVehicleSearch] = useState("")
   const [showVehicleList, setShowVehicleList] = useState(false)
+  const [exportFormat, setExportFormat] = useState<"csv" | "pdf">("csv")
   const [form, setForm] = useState({
     vehicle_reg: "",
     description: "",
@@ -133,6 +142,71 @@ export default function MaintenancePage() {
     }
   }
 
+  function exportCsv() {
+    const rows = [
+      "id,vehicle_reg,description,cost,start_date,end_date,status",
+      ...logs.map((log) =>
+        [log.id, log.vehicle_reg, log.description, log.cost, log.start_date, log.end_date || "", log.status].join(","),
+      ),
+    ]
+    const blob = new Blob([rows.join("\n")], { type: "text/csv" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "maintenance-records.csv"
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function exportPdf() {
+    const doc = new jsPDF()
+    
+    // Title
+    doc.setFontSize(18)
+    doc.text("Maintenance Records", 14, 22)
+    
+    // Table headers
+    doc.setFontSize(10)
+    doc.setFillColor(200, 200, 200)
+    doc.rect(14, 35, 182, 8, "F")
+    doc.text("ID", 16, 40)
+    doc.text("Vehicle", 36, 40)
+    doc.text("Description", 66, 40)
+    doc.text("Cost", 126, 40)
+    doc.text("Start Date", 146, 40)
+    doc.text("End Date", 176, 40)
+    
+    // Table rows
+    let y = 48
+    logs.forEach((log, index) => {
+      if (y > 270) {
+        doc.addPage()
+        y = 20
+      }
+      if (index % 2 === 0) {
+        doc.setFillColor(245, 245, 245)
+        doc.rect(14, y - 5, 182, 8, "F")
+      }
+      doc.text(String(log.id), 16, y)
+      doc.text(log.vehicle_reg, 36, y)
+      doc.text(log.description.substring(0, 20), 66, y)
+      doc.text(`$${log.cost}`, 126, y)
+      doc.text(log.start_date, 146, y)
+      doc.text(log.end_date || "—", 176, y)
+      y += 8
+    })
+    
+    doc.save("maintenance-records.pdf")
+  }
+
+  function handleExport() {
+    if (exportFormat === "csv") {
+      exportCsv()
+    } else {
+      exportPdf()
+    }
+  }
+
   return (
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
@@ -142,16 +216,30 @@ export default function MaintenancePage() {
             View and manage vehicle maintenance records here.
           </p>
         </div>
-        {canManage && (
-          <Button
-            onClick={() => {
-              setShowForm(!showForm)
-              setError(null)
-            }}
-          >
-            {showForm ? "Cancel" : "Add Record"}
+        <div className="flex gap-2">
+          <Select value={exportFormat} onValueChange={(v: "csv" | "pdf") => setExportFormat(v)}>
+            <SelectTrigger className="w-[120px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="csv">CSV</SelectItem>
+              <SelectItem value="pdf">PDF</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="secondary" onClick={handleExport} disabled={!logs.length}>
+            Export
           </Button>
-        )}
+          {canManage && (
+            <Button
+              onClick={() => {
+                setShowForm(!showForm)
+                setError(null)
+              }}
+            >
+              {showForm ? "Cancel" : "Add Record"}
+            </Button>
+          )}
+        </div>
       </div>
 
       {error && (

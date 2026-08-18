@@ -21,6 +21,7 @@ import {
 import { ApiError, apiRequest } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
 import { canWrite } from "@/lib/rbacConfig"
+import jsPDF from "jspdf"
 
 type Trip = {
   id: number
@@ -45,6 +46,7 @@ export default function FuelAndExpensesPage() {
   const [tripId, setTripId] = useState("")
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [exportFormat, setExportFormat] = useState<"csv" | "pdf">("csv")
   const [form, setForm] = useState({
     type: "Fuel",
     liters: "",
@@ -131,6 +133,60 @@ export default function FuelAndExpensesPage() {
     URL.revokeObjectURL(url)
   }
 
+  function exportPdf() {
+    const doc = new jsPDF()
+    
+    // Title
+    doc.setFontSize(18)
+    doc.text(`Trip #${tripId} Expenses`, 14, 22)
+    
+    // Totals
+    doc.setFontSize(12)
+    doc.text(`Fuel: $${totals.fuel.toLocaleString()}`, 14, 35)
+    doc.text(`Tolls: $${totals.toll.toLocaleString()}`, 14, 42)
+    doc.text(`Other: $${totals.other.toLocaleString()}`, 14, 49)
+    doc.text(`Total: $${totals.all.toLocaleString()}`, 14, 56)
+    
+    // Table headers
+    doc.setFontSize(10)
+    doc.setFillColor(200, 200, 200)
+    doc.rect(14, 65, 182, 8, "F")
+    doc.text("ID", 16, 70)
+    doc.text("Type", 36, 70)
+    doc.text("Liters", 66, 70)
+    doc.text("Cost", 96, 70)
+    doc.text("Date", 136, 70)
+    
+    // Table rows
+    let y = 78
+    expenses.forEach((e, index) => {
+      if (y > 270) {
+        doc.addPage()
+        y = 20
+      }
+      if (index % 2 === 0) {
+        doc.setFillColor(245, 245, 245)
+        doc.rect(14, y - 5, 182, 8, "F")
+      }
+      doc.text(String(e.id), 16, y)
+      doc.text(e.type, 36, y)
+      doc.text(e.liters ? String(e.liters) : "—", 66, y)
+      doc.text(`$${e.cost}`, 96, y)
+      doc.text(e.date, 136, y)
+      y += 8
+    })
+    
+    doc.save(`trip-${tripId}-expenses.pdf`)
+  }
+
+  function handleExport() {
+    if (exportFormat === "csv") {
+      exportCsv()
+    } else {
+      exportPdf()
+    }
+  }
+
   return (
     <div className="space-y-4 p-6">
       <div className="flex items-center justify-between">
@@ -140,9 +196,20 @@ export default function FuelAndExpensesPage() {
             Trip-linked fuel, tolls, and other costs
           </p>
         </div>
-        <Button variant="secondary" onClick={exportCsv} disabled={!expenses.length}>
-          Export CSV
-        </Button>
+        <div className="flex gap-2">
+          <Select value={exportFormat} onValueChange={(v: "csv" | "pdf") => setExportFormat(v)}>
+            <SelectTrigger className="w-[120px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="csv">CSV</SelectItem>
+              <SelectItem value="pdf">PDF</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="secondary" onClick={handleExport} disabled={!expenses.length}>
+            Export
+          </Button>
+        </div>
       </div>
 
       {error && (
