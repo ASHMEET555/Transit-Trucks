@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -16,14 +17,32 @@ import (
 )
 
 func main() {
-	emailFlag := flag.String("email", "", "Admin user email address (required)")
-	passwordFlag := flag.String("password", "", "Admin user password (optional; random generated if empty)")
-	forceFlag := flag.Bool("force", false, "Force create admin even if active admin already exists")
-	flag.Parse()
+	// Support optional subcommand "create-admin" as first arg
+	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "create-admin" {
+		args = args[1:]
+	}
 
-	if *emailFlag == "" {
-		fmt.Fprintln(os.Stderr, "Error: --email is required")
-		flag.Usage()
+	fs := flag.NewFlagSet("admin", flag.ExitOnError)
+	emailFlag := fs.String("email", "", "Admin user email address")
+	passwordFlag := fs.String("password", "", "Admin user password")
+	forceFlag := fs.Bool("force", false, "Force create admin even if active admin already exists")
+	_ = fs.Parse(args)
+
+	email := strings.TrimSpace(*emailFlag)
+	if email == "" {
+		email = strings.TrimSpace(os.Getenv("ADMIN_EMAIL"))
+	}
+	if email == "" {
+		// Attempt prompt from stdin
+		fmt.Print("Enter admin email: ")
+		scanner := bufio.NewScanner(os.Stdin)
+		if scanner.Scan() {
+			email = strings.TrimSpace(scanner.Text())
+		}
+	}
+	if email == "" {
+		fmt.Fprintln(os.Stderr, "Error: admin email is required (via --email, ADMIN_EMAIL, or interactive prompt)")
 		os.Exit(1)
 	}
 
@@ -57,7 +76,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	pw := *passwordFlag
+	pw := strings.TrimSpace(*passwordFlag)
+	if pw == "" {
+		pw = strings.TrimSpace(os.Getenv("ADMIN_PASSWORD"))
+	}
 	generated := false
 	if pw == "" {
 		randBytes := make([]byte, 16)
@@ -77,7 +99,6 @@ func main() {
 
 	id := uuid.NewString()
 	now := time.Now().UTC()
-	email := strings.TrimSpace(*emailFlag)
 
 	_, err = db.Exec(ctx,
 		`INSERT INTO users (id, email, password_hash, role, is_active, created_at, updated_at)
