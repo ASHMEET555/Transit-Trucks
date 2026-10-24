@@ -2,42 +2,108 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"os"
+	"strings"
+	"time"
+
+	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/auth"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
-	dsn := os.Getenv("POSTGRES_DSN")
-	if dsn == "" {
-		panic("POSTGRES_DSN is not set")
+	envVal := strings.ToLower(os.Getenv("ENV"))
+	if envVal == "production" {
+		fmt.Fprintln(os.Stderr, "Error: seeding is strictly refused when ENV=production")
+		os.Exit(1)
 	}
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = os.Getenv("POSTGRES_DSN")
+	}
+	if dsn == "" {
+		fmt.Fprintln(os.Stderr, "Error: DATABASE_URL or POSTGRES_DSN is required")
+		os.Exit(1)
+	}
+
 	p := os.Getenv("JSON_PATH")
 	if p == "" {
 		p = "dummy_data.json"
 	}
-	f, e := os.Open(p)
-	if e != nil {
-		fmt.Printf("Error: Could not locate dummy JSON framework file at %s\n", p)
-		return
+	f, err := os.Open(p)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: Could not locate dummy JSON file at %s: %v\n", p, err)
+		os.Exit(1)
 	}
 	defer f.Close()
+
 	var d map[string][]map[string]any
-	if json.NewDecoder(f).Decode(&d) != nil {
-		panic("invalid seed json")
+	if err := json.NewDecoder(f).Decode(&d); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid seed JSON: %v\n", err)
+		os.Exit(1)
 	}
-	db, e := pgxpool.New(context.Background(), dsn)
-	if e != nil {
-		panic(e)
+
+	ctx := context.Background()
+	db, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: database connection failed: %v\n", err)
+		os.Exit(1)
 	}
 	defer db.Close()
-	ctx := context.Background()
-	tx, e := db.Begin(ctx)
-	if e != nil {
-		panic(e)
+
+	tx, err := db.Begin(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: transaction begin failed: %v\n", err)
+		os.Exit(1)
 	}
 	defer tx.Rollback(ctx)
+
+	// Seed Users with secure Argon2id hashes
+	initialAdminPass := os.Getenv("INITIAL_ADMIN_PASSWORD")
+	var generatedAdminPass string
+
+	for _, u := range d["users"] {
+		email, _ := u["email"].(string)
+		role, _ := u["role"].(string)
+		if email == "" || role == "" {
+			continue
+		}
+
+		userPass := initialAdminPass
+		if userPass == "" {
+			b := make([]byte, 16)
+			_, _ = rand.Read(b)
+			userPass = hex.EncodeToString(b)
+			if role == "Admin" && generatedAdminPass == "" {
+				generatedAdminPass = userPass
+			}
+		}
+
+		hash, err := auth.HashPassword(userPass)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: password hash error: %v\n", err)
+			os.Exit(1)
+		}
+
+		id := uuid.NewString()
+		now := time.Now().UTC()
+
+		_, err = tx.Exec(ctx,
+			`INSERT INTO users(id, email, password_hash, role, is_active, created_at, updated_at)
+			 VALUES($1, $2, $3, $4, true, $5, $5)
+			 ON CONFLICT (email) DO NOTHING`,
+			id, email, hash, role, now)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: inserting user failed: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	run := func(q string, fields []string, items []map[string]any) {
 		for _, x := range items {
 			a := make([]any, len(fields))
@@ -45,24 +111,35 @@ func main() {
 				a[i] = x[k]
 			}
 			if _, e := tx.Exec(ctx, q, a...); e != nil {
-				panic(e)
+				fmt.Fprintf(os.Stderr, "Error inserting row: %v\n", e)
+				os.Exit(1)
 			}
 		}
 	}
-	run("INSERT INTO users(email,password_hash,role) VALUES($1,$2,$3) ON CONFLICT DO NOTHING", []string{"email", "password_hash", "role"}, d["users"])
+
 	run("INSERT INTO destinations(name,region) VALUES($1,$2) ON CONFLICT DO NOTHING", []string{"name", "region"}, d["destinations"])
 	run("INSERT INTO vehicles(registration_number,model,type,max_load_capacity,odometer,acquisition_cost,status) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING", []string{"registration_number", "model", "type", "max_load_capacity", "odometer", "acquisition_cost", "status"}, d["vehicles"])
 	run("INSERT INTO drivers(license_number,name,license_category,license_expiry_date,contact_number,safety_score,status) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING", []string{"license_number", "name", "license_category", "license_expiry_date", "contact_number", "safety_score", "status"}, d["drivers"])
 	run("INSERT INTO trips(id,source_name,destination_name,vehicle_reg,driver_license,cargo_weight,planned_distance,revenue,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING", []string{"id", "source_name", "destination_name", "vehicle_reg", "driver_license", "cargo_weight", "planned_distance", "revenue", "status"}, d["trips"])
 	run("INSERT INTO maintenance_logs(id,vehicle_reg,description,cost,start_date,end_date,status) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING", []string{"id", "vehicle_reg", "description", "cost", "start_date", "end_date", "status"}, d["maintenance_logs"])
 	run("INSERT INTO expenses(id,trip_id,type,liters,cost,date) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING", []string{"id", "trip_id", "type", "liters", "cost", "date"}, d["fuel_expenses"])
+
 	for _, s := range []string{"trips", "maintenance_logs", "expenses"} {
 		if _, e := tx.Exec(ctx, "SELECT setval(pg_get_serial_sequence($1, 'id'), COALESCE((SELECT MAX(id) FROM "+s+"), 1), true)", s); e != nil {
-			panic(e)
+			fmt.Fprintf(os.Stderr, "Error resetting sequence: %v\n", e)
+			os.Exit(1)
 		}
 	}
-	if e := tx.Commit(ctx); e != nil {
-		panic(e)
+
+	if err := tx.Commit(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Error committing seed transaction: %v\n", err)
+		os.Exit(1)
 	}
-	fmt.Println("Database seeding pipelines terminated cleanly.")
+
+	fmt.Println("Database seeding completed cleanly.")
+	if generatedAdminPass != "" {
+		fmt.Println("-----------------------------------------------------------------")
+		fmt.Printf("INITIAL SEEDED ADMIN PASSWORD (printed once):\n%s\n", generatedAdminPass)
+		fmt.Println("-----------------------------------------------------------------")
+	}
 }

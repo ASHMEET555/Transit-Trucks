@@ -26,8 +26,11 @@ func main() {
 	defer db.Close()
 
 	a := app.New(db, app.Config{
-		Secret: cfg.SessionSecret,
-		Logger: logger,
+		Secret:         cfg.SessionSecret,
+		Logger:         logger,
+		AllowedOrigins: cfg.AllowedOrigins,
+		Env:            cfg.Env,
+		CookieDomain:   cfg.CookieDomain,
 	})
 	logger.Info("listening", "address", cfg.Port)
 	if err := a.ListenAndServe(":" + cfg.Port); err != nil {
