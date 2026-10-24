@@ -40,7 +40,7 @@ func Recover(logger *slog.Logger) func(http.Handler) http.Handler {
 					if logger != nil {
 						logger.Error("panic recovered", "panic", fmt.Sprintf("%v", rec), "path", r.URL.Path)
 					}
-					httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected internal server error occurred.", nil)
+					httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error", nil)
 				}
 			}()
 			next.ServeHTTP(w, r)
@@ -93,14 +93,16 @@ func AccessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 }
 
 // 4. SecureHeaders middleware
-func SecureHeaders() func(http.Handler) http.Handler {
+func SecureHeaders(isLocal bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w.Header().Set("X-Frame-Options", "DENY")
-			w.Header().Set("X-XSS-Protection", "0")
 			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-			w.Header().Set("Content-Security-Policy", "default-src 'self'")
+			w.Header().Set("Content-Security-Policy", "default-src 'none'")
+			if !isLocal {
+				w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+			}
 			next.ServeHTTP(w, r)
 		})
 	}
