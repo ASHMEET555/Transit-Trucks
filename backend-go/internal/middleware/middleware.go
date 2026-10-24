@@ -173,6 +173,9 @@ func getClientIP(r *http.Request) string {
 }
 
 func RateLimit(limit int, window time.Duration) func(http.Handler) http.Handler {
+	limiter := &ipRateLimiter{
+		counts: make(map[string][]time.Time),
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Skip coarse rate limiting on health check endpoints
@@ -184,9 +187,9 @@ func RateLimit(limit int, window time.Duration) func(http.Handler) http.Handler 
 			ip := getClientIP(r)
 			now := time.Now()
 
-			globalLimiter.mu.Lock()
+			limiter.mu.Lock()
 			cutoff := now.Add(-window)
-			times := globalLimiter.counts[ip]
+			times := limiter.counts[ip]
 			var valid []time.Time
 			for _, t := range times {
 				if t.After(cutoff) {
@@ -195,15 +198,15 @@ func RateLimit(limit int, window time.Duration) func(http.Handler) http.Handler 
 			}
 
 			if len(valid) >= limit {
-				globalLimiter.mu.Unlock()
+				limiter.mu.Unlock()
 				w.Header().Set("Retry-After", fmt.Sprintf("%d", int(window.Seconds())))
 				httpx.WriteError(w, r, http.StatusTooManyRequests, "RATE_LIMIT_EXCEEDED", "Too many requests. Please try again later.", nil)
 				return
 			}
 
 			valid = append(valid, now)
-			globalLimiter.counts[ip] = valid
-			globalLimiter.mu.Unlock()
+			limiter.counts[ip] = valid
+			limiter.mu.Unlock()
 
 			next.ServeHTTP(w, r)
 		})
