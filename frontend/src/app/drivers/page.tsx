@@ -18,7 +18,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@/components/Table"
-import { ApiError, apiRequest } from "@/lib/api"
+import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
 import { canWrite } from "@/lib/rbacConfig"
 
@@ -65,7 +65,8 @@ export default function DriversPage() {
   const fetchDrivers = async () => {
     try {
       setError(null)
-      setDrivers(await apiRequest<DriverRow[]>("/fleet/drivers"))
+      const res = await apiRequest<any>("/fleet/drivers")
+      setDrivers(extractItems<DriverRow>(res))
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to fetch drivers")
     } finally {

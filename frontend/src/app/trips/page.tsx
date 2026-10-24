@@ -18,7 +18,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@/components/Table"
-import { ApiError, apiRequest } from "@/lib/api"
+import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
 import { canWrite } from "@/lib/rbacConfig"
 import { BACKEND_URL } from "@/data/data"
@@ -89,15 +89,15 @@ export default function TripsPage() {
     try {
       setError(null)
       const [t, v, d, dest] = await Promise.all([
-        apiRequest<Trip[]>("/trips/"),
-        apiRequest<Vehicle[]>("/fleet/vehicles"),
-        apiRequest<Driver[]>("/fleet/drivers"),
-        apiRequest<Destination[]>("/destinations/"),
+        apiRequest<any>("/trips/"),
+        apiRequest<any>("/fleet/vehicles"),
+        apiRequest<any>("/fleet/drivers"),
+        apiRequest<any>("/destinations/"),
       ])
-      setTrips(t)
-      setVehicles(v)
-      setDrivers(d)
-      setDestinations(dest)
+      setTrips(extractItems<Trip>(t))
+      setVehicles(extractItems<Vehicle>(v))
+      setDrivers(extractItems<Driver>(d))
+      setDestinations(extractItems<Destination>(dest))
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load trips")
     }

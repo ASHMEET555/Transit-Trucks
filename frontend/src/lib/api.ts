@@ -10,6 +10,19 @@ export class ApiError extends Error {
   }
 }
 
+export type PaginatedResponse<T> = {
+  items: T[]
+  next_cursor: string | null
+}
+
+export function extractItems<T>(data: T[] | PaginatedResponse<T> | unknown): T[] {
+  if (Array.isArray(data)) return data
+  if (data && typeof data === "object" && "items" in data && Array.isArray((data as any).items)) {
+    return (data as any).items
+  }
+  return []
+}
+
 type RequestOptions = {
   method?: string
   body?: unknown

@@ -18,7 +18,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@/components/Table"
-import { ApiError, apiRequest } from "@/lib/api"
+import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
 import { canWrite } from "@/lib/rbacConfig"
 import jsPDF from "jspdf"
@@ -60,11 +60,11 @@ export default function MaintenancePage() {
     try {
       setError(null)
       const [m, v] = await Promise.all([
-        apiRequest<MaintenanceLog[]>("/maintenance/"),
-        apiRequest<Vehicle[]>("/fleet/vehicles"),
+        apiRequest<any>("/maintenance/"),
+        apiRequest<any>("/fleet/vehicles"),
       ])
-      setLogs(m)
-      setVehicles(v)
+      setLogs(extractItems<MaintenanceLog>(m))
+      setVehicles(extractItems<Vehicle>(v))
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load")
     }

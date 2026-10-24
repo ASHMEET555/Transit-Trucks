@@ -19,7 +19,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@/components/Table"
-import { ApiError, apiRequest } from "@/lib/api"
+import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import { BACKEND_URL } from "@/data/data"
 import type { Destination, Trip } from "@/lib/tripTypes"
 
@@ -71,12 +71,12 @@ export default function DashboardPage() {
 
   const loadMapData = () =>
     Promise.all([
-      apiRequest<Trip[]>("/trips/"),
-      apiRequest<Destination[]>("/destinations/"),
+      apiRequest<any>("/trips/"),
+      apiRequest<any>("/destinations/"),
     ])
       .then(([t, d]) => {
-        setTrips(t)
-        setDestinations(d)
+        setTrips(extractItems<Trip>(t))
+        setDestinations(extractItems<Destination>(d))
       })
       .catch(() => {
         // Map is optional on dashboard

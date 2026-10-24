@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/Select"
-import { ApiError, apiRequest } from "@/lib/api"
+import { ApiError, apiRequest, extractItems } from "@/lib/api"
 
 type VehicleAnalytics = {
   registration_number: string
@@ -281,15 +281,15 @@ export default function AnalyticsPage() {
         setError(null)
         const [kpiData, fleet, driverList, tripList] = await Promise.all([
           apiRequest<DashboardKPIs>("/dashboard/kpis"),
-          apiRequest<FleetVehicle[]>("/fleet/vehicles"),
-          apiRequest<Driver[]>("/fleet/drivers"),
-          apiRequest<Trip[]>("/trips/"),
+          apiRequest<any>("/fleet/vehicles"),
+          apiRequest<any>("/fleet/drivers"),
+          apiRequest<any>("/trips/"),
         ])
         if (cancelled) return
         setKpis(kpiData)
-        setVehicles(fleet)
-        setDrivers(driverList)
-        setTrips(tripList)
+        setVehicles(extractItems<FleetVehicle>(fleet))
+        setDrivers(extractItems<Driver>(driverList))
+        setTrips(extractItems<Trip>(tripList))
       } catch (err) {
         if (!cancelled) {
           setError(

@@ -18,7 +18,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@/components/Table"
-import { ApiError, apiRequest } from "@/lib/api"
+import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
 import { canWrite } from "@/lib/rbacConfig"
 
@@ -73,15 +73,14 @@ function toApi(form: FleetForm) {
     max_load_capacity: form.capacity,
     odometer: form.odometer,
     acquisition_cost: form.acquisition_cost,
-    status: form.status,
   }
 }
 
 const emptyForm: FleetForm = {
   registration_number: "",
   name: "",
-  type: "Truck",
-  capacity: 0,
+  type: "Van",
+  capacity: 1000,
   odometer: 0,
   acquisition_cost: 0,
   status: "Available",
@@ -111,7 +110,8 @@ export default function FleetPage() {
   const fetchVehicles = async () => {
     try {
       setError(null)
-      const data = await apiRequest<ApiVehicle[]>("/fleet/vehicles")
+      const res = await apiRequest<any>("/fleet/vehicles")
+      const data = extractItems<ApiVehicle>(res)
       const rows = data.map(fromApi)
       setVehicles(rows)
       const highest = Math.max(20000, ...rows.map((v) => v.capacity), 0)
@@ -387,10 +387,14 @@ export default function FleetPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Truck">Truck</SelectItem>
                   <SelectItem value="Van">Van</SelectItem>
-                  <SelectItem value="Pickup">Pickup</SelectItem>
+                  <SelectItem value="Box Truck">Box Truck</SelectItem>
+                  <SelectItem value="Flatbed">Flatbed</SelectItem>
+                  <SelectItem value="Semi">Semi</SelectItem>
+                  <SelectItem value="Light Truck">Light Truck</SelectItem>
+                  <SelectItem value="Medium Truck">Medium Truck</SelectItem>
                   <SelectItem value="Heavy Truck">Heavy Truck</SelectItem>
+                  <SelectItem value="Refrigerated">Refrigerated</SelectItem>
                 </SelectContent>
               </Select>
             </div>

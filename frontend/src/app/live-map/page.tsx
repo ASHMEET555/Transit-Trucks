@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { LiveFleetMap } from "@/components/map/LiveFleetMap"
-import { ApiError, apiRequest } from "@/lib/api"
+import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import type { Destination, Trip } from "@/lib/tripTypes"
 import { BACKEND_URL } from "@/data/data"
 
@@ -16,11 +16,11 @@ export default function LiveMapPage() {
     try {
       setError(null)
       const [t, d] = await Promise.all([
-        apiRequest<Trip[]>("/trips/"),
-        apiRequest<Destination[]>("/destinations/"),
+        apiRequest<any>("/trips/"),
+        apiRequest<any>("/destinations/"),
       ])
-      setTrips(t)
-      setDestinations(d)
+      setTrips(extractItems<Trip>(t))
+      setDestinations(extractItems<Destination>(d))
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load map data")
     }
