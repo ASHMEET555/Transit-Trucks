@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/auth"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/auth"
 	"github.com/google/uuid"
 )
 

@@ -12,10 +12,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"path/filepath"
 
-	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/auth"
-	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/platform/httpx"
-	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/rbac"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/auth"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/rbac"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -42,7 +43,25 @@ func getTestDB(t *testing.T) *pgxpool.Pool {
 	if err := pool.Ping(ctx); err != nil {
 		t.Skipf("skipping test: postgres ping failed at %s: %v", dsn, err)
 	}
+	ensureTestSchema(t, pool)
 	return pool
+}
+
+func ensureTestSchema(t *testing.T, pool *pgxpool.Pool) {
+	ctx := context.Background()
+	var exists bool
+	err := pool.QueryRow(ctx, "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'users')").Scan(&exists)
+	if err != nil || !exists {
+		root := findRepoRoot(t)
+		m1, err := os.ReadFile(filepath.Join(root, "backend-go", "migrations", "000001_initial_schema.up.sql"))
+		if err == nil {
+			_, _ = pool.Exec(ctx, string(m1))
+		}
+		m2, err := os.ReadFile(filepath.Join(root, "backend-go", "migrations", "000002_auth_foundation.up.sql"))
+		if err == nil {
+			_, _ = pool.Exec(ctx, string(m2))
+		}
+	}
 }
 
 func setupTestApp(t *testing.T, db *pgxpool.Pool, isLocal bool) *App {

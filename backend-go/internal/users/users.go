@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/auth"
-	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/platform/httpx"
-	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/rbac"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/auth"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/rbac"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"

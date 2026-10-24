@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --experimental-strip-types --test src/lib/__tests__/*.test.mjs",
+    "test": "node --test src/lib/__tests__/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "codegen": "openapi-typescript ../api/openapi.yaml -o src/lib/api/types.gen.ts"
   },

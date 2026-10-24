@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/app"
-	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/config"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

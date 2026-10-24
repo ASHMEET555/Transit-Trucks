@@ -1,6 +1,17 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { RBAC_CONFIG, hasRouteAccess, getAccessibleRoutes } from "../rbacConfig.ts"
+import fs from "node:fs"
+import ts from "typescript"
+
+const fileContent = fs.readFileSync(new URL("../rbacConfig.ts", import.meta.url), "utf8")
+const result = ts.transpileModule(fileContent, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS },
+})
+
+const scope = { exports: {} }
+const run = new Function("exports", "module", result.outputText)
+run(scope.exports, scope)
+const { hasRouteAccess, getAccessibleRoutes } = scope.exports
 
 test("RBAC - Admin role has access to all routes", () => {
   const routes = getAccessibleRoutes("Admin")

@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/auth"
-	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/platform/httpx"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/auth"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
