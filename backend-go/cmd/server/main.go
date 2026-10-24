@@ -2,34 +2,35 @@ package main
 
 import (
 	"context"
-	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/app"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"log/slog"
 	"os"
+
+	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/app"
+	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/config"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	dsn := os.Getenv("POSTGRES_DSN")
-	if dsn == "" {
-		logger.Error("POSTGRES_DSN is not set")
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Error("configuration validation failed", "error", err)
 		os.Exit(1)
 	}
-	db, err := pgxpool.New(context.Background(), dsn)
+
+	db, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
 	if err != nil {
 		logger.Error("database connection failed", "error", err)
 		os.Exit(1)
 	}
 	defer db.Close()
-	a := app.New(db, app.Config{Secret: env("SECRET_KEY", "default_secret_key"), Logger: logger})
-	logger.Info("listening", "address", env("PORT", "8000"))
-	if err := a.ListenAndServe(":" + env("PORT", "8000")); err != nil {
+
+	a := app.New(db, app.Config{
+		Secret: cfg.SessionSecret,
+		Logger: logger,
+	})
+	logger.Info("listening", "address", cfg.Port)
+	if err := a.ListenAndServe(":" + cfg.Port); err != nil {
 		logger.Error("server stopped", "error", err)
 	}
-}
-func env(k, d string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return d
 }

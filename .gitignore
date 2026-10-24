@@ -2,3 +2,5 @@ backend/.env
 backend/.venv
 backend/uv.lock
 */__pycache__
+*.exe
+*.test
