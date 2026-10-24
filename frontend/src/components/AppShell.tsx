@@ -5,15 +5,13 @@ import { usePathname, useRouter } from "next/navigation"
 import { useEffect } from "react"
 import { SidebarProvider, SidebarTrigger } from "@/components/Sidebar"
 import { AppSidebar } from "@/components/ui/navigation/AppSidebar"
-import { Breadcrumbs } from "@/components/ui/navigation/Breadcrumbs"
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { isAuthenticated, isLoaded } = useProfile()
-  const isPublicPage =
-    pathname === "/" || pathname === "/login" || pathname === "/register"
-  const isAuthPage = pathname === "/login" || pathname === "/register"
+  const isPublicPage = pathname === "/" || pathname === "/login"
+  const isAuthPage = pathname === "/login"
 
   useEffect(() => {
     if (!isLoaded) return
@@ -23,17 +21,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (isAuthPage && isAuthenticated) {
       router.replace("/dashboard")
     }
-  }, [isLoaded, isPublicPage, isAuthPage, isAuthenticated, router])
+  }, [isAuthenticated, isLoaded, isPublicPage, isAuthPage, router])
 
   if (!isLoaded) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-gray-500">
-        Loading...
+      <div className="flex min-h-screen items-center justify-center bg-gray-950">
+        <div className="size-8 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent" />
       </div>
     )
   }
 
-  if (isPublicPage && !isAuthenticated) {
+  if (isPublicPage) {
     return <>{children}</>
   }
 
@@ -44,13 +42,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <SidebarProvider defaultOpen={true}>
       <AppSidebar />
-      <div className="w-full">
-        <header className="app-main-header sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 px-4">
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <header className="flex h-14 items-center gap-4 border-b border-gray-800 bg-gray-950 px-6">
           <SidebarTrigger className="-ml-1" />
-          <div className="mr-2 h-4 w-px bg-gray-700" />
-          <Breadcrumbs />
         </header>
-        <main className="app-main-content">{children}</main>
+        <main className="flex-1 overflow-auto bg-gray-950 p-6">
+          {children}
+        </main>
       </div>
     </SidebarProvider>
   )

@@ -152,8 +152,8 @@ export default function LandingPage() {
             <Link href="/login" className="landing-login-link">
               Log in
             </Link>
-            <Link href="/register" className="landing-cta-sm">
-              Get started
+            <Link href="/login" className="landing-cta-sm">
+              Launch platform
               <ArrowRight className="size-4" />
             </Link>
           </nav>
@@ -174,8 +174,8 @@ export default function LandingPage() {
               team spends less time chasing updates and more time moving freight.
             </p>
             <div className="landing-hero-actions landing-hero-actions-centered">
-              <Link href="/register" className="landing-cta">
-                Start free
+              <Link href="/login" className="landing-cta">
+                Launch platform
                 <ArrowRight className="size-4" />
               </Link>
               <Link href="/login" className="landing-cta-ghost">
@@ -325,8 +325,8 @@ export default function LandingPage() {
           </p>
         </div>
         <div className="landing-cta-band-actions">
-          <Link href="/register" className="landing-cta">
-            Create free account
+          <Link href="/login" className="landing-cta">
+            Access dashboard
             <ArrowRight className="size-4" />
           </Link>
           <Link href="/login" className="landing-cta-ghost">
@@ -343,7 +343,7 @@ export default function LandingPage() {
         <span>© 2026 TransitOps · Fleet management for trucking companies</span>
         <div className="landing-footer-links">
           <Link href="/login">Log in</Link>
-          <Link href="/register">Register</Link>
+          <Link href="/login">Register</Link>
         </div>
       </footer>
     </div>

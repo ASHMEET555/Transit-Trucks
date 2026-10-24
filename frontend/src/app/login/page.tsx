@@ -13,8 +13,8 @@ import { ArrowLeft, Moon, Sun, Monitor, Truck } from "lucide-react"
 export default function LoginPage() {
   const { login } = useProfile()
   const { theme, setTheme } = useTheme()
-  const [email, setEmail] = useState("manager@transitops.com")
-  const [password, setPassword] = useState("password123")
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -94,6 +94,7 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@transitops.com"
                 required
               />
             </div>
@@ -105,6 +106,7 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
                 required
               />
             </div>
@@ -119,13 +121,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-6 text-center text-sm text-gray-400">
-            Don&apos;t have an account?{" "}
-            <Link
-              href="/register"
-              className="font-medium text-cyan-400 hover:text-cyan-300"
-            >
-              Create account
-            </Link>
+            Need an account? Contact your system Administrator.
           </p>
         </div>
       </div>

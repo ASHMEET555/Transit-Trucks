@@ -126,7 +126,7 @@ App: http://localhost:3000
 
 ### Demo logins
 
-Password for all: **`password123`**
+Password for all: Provided during seed or created via cmd/admin
 
 | Email | Role |
 |-------|------|
@@ -135,7 +135,7 @@ Password for all: **`password123`**
 | `finance@transitops.com` | Financial Analyst |
 | `admin@transitops.com` | Admin |
 
-Or use **Create account** on `/register`.
+
 
 ### Daily run
 

@@ -8,14 +8,7 @@ import React, {
   useMemo,
   useState,
 } from "react"
-import {
-  clearAuthSession,
-  getStoredEmail,
-  getStoredRole,
-  getToken,
-  loginRequest,
-  setAuthSession,
-} from "@/lib/api"
+import { getMeRequest, loginRequest, logoutRequest } from "@/lib/api"
 
 export interface Profile {
   id: string
@@ -36,43 +29,46 @@ interface ProfileContextType {
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined)
 
-function profileFromSession(email: string, role: string): Profile {
-  const local = email.split("@")[0] || "User"
+function profileFromUser(user: { id?: string; email: string; role: string }): Profile {
+  const local = user.email.split("@")[0] || "User"
   return {
-    id: email,
+    id: user.id || user.email,
     name: local,
-    email,
-    initials: local.slice(0, 2).toUpperCase(),
-    role,
+    email: user.email,
+    initials: (local.length >= 2 ? local.slice(0, 2) : local).toUpperCase(),
+    role: user.role,
   }
 }
 
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(null)
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
 
   useEffect(() => {
-    const t = getToken()
-    const email = getStoredEmail()
-    const role = getStoredRole()
-    if (t && email && role) {
-      setToken(t)
-      setCurrentProfile(profileFromSession(email, role))
-    }
-    setIsLoaded(true)
+    getMeRequest()
+      .then((user) => {
+        setCurrentProfile(profileFromUser(user))
+      })
+      .catch(() => {
+        setCurrentProfile(null)
+      })
+      .finally(() => {
+        setIsLoaded(true)
+      })
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
-    const data = await loginRequest(email.trim(), password)
-    setAuthSession(data.access_token, data.role, email.trim())
-    setToken(data.access_token)
-    setCurrentProfile(profileFromSession(email.trim(), data.role))
+    await loginRequest(email.trim(), password)
+    const user = await getMeRequest()
+    setCurrentProfile(profileFromUser(user))
   }, [])
 
-  const logout = useCallback(() => {
-    clearAuthSession()
-    setToken(null)
+  const logout = useCallback(async () => {
+    try {
+      await logoutRequest()
+    } catch {
+      // ignore
+    }
     setCurrentProfile(null)
     if (typeof window !== "undefined") {
       window.location.href = "/login"
@@ -82,13 +78,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo(
     () => ({
       currentProfile,
-      token,
-      isAuthenticated: Boolean(token && currentProfile),
+      token: null,
+      isAuthenticated: Boolean(currentProfile),
       isLoaded,
       login,
       logout,
     }),
-    [currentProfile, token, isLoaded, login, logout],
+    [currentProfile, isLoaded, login, logout],
   )
 
   return (

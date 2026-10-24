@@ -60,7 +60,7 @@ You will be redirected to `/login` until authenticated.
 
 ### Demo accounts
 
-Password: **`password123`**
+Password: Provided during seed or created via cmd/admin
 
 | Email | Role |
 |-------|------|

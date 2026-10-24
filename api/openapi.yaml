@@ -1,0 +1,1004 @@
+openapi: 3.0.3
+info:
+  title: TransitOps Fleet Operations Platform API
+  version: 1.0.0
+  description: TransitOps backend operations API covering fleet registry, dispatch, maintenance, finance, user management, and health.
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+paths:
+  /healthz:
+    get:
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /readyz:
+    get:
+      summary: Readiness probe
+      responses:
+        '200':
+          description: Service and database are ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        '503':
+          description: Database unreachable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: unavailable
+
+  /api/v1/auth/login:
+    post:
+      summary: Authenticate user and create session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                email:
+                  type: string
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Successful authentication
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  email:
+                    type: string
+                  role:
+                    type: string
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/auth/logout:
+    post:
+      summary: Invalidate current user session
+      security:
+        - CookieAuth: []
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/auth/me:
+    get:
+      summary: Get current authenticated user profile
+      security:
+        - CookieAuth: []
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/auth/change-password:
+    post:
+      summary: Change password and invalidate other sessions
+      security:
+        - CookieAuth: []
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password:
+                  type: string
+                new_password:
+                  type: string
+      responses:
+        '200':
+          description: Password updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/users:
+    get:
+      summary: List all users (Admin only)
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+    post:
+      summary: Create new user (Admin only)
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, role]
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+                role:
+                  type: string
+                  enum: [Admin, Fleet Manager, Driver, Safety Officer, Financial Analyst]
+                driver_license:
+                  type: string
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/users/{id}:
+    patch:
+      summary: Update user attributes (Admin only)
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                is_active:
+                  type: boolean
+                driver_license:
+                  type: string
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/users/{id}/reset-password:
+    post:
+      summary: Reset user password (Admin only)
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                new_password:
+                  type: string
+      responses:
+        '200':
+          description: Password reset successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/fleet/vehicles:
+    get:
+      summary: List fleet vehicles
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: List of vehicles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Vehicle'
+    post:
+      summary: Register vehicle
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Vehicle'
+      responses:
+        '201':
+          description: Vehicle created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vehicle'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/fleet/vehicles/{reg}:
+    get:
+      summary: Get vehicle by registration number
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: reg
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Vehicle'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+    put:
+      summary: Update vehicle
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: reg
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Vehicle'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      summary: Delete vehicle
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: reg
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/fleet/drivers:
+    get:
+      summary: List drivers
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Driver'
+    post:
+      summary: Register driver
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Driver'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/fleet/drivers/{license}:
+    get:
+      summary: Get driver by license number
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: license
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+    put:
+      summary: Update driver
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: license
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Driver'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+    delete:
+      summary: Delete driver
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: license
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/destinations/:
+    get:
+      summary: List destinations
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Destination'
+    post:
+      summary: Create destination
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Destination'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Destination'
+
+  /api/v1/destinations/{name}:
+    delete:
+      summary: Delete destination
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/trips/:
+    get:
+      summary: List trips
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Trip'
+    post:
+      summary: Dispatch trip
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Trip'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trip'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/trips/suggest:
+    post:
+      summary: Suggest vehicle and driver
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_name, destination_name, cargo_weight]
+              properties:
+                source_name:
+                  type: string
+                destination_name:
+                  type: string
+                cargo_weight:
+                  type: number
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripSuggestion'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/trips/{id}/complete:
+    put:
+      summary: Complete trip
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: final_odometer
+          in: query
+          required: true
+          schema:
+            type: number
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/trips/{id}/cancel:
+    put:
+      summary: Cancel trip
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/maintenance/:
+    get:
+      summary: List maintenance logs
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MaintenanceLog'
+    post:
+      summary: Open maintenance log
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MaintenanceLog'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceLog'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/maintenance/{id}/close:
+    put:
+      summary: Close maintenance log
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [end_date]
+              properties:
+                end_date:
+                  type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/finance/expenses:
+    post:
+      summary: Log expense
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Expense'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/finance/expenses/{id}:
+    get:
+      summary: Get expenses for trip
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Expense'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/dashboard/kpis:
+    get:
+      summary: Get fleet operational KPIs
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardKPIs'
+
+  /ws/fleet:
+    get:
+      summary: Realtime WebSocket event stream
+      responses:
+        '101':
+          description: Switching Protocols to WebSocket
+
+components:
+  securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: transitops_session
+    BearerAuth:
+      type: http
+      scheme: bearer
+
+  responses:
+    ErrorResponse:
+      description: Uniform API error shape
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+  schemas:
+    ErrorDetail:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+
+    User:
+      type: object
+      required: [id, email, role, is_active]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        is_active:
+          type: boolean
+        driver_license:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    Vehicle:
+      type: object
+      required: [registration_number, model, type, max_load_capacity, odometer, acquisition_cost, status]
+      properties:
+        registration_number:
+          type: string
+        model:
+          type: string
+        type:
+          type: string
+        max_load_capacity:
+          type: number
+        odometer:
+          type: number
+        acquisition_cost:
+          type: number
+        status:
+          type: string
+
+    Driver:
+      type: object
+      required: [license_number, name, license_category, license_expiry_date, contact_number, safety_score, status]
+      properties:
+        license_number:
+          type: string
+        name:
+          type: string
+        license_category:
+          type: string
+        license_expiry_date:
+          type: string
+        contact_number:
+          type: string
+        safety_score:
+          type: number
+        status:
+          type: string
+
+    Destination:
+      type: object
+      required: [name, region]
+      properties:
+        name:
+          type: string
+        region:
+          type: string
+
+    Trip:
+      type: object
+      properties:
+        id:
+          type: integer
+        source_name:
+          type: string
+        destination_name:
+          type: string
+        vehicle_reg:
+          type: string
+        driver_license:
+          type: string
+        cargo_weight:
+          type: number
+        planned_distance:
+          type: number
+        revenue:
+          type: number
+        status:
+          type: string
+
+    TripSuggestion:
+      type: object
+      properties:
+        source_name:
+          type: string
+        destination_name:
+          type: string
+        cargo_weight:
+          type: number
+        suggested_vehicle_reg:
+          type: string
+        suggested_driver_license:
+          type: string
+        suggested_driver_name:
+          type: string
+        capacity_utilization:
+          type: number
+        heuristic_score:
+          type: number
+
+    MaintenanceLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        vehicle_reg:
+          type: string
+        description:
+          type: string
+        cost:
+          type: number
+        start_date:
+          type: string
+        end_date:
+          type: string
+          nullable: true
+        status:
+          type: string
+
+    Expense:
+      type: object
+      properties:
+        id:
+          type: integer
+        trip_id:
+          type: integer
+        type:
+          type: string
+        liters:
+          type: number
+          nullable: true
+        cost:
+          type: number
+        date:
+          type: string
+
+    DashboardKPIs:
+      type: object
+      properties:
+        active_vehicles:
+          type: integer
+        available_vehicles:
+          type: integer
+        in_shop_vehicles:
+          type: integer
+        retired_vehicles:
+          type: integer
+        active_trips:
+          type: integer
+        pending_trips:
+          type: integer
+        completed_trips:
+          type: integer
+        drivers_on_duty:
+          type: integer
+        available_drivers:
+          type: integer
+        fleet_utilization:
+          type: number
+        overall_fuel_efficiency:
+          type: number
+          nullable: true
+        total_operational_cost:
+          type: number
+        total_revenue:
+          type: number
+        vehicles:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
