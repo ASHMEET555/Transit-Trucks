@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -110,5 +111,101 @@ func TestManualSmokeScenario(t *testing.T) {
 
 	if wReg.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for POST /api/v1/auth/register, got %d", wReg.Code)
+	}
+}
+
+func TestManualSmokeScenario_Phase2Registry(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	app := setupTestApp(t, db, true)
+	ctx := context.Background()
+
+	adminEmail := "admin.smoke.phase2@transitops.com"
+	adminPw := "AdminSmokePassword123!"
+
+	hash, err := auth.HashPassword(adminPw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(ctx, `INSERT INTO users (id, email, password_hash, role, is_active, created_at, updated_at)
+		VALUES ($1, $2, $3, 'Admin', true, now(), now())
+		ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, is_active = true`,
+		uuid.NewString(), adminEmail, hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = db.Exec(ctx, `DELETE FROM users WHERE email = $1`, adminEmail)
+		_, _ = db.Exec(ctx, `DELETE FROM sessions WHERE user_email = $1`, adminEmail)
+	}()
+
+	loginBody, _ := json.Marshal(map[string]string{
+		"email":    adminEmail,
+		"password": adminPw,
+	})
+	rLogin := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(loginBody))
+	rLogin.Header.Set("Content-Type", "application/json")
+	wLogin := httptest.NewRecorder()
+	app.ServeHTTP(wLogin, rLogin)
+	if wLogin.Code != http.StatusOK {
+		t.Fatalf("login failed: %d", wLogin.Code)
+	}
+
+	var sessionCookie *http.Cookie
+	for _, c := range wLogin.Result().Cookies() {
+		if c.Name == auth.SessionCookieName {
+			sessionCookie = c
+			break
+		}
+	}
+
+	// Create 10 vehicles through API without error
+	for i := 1; i <= 10; i++ {
+		vReg := fmt.Sprintf("SMOKE-V-%03d", i)
+		defer func(reg string) {
+			_, _ = db.Exec(ctx, `DELETE FROM vehicles WHERE registration_number = $1`, reg)
+		}(vReg)
+
+		body, _ := json.Marshal(map[string]any{
+			"registration_number": vReg,
+			"model":               "Ford Transit Van",
+			"type":                "Van",
+			"max_load_capacity":   3500.0,
+			"odometer":            12500.5,
+			"acquisition_cost":    45000.0,
+		})
+		req := httptest.NewRequest("POST", "/api/v1/vehicles", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(sessionCookie)
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, req)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("failed to create vehicle %d: status=%d, body=%s", i, w.Code, w.Body.String())
+		}
+	}
+
+	// Create 10 drivers through API without error
+	for i := 1; i <= 10; i++ {
+		dLic := fmt.Sprintf("SMOKE-D-%03d", i)
+		defer func(lic string) {
+			_, _ = db.Exec(ctx, `DELETE FROM drivers WHERE license_number = $1`, lic)
+		}(dLic)
+
+		body, _ := json.Marshal(map[string]any{
+			"license_number":      dLic,
+			"name":                fmt.Sprintf("Smoke Driver %d", i),
+			"license_category":    "Heavy",
+			"license_expiry_date": "2028-12-31",
+			"contact_number":      fmt.Sprintf("+1-555-%04d", 4000+i),
+			"safety_score":        95.5,
+		})
+		req := httptest.NewRequest("POST", "/api/v1/drivers", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(sessionCookie)
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, req)
+		if w.Code != http.StatusCreated {
+			t.Fatalf("failed to create driver %d: status=%d, body=%s", i, w.Code, w.Body.String())
+		}
 	}
 }
