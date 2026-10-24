@@ -151,22 +151,35 @@ func (a *App) routes() {
 	a.registerRoute("POST", "/api/v1/users/{id}/reset-password", []string{rbac.RoleAdmin}, false, a.usersH.ResetPassword)
 
 	// Fleet: Vehicles
-	a.registerRoute("GET", "/api/v1/fleet/vehicles", rbac.AnyAuthenticated, false, a.vehicles)
-	a.registerRoute("POST", "/api/v1/fleet/vehicles", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.createVehicle)
-	a.registerRoute("GET", "/api/v1/fleet/vehicles/{reg}", rbac.AnyAuthenticated, false, a.vehicle)
-	a.registerRoute("PUT", "/api/v1/fleet/vehicles/{reg}", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.updateVehicle)
-	a.registerRoute("DELETE", "/api/v1/fleet/vehicles/{reg}", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.deleteVehicle)
+	for _, prefix := range []string{"/api/v1/vehicles", "/api/v1/fleet/vehicles"} {
+		a.registerRoute("GET", prefix, rbac.AnyAuthenticated, false, a.vehicles)
+		a.registerRoute("POST", prefix, []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.createVehicle)
+		a.registerRoute("GET", prefix+"/{reg}", rbac.AnyAuthenticated, false, a.vehicle)
+		a.registerRoute("PATCH", prefix+"/{reg}", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.updateVehicle)
+		a.registerRoute("PUT", prefix+"/{reg}", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.updateVehicle)
+		a.registerRoute("POST", prefix+"/{reg}/retire", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.retireVehicle)
+		a.registerRoute("DELETE", prefix+"/{reg}", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.deleteVehicle)
+	}
 
 	// Fleet: Drivers
-	a.registerRoute("GET", "/api/v1/fleet/drivers", rbac.AnyAuthenticated, false, a.drivers)
-	a.registerRoute("POST", "/api/v1/fleet/drivers", []string{rbac.RoleFleetManager, rbac.RoleSafetyOfficer, rbac.RoleAdmin}, false, a.createDriver)
-	a.registerRoute("GET", "/api/v1/fleet/drivers/{license}", rbac.AnyAuthenticated, false, a.driver)
-	a.registerRoute("PUT", "/api/v1/fleet/drivers/{license}", []string{rbac.RoleFleetManager, rbac.RoleSafetyOfficer, rbac.RoleAdmin}, false, a.updateDriver)
-	a.registerRoute("DELETE", "/api/v1/fleet/drivers/{license}", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.deleteDriver)
+	for _, prefix := range []string{"/api/v1/drivers", "/api/v1/fleet/drivers"} {
+		a.registerRoute("GET", prefix, []string{rbac.RoleAdmin, rbac.RoleFleetManager, rbac.RoleSafetyOfficer, rbac.RoleDriver}, false, a.drivers)
+		a.registerRoute("POST", prefix, []string{rbac.RoleFleetManager, rbac.RoleSafetyOfficer, rbac.RoleAdmin}, false, a.createDriver)
+		a.registerRoute("GET", prefix+"/{license}", []string{rbac.RoleAdmin, rbac.RoleFleetManager, rbac.RoleSafetyOfficer, rbac.RoleDriver}, false, a.driver)
+		a.registerRoute("PATCH", prefix+"/{license}", []string{rbac.RoleFleetManager, rbac.RoleSafetyOfficer, rbac.RoleAdmin}, false, a.updateDriver)
+		a.registerRoute("PUT", prefix+"/{license}", []string{rbac.RoleFleetManager, rbac.RoleSafetyOfficer, rbac.RoleAdmin}, false, a.updateDriver)
+		a.registerRoute("POST", prefix+"/{license}/suspend", []string{rbac.RoleSafetyOfficer, rbac.RoleAdmin}, false, a.suspendDriver)
+		a.registerRoute("POST", prefix+"/{license}/reinstate", []string{rbac.RoleSafetyOfficer, rbac.RoleAdmin}, false, a.reinstateDriver)
+		a.registerRoute("POST", prefix+"/{license}/set-off-duty", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.setDriverOffDuty)
+		a.registerRoute("POST", prefix+"/{license}/set-available", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.setDriverAvailable)
+		a.registerRoute("DELETE", prefix+"/{license}", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.deleteDriver)
+	}
 
 	// Destinations
-	a.registerRoute("GET", "/api/v1/destinations/", rbac.AnyAuthenticated, false, a.destinations)
-	a.registerRoute("POST", "/api/v1/destinations/", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.createDestination)
+	for _, prefix := range []string{"/api/v1/destinations", "/api/v1/destinations/"} {
+		a.registerRoute("GET", prefix, rbac.AnyAuthenticated, false, a.destinations)
+		a.registerRoute("POST", prefix, []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.createDestination)
+	}
 	a.registerRoute("DELETE", "/api/v1/destinations/{name}", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.deleteDestination)
 
 	// Trips
@@ -459,16 +472,123 @@ func (a *App) createVehicle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) updateVehicle(w http.ResponseWriter, r *http.Request) {
+	reg := r.PathValue("reg")
+	if reg == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, "MALFORMED_INPUT", "Registration number is required", nil)
+		return
+	}
+
+	var req updateVehicleRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return
+	}
+
+	if req.Type != nil && !domain.VehicleType(*req.Type).IsValid() {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "invalid vehicle type", map[string]any{"field": "type"})
+		return
+	}
+	if req.MaxLoadCapacity != nil && *req.MaxLoadCapacity <= 0 {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "max_load_capacity must be greater than zero", map[string]any{"field": "max_load_capacity"})
+		return
+	}
+	if req.Odometer != nil && *req.Odometer < 0 {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "odometer must be non-negative", map[string]any{"field": "odometer"})
+		return
+	}
+	if req.AcquisitionCost != nil && *req.AcquisitionCost < 0 {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "acquisition_cost must be non-negative", map[string]any{"field": "acquisition_cost"})
+		return
+	}
+
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to start transaction", nil)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
 	var v vehicle
-	if err := httpx.DecodeJSON(w, r, &v); err != nil {
+	err = tx.QueryRow(r.Context(),
+		`SELECT registration_number, model, type, max_load_capacity, odometer, acquisition_cost, status, is_active
+		 FROM vehicles WHERE registration_number = $1 FOR UPDATE`, reg).
+		Scan(&v.RegistrationNumber, &v.Model, &v.Type, &v.MaxLoadCapacity, &v.Odometer, &v.AcquisitionCost, &v.Status, &v.IsActive)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Vehicle not found", nil)
 		return
 	}
-	ct, e := a.db.Exec(r.Context(), "UPDATE vehicles SET model=$1,type=$2,max_load_capacity=$3,odometer=$4,acquisition_cost=$5,status=$6 WHERE registration_number=$7", v.Model, v.Type, v.MaxLoadCapacity, v.Odometer, v.AcquisitionCost, v.Status, r.PathValue("reg"))
-	if e != nil || ct.RowsAffected() == 0 {
-		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Vehicle not found or modification failed", nil)
+
+	if req.Model != nil {
+		v.Model = *req.Model
+	}
+	if req.Type != nil {
+		v.Type = *req.Type
+	}
+	if req.MaxLoadCapacity != nil {
+		v.MaxLoadCapacity = *req.MaxLoadCapacity
+	}
+	if req.Odometer != nil {
+		v.Odometer = *req.Odometer
+	}
+	if req.AcquisitionCost != nil {
+		v.AcquisitionCost = *req.AcquisitionCost
+	}
+
+	_, err = tx.Exec(r.Context(),
+		`UPDATE vehicles
+		 SET model = $1, type = $2, max_load_capacity = $3, odometer = $4, acquisition_cost = $5, updated_at = now()
+		 WHERE registration_number = $6`,
+		v.Model, v.Type, v.MaxLoadCapacity, v.Odometer, v.AcquisitionCost, reg)
+	if err != nil {
+		status, code, msg := httpx.MapDBError(err, a.log)
+		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"message": "Vehicle updated successfully"})
+
+	if err := tx.Commit(r.Context()); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, v)
+}
+
+func (a *App) retireVehicle(w http.ResponseWriter, r *http.Request) {
+	reg := r.PathValue("reg")
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to start transaction", nil)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	var status string
+	err = tx.QueryRow(r.Context(), `SELECT status FROM vehicles WHERE registration_number = $1 FOR UPDATE`, reg).Scan(&status)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Vehicle not found", nil)
+		return
+	}
+
+	if status == string(domain.VehicleStatusOnTrip) {
+		httpx.WriteError(w, r, http.StatusConflict, "CONFLICT", "Cannot retire vehicle while on trip", nil)
+		return
+	}
+
+	_, err = tx.Exec(r.Context(), `UPDATE vehicles SET status = 'Retired', updated_at = now() WHERE registration_number = $1`, reg)
+	if err != nil {
+		status, code, msg := httpx.MapDBError(err, a.log)
+		httpx.WriteError(w, r, status, code, msg, nil)
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{
+		"message": "Vehicle retired successfully",
+		"status":  "Retired",
+	})
 }
 
 func (a *App) deleteVehicle(w http.ResponseWriter, r *http.Request) {
@@ -551,16 +671,224 @@ func (a *App) createDriver(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) updateDriver(w http.ResponseWriter, r *http.Request) {
+	license := r.PathValue("license")
+	if license == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, "MALFORMED_INPUT", "License number is required", nil)
+		return
+	}
+
+	var req updateDriverRequest
+	if err := httpx.DecodeJSON(w, r, &req); err != nil {
+		return
+	}
+
+	if req.LicenseExpiryDate != nil {
+		if _, err := domain.ParseDate(*req.LicenseExpiryDate); err != nil {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "invalid license_expiry_date format, must be YYYY-MM-DD", map[string]any{"field": "license_expiry_date"})
+			return
+		}
+	}
+	if req.SafetyScore != nil && (*req.SafetyScore < 0 || *req.SafetyScore > 100) {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "safety_score must be between 0 and 100", map[string]any{"field": "safety_score"})
+		return
+	}
+
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to start transaction", nil)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
 	var v driver
-	if err := httpx.DecodeJSON(w, r, &v); err != nil {
+	err = tx.QueryRow(r.Context(),
+		`SELECT license_number, name, license_category, license_expiry_date::text, contact_number, safety_score, status, is_active
+		 FROM drivers WHERE license_number = $1 FOR UPDATE`, license).
+		Scan(&v.LicenseNumber, &v.Name, &v.LicenseCategory, &v.LicenseExpiryDate, &v.ContactNumber, &v.SafetyScore, &v.Status, &v.IsActive)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Driver profile not found", nil)
 		return
 	}
-	ct, e := a.db.Exec(r.Context(), "UPDATE drivers SET name=$1,license_category=$2,license_expiry_date=$3,contact_number=$4,safety_score=$5,status=$6 WHERE license_number=$7", v.Name, v.LicenseCategory, v.LicenseExpiryDate, v.ContactNumber, v.SafetyScore, v.Status, r.PathValue("license"))
-	if e != nil || ct.RowsAffected() == 0 {
-		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Driver profile not found or modification failed", nil)
+
+	if req.Name != nil {
+		v.Name = *req.Name
+	}
+	if req.LicenseCategory != nil {
+		v.LicenseCategory = *req.LicenseCategory
+	}
+	if req.LicenseExpiryDate != nil {
+		v.LicenseExpiryDate = *req.LicenseExpiryDate
+	}
+	if req.ContactNumber != nil {
+		v.ContactNumber = *req.ContactNumber
+	}
+	if req.SafetyScore != nil {
+		v.SafetyScore = *req.SafetyScore
+	}
+
+	_, err = tx.Exec(r.Context(),
+		`UPDATE drivers
+		 SET name = $1, license_category = $2, license_expiry_date = $3::date, contact_number = $4, safety_score = $5, updated_at = now()
+		 WHERE license_number = $6`,
+		v.Name, v.LicenseCategory, v.LicenseExpiryDate, v.ContactNumber, v.SafetyScore, license)
+	if err != nil {
+		status, code, msg := httpx.MapDBError(err, a.log)
+		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"message": "Driver updated successfully"})
+
+	if err := tx.Commit(r.Context()); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, v)
+}
+
+func (a *App) suspendDriver(w http.ResponseWriter, r *http.Request) {
+	license := r.PathValue("license")
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to start transaction", nil)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	var status string
+	err = tx.QueryRow(r.Context(), `SELECT status FROM drivers WHERE license_number = $1 FOR UPDATE`, license).Scan(&status)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Driver not found", nil)
+		return
+	}
+
+	_, err = tx.Exec(r.Context(), `UPDATE drivers SET status = 'Suspended', updated_at = now() WHERE license_number = $1`, license)
+	if err != nil {
+		status, code, msg := httpx.MapDBError(err, a.log)
+		httpx.WriteError(w, r, status, code, msg, nil)
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{
+		"message": "Driver suspended successfully",
+		"status":  "Suspended",
+	})
+}
+
+func (a *App) reinstateDriver(w http.ResponseWriter, r *http.Request) {
+	license := r.PathValue("license")
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to start transaction", nil)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	var status string
+	err = tx.QueryRow(r.Context(), `SELECT status FROM drivers WHERE license_number = $1 FOR UPDATE`, license).Scan(&status)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Driver not found", nil)
+		return
+	}
+
+	_, err = tx.Exec(r.Context(), `UPDATE drivers SET status = 'Available', updated_at = now() WHERE license_number = $1`, license)
+	if err != nil {
+		status, code, msg := httpx.MapDBError(err, a.log)
+		httpx.WriteError(w, r, status, code, msg, nil)
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{
+		"message": "Driver reinstated successfully",
+		"status":  "Available",
+	})
+}
+
+func (a *App) setDriverOffDuty(w http.ResponseWriter, r *http.Request) {
+	license := r.PathValue("license")
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to start transaction", nil)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	var status string
+	err = tx.QueryRow(r.Context(), `SELECT status FROM drivers WHERE license_number = $1 FOR UPDATE`, license).Scan(&status)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Driver not found", nil)
+		return
+	}
+
+	if status == string(domain.DriverStatusSuspended) || status == string(domain.DriverStatusOnTrip) {
+		httpx.WriteError(w, r, http.StatusConflict, "CONFLICT", fmt.Sprintf("Cannot set driver off-duty while %s", status), nil)
+		return
+	}
+
+	_, err = tx.Exec(r.Context(), `UPDATE drivers SET status = 'Off Duty', updated_at = now() WHERE license_number = $1`, license)
+	if err != nil {
+		status, code, msg := httpx.MapDBError(err, a.log)
+		httpx.WriteError(w, r, status, code, msg, nil)
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{
+		"message": "Driver status set to Off Duty",
+		"status":  "Off Duty",
+	})
+}
+
+func (a *App) setDriverAvailable(w http.ResponseWriter, r *http.Request) {
+	license := r.PathValue("license")
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to start transaction", nil)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	var status string
+	err = tx.QueryRow(r.Context(), `SELECT status FROM drivers WHERE license_number = $1 FOR UPDATE`, license).Scan(&status)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Driver not found", nil)
+		return
+	}
+
+	if status == string(domain.DriverStatusSuspended) || status == string(domain.DriverStatusOnTrip) {
+		httpx.WriteError(w, r, http.StatusConflict, "CONFLICT", fmt.Sprintf("Cannot set driver available while %s", status), nil)
+		return
+	}
+
+	_, err = tx.Exec(r.Context(), `UPDATE drivers SET status = 'Available', updated_at = now() WHERE license_number = $1`, license)
+	if err != nil {
+		status, code, msg := httpx.MapDBError(err, a.log)
+		httpx.WriteError(w, r, status, code, msg, nil)
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{
+		"message": "Driver status set to Available",
+		"status":  "Available",
+	})
 }
 
 func (a *App) deleteDriver(w http.ResponseWriter, r *http.Request) {
