@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Reaper-ai/TransitOps_Odoo2026/backend-go/internal/auth"
+	"github.com/google/uuid"
 )
 
 func TestManualSmokeScenario(t *testing.T) {
@@ -20,7 +21,24 @@ func TestManualSmokeScenario(t *testing.T) {
 	adminEmail := "admin.smoke@transitops.com"
 	adminPw := "AdminSmokePassword123!"
 
-	// 1. Log in with admin created via cmd/admin
+	// Ensure the smoke admin exists
+	hash, err := auth.HashPassword(adminPw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(ctx, `INSERT INTO users (id, email, password_hash, role, is_active, created_at, updated_at)
+		VALUES ($1, $2, $3, 'Admin', true, now(), now())
+		ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, is_active = true`,
+		uuid.NewString(), adminEmail, hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = db.Exec(ctx, `DELETE FROM users WHERE email = $1`, adminEmail)
+		_, _ = db.Exec(ctx, `DELETE FROM sessions WHERE user_email = $1`, adminEmail)
+	}()
+
+	// 1. Log in with admin
 	loginBody, _ := json.Marshal(map[string]string{
 		"email":    adminEmail,
 		"password": adminPw,
