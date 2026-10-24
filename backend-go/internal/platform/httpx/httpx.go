@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -30,7 +31,7 @@ func RequestID(r *http.Request) string {
 	if v, ok := r.Context().Value(RequestIDKey).(string); ok && v != "" {
 		return v
 	}
-	if v := r.Header.Get("X-Request-ID"); v != "" {
+	if v := r.Header.Get("X-Request-ID"); v != "" && isSafeRequestID(v) {
 		return v
 	}
 	return ""
@@ -40,9 +41,21 @@ func WithRequestID(ctx context.Context, requestID string) context.Context {
 	return context.WithValue(ctx, RequestIDKey, requestID)
 }
 
+func isSafeRequestID(s string) bool {
+	if len(s) == 0 || len(s) > 64 {
+		return false
+	}
+	for _, ch := range s {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+			return false
+		}
+	}
+	return true
+}
+
 func EnsureRequestID(r *http.Request) (*http.Request, string) {
 	reqID := r.Header.Get("X-Request-ID")
-	if reqID == "" {
+	if !isSafeRequestID(reqID) {
 		reqID = uuid.NewString()
 	}
 	return r.WithContext(WithRequestID(r.Context(), reqID)), reqID
@@ -103,10 +116,14 @@ func MapDBError(err error, logger *slog.Logger) (int, string, string) {
 			return http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Value violates schema check constraint."
 		case "22P02": // invalid_text_representation
 			return http.StatusBadRequest, "MALFORMED_INPUT", "Malformed data format for input type."
+		default:
+			if strings.HasPrefix(pgErr.Code, "23") {
+				return http.StatusConflict, "CONFLICT", "Database constraint violation."
+			}
 		}
 	}
 	if logger != nil {
 		logger.Error("unhandled internal database error", "error", err)
 	}
-	return http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected internal server error occurred."
+	return http.StatusInternalServerError, "INTERNAL_ERROR", "internal error"
 }
