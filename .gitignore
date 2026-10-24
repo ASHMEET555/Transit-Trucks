@@ -4,3 +4,9 @@ backend/uv.lock
 */__pycache__
 *.exe
 *.test
+
+.env
+*.db
+
+optimise/
+*.pdf
