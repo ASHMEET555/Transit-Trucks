@@ -88,7 +88,7 @@ func (a *App) buildHandler() {
 	// 5. CORS
 	h = middleware.CORS(a.cfg.AllowedOrigins)(h)
 	// 4. Secure Headers
-	h = middleware.SecureHeaders()(h)
+	h = middleware.SecureHeaders(a.cfg.IsLocal())(h)
 	// 3. Access Log
 	h = middleware.AccessLog(a.log)(h)
 	// 2. RequestID
@@ -100,6 +100,15 @@ func (a *App) buildHandler() {
 }
 
 func (a *App) registerRoute(method, path string, roles []string, isPublic bool, h http.HandlerFunc) {
+	if !isPublic && len(roles) == 0 {
+		panic(fmt.Sprintf("route %s %s must specify allowed roles", method, path))
+	}
+	if isPublic {
+		allowed := (method == "GET" && (path == "/healthz" || path == "/readyz")) || (method == "POST" && path == "/api/v1/auth/login")
+		if !allowed {
+			panic(fmt.Sprintf("route %s %s cannot be public", method, path))
+		}
+	}
 	a.registry.Register(method, path, roles, isPublic, "")
 	pattern := fmt.Sprintf("%s %s", method, path)
 
@@ -179,7 +188,7 @@ func (a *App) routes() {
 	a.registerRoute("GET", "/api/v1/dashboard/kpis", rbac.AnyAuthenticated, false, a.kpis)
 
 	// WebSocket Hub
-	a.mux.HandleFunc("GET /ws/fleet", a.ws)
+	a.registerRoute("GET", "/ws/fleet", rbac.AnyAuthenticated, false, a.ws)
 }
 
 func (a *App) healthz(w http.ResponseWriter, r *http.Request) {
