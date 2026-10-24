@@ -24,6 +24,17 @@ services:
     depends_on:
       - postgres
 
+  backend-go:
+    build:
+      context: ./backend-go
+    environment:
+      POSTGRES_DSN: postgresql://transitops:transitops@postgres:5432/transitops
+      SECRET_KEY: local-dev-secret-key
+    ports:
+      - "8001:8000"
+    depends_on:
+      - postgres
+
   frontend:
     build:
       context: ./frontend
