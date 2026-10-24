@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/auth"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/domain"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/rbac"
@@ -409,16 +410,46 @@ func (a *App) createVehicle(w http.ResponseWriter, r *http.Request) {
 	if err := httpx.DecodeJSON(w, r, &v); err != nil {
 		return
 	}
-	var n int
-	a.db.QueryRow(r.Context(), "SELECT count(*) FROM vehicles WHERE registration_number=$1", v.RegistrationNumber).Scan(&n)
-	if n > 0 {
-		httpx.WriteError(w, r, http.StatusConflict, "CONFLICT", "Vehicle Registration Number must be unique.", nil)
+	if v.RegistrationNumber == "" {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "registration_number is required", map[string]any{"field": "registration_number"})
+		return
+	}
+	if v.Model == "" {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "model is required", map[string]any{"field": "model"})
+		return
+	}
+	if !domain.VehicleType(v.Type).IsValid() {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "invalid vehicle type", map[string]any{"field": "type"})
+		return
+	}
+	if v.MaxLoadCapacity <= 0 {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "max_load_capacity must be greater than zero", map[string]any{"field": "max_load_capacity"})
+		return
+	}
+	if v.Odometer < 0 {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "odometer must be non-negative", map[string]any{"field": "odometer"})
+		return
+	}
+	if v.AcquisitionCost < 0 {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "acquisition_cost must be non-negative", map[string]any{"field": "acquisition_cost"})
 		return
 	}
 	if v.Status == "" {
-		v.Status = "Available"
+		v.Status = string(domain.VehicleStatusAvailable)
+	} else if !domain.VehicleStatus(v.Status).IsValid() {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "invalid vehicle status", map[string]any{"field": "status"})
+		return
 	}
-	_, e := a.db.Exec(r.Context(), "INSERT INTO vehicles VALUES($1,$2,$3,$4,$5,$6,$7)", v.RegistrationNumber, v.Model, v.Type, v.MaxLoadCapacity, v.Odometer, v.AcquisitionCost, v.Status)
+	v.IsActive = true
+
+	var n int
+	a.db.QueryRow(r.Context(), "SELECT count(*) FROM vehicles WHERE registration_number=$1", v.RegistrationNumber).Scan(&n)
+	if n > 0 {
+		httpx.WriteError(w, r, http.StatusConflict, "VEHICLE_EXISTS", "Vehicle Registration Number must be unique.", nil)
+		return
+	}
+	_, e := a.db.Exec(r.Context(), "INSERT INTO vehicles (registration_number, model, type, max_load_capacity, odometer, acquisition_cost, status, is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+		v.RegistrationNumber, v.Model, v.Type, v.MaxLoadCapacity, v.Odometer, v.AcquisitionCost, v.Status, v.IsActive)
 	if e != nil {
 		status, code, msg := httpx.MapDBError(e, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
@@ -472,19 +503,45 @@ func (a *App) createDriver(w http.ResponseWriter, r *http.Request) {
 	if err := httpx.DecodeJSON(w, r, &v); err != nil {
 		return
 	}
-	var n int
-	a.db.QueryRow(r.Context(), "SELECT count(*) FROM drivers WHERE license_number=$1", v.LicenseNumber).Scan(&n)
-	if n > 0 {
-		httpx.WriteError(w, r, http.StatusConflict, "CONFLICT", "Driver License Number already registered.", nil)
+	if v.LicenseNumber == "" {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "license_number is required", map[string]any{"field": "license_number"})
 		return
 	}
-	if v.Status == "" {
-		v.Status = "Available"
+	if v.Name == "" {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "name is required", map[string]any{"field": "name"})
+		return
+	}
+	if v.LicenseCategory == "" {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "license_category is required", map[string]any{"field": "license_category"})
+		return
+	}
+	if _, err := domain.ParseDate(v.LicenseExpiryDate); err != nil {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "invalid license_expiry_date format, must be YYYY-MM-DD", map[string]any{"field": "license_expiry_date"})
+		return
 	}
 	if v.SafetyScore == 0 {
 		v.SafetyScore = 100
 	}
-	_, e := a.db.Exec(r.Context(), "INSERT INTO drivers VALUES($1,$2,$3,$4,$5,$6,$7)", v.LicenseNumber, v.Name, v.LicenseCategory, v.LicenseExpiryDate, v.ContactNumber, v.SafetyScore, v.Status)
+	if v.SafetyScore < 0 || v.SafetyScore > 100 {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "safety_score must be between 0 and 100", map[string]any{"field": "safety_score"})
+		return
+	}
+	if v.Status == "" {
+		v.Status = string(domain.DriverStatusAvailable)
+	} else if !domain.DriverStatus(v.Status).IsValid() {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "invalid driver status", map[string]any{"field": "status"})
+		return
+	}
+	v.IsActive = true
+
+	var n int
+	a.db.QueryRow(r.Context(), "SELECT count(*) FROM drivers WHERE license_number=$1", v.LicenseNumber).Scan(&n)
+	if n > 0 {
+		httpx.WriteError(w, r, http.StatusConflict, "DRIVER_EXISTS", "Driver License Number already registered.", nil)
+		return
+	}
+	_, e := a.db.Exec(r.Context(), "INSERT INTO drivers (license_number, name, license_category, license_expiry_date, contact_number, safety_score, status, is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+		v.LicenseNumber, v.Name, v.LicenseCategory, v.LicenseExpiryDate, v.ContactNumber, v.SafetyScore, v.Status, v.IsActive)
 	if e != nil {
 		status, code, msg := httpx.MapDBError(e, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
@@ -529,13 +586,27 @@ func (a *App) createDestination(w http.ResponseWriter, r *http.Request) {
 	if err := httpx.DecodeJSON(w, r, &x); err != nil {
 		return
 	}
-	_, e := a.db.Exec(r.Context(), "INSERT INTO destinations VALUES($1,$2)", x.Name, x.Region)
+	if x.Name == "" {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "name is required", map[string]any{"field": "name"})
+		return
+	}
+	if x.Region == "" {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "region is required", map[string]any{"field": "region"})
+		return
+	}
+	var n int
+	a.db.QueryRow(r.Context(), "SELECT count(*) FROM destinations WHERE name=$1", x.Name).Scan(&n)
+	if n > 0 {
+		httpx.WriteError(w, r, http.StatusConflict, "DESTINATION_EXISTS", "Destination name must be unique.", nil)
+		return
+	}
+	_, e := a.db.Exec(r.Context(), "INSERT INTO destinations (name, region) VALUES ($1, $2)", x.Name, x.Region)
 	if e != nil {
 		status, code, msg := httpx.MapDBError(e, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, x)
+	httpx.WriteJSON(w, http.StatusCreated, x)
 }
 
 func (a *App) deleteDestination(w http.ResponseWriter, r *http.Request) {

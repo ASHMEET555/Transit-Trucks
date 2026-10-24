@@ -90,11 +90,28 @@ func WriteJSON(w http.ResponseWriter, status int, data any) {
 }
 
 func DecodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
-	err := json.NewDecoder(r.Body).Decode(v)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	err := dec.Decode(v)
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
 			WriteError(w, r, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "Request payload exceeds maximum allowed size.", nil)
+			return err
+		}
+		var unmarshalTypeError *json.UnmarshalTypeError
+		if errors.As(err, &unmarshalTypeError) {
+			WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid field type.", map[string]any{
+				"field": unmarshalTypeError.Field,
+			})
+			return err
+		}
+		if strings.HasPrefix(err.Error(), "json: unknown field ") {
+			fieldName := strings.TrimPrefix(err.Error(), "json: unknown field ")
+			fieldName = strings.Trim(fieldName, `"`)
+			WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Unknown field: "+fieldName, map[string]any{
+				"field": fieldName,
+			})
 			return err
 		}
 		WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid request body format.", nil)
@@ -109,7 +126,25 @@ func MapDBError(err error, logger *slog.Logger) (int, string, string) {
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
 		case "23505": // unique_violation
-			return http.StatusConflict, "CONFLICT", "A resource with this identifier or unique attribute already exists."
+			switch pgErr.ConstraintName {
+			case "vehicles_pkey":
+				return http.StatusConflict, "VEHICLE_EXISTS", "A vehicle with this registration number already exists."
+			case "drivers_pkey":
+				return http.StatusConflict, "DRIVER_EXISTS", "A driver with this license number already exists."
+			case "destinations_pkey":
+				return http.StatusConflict, "DESTINATION_EXISTS", "A destination with this name already exists."
+			default:
+				if strings.Contains(pgErr.TableName, "vehicle") {
+					return http.StatusConflict, "VEHICLE_EXISTS", "A vehicle with this registration number already exists."
+				}
+				if strings.Contains(pgErr.TableName, "driver") {
+					return http.StatusConflict, "DRIVER_EXISTS", "A driver with this license number already exists."
+				}
+				if strings.Contains(pgErr.TableName, "destination") {
+					return http.StatusConflict, "DESTINATION_EXISTS", "A destination with this name already exists."
+				}
+				return http.StatusConflict, "CONFLICT", "A resource with this identifier or unique attribute already exists."
+			}
 		case "23503": // foreign_key_violation
 			return http.StatusConflict, "FOREIGN_KEY_VIOLATION", "Referenced entity does not exist or cannot be removed due to existing relations."
 		case "23514": // check_violation
