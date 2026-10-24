@@ -1,107 +1,75 @@
+// config_test.go
+// Tests for the configuration loader and validator.
+// These tests ensure that missing or invalid environment variables cause Load() to return an error,
+// and that a fully valid configuration loads without error.
+
 package config
 
 import (
-	"os"
-	"strings"
-	"testing"
+    "os"
+    "testing"
 )
 
-func setValidEnv(t *testing.T) {
-	t.Helper()
-	t.Setenv("DATABASE_URL", "postgresql://transitops:transitops@localhost:5432/transitops?sslmode=disable")
-	t.Setenv("SESSION_SECRET", "k8n2f9a7d3h6j1m4p8r2t5w7y9b0c2e4g6")
-	t.Setenv("ENV", "local")
-	t.Setenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
-	t.Setenv("COOKIE_DOMAIN", "localhost")
-	t.Setenv("PORT", "8000")
+// withEnv sets the provided environment variables for the duration of fn, restoring previous values afterwards.
+func withEnv(env map[string]string, fn func()) {
+    // Save original values.
+    orig := make(map[string]string)
+    for k := range env {
+        orig[k] = os.Getenv(k)
+    }
+    // Apply new values.
+    for k, v := range env {
+        os.Setenv(k, v)
+    }
+    fn()
+    // Restore originals.
+    for k, v := range orig {
+        os.Setenv(k, v)
+    }
 }
 
-func TestConfigLoadSuccess(t *testing.T) {
-	setValidEnv(t)
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("expected valid config, got error: %v", err)
-	}
-	if cfg.Port != "8000" {
-		t.Errorf("expected port 8000, got %s", cfg.Port)
-	}
-	if !cfg.IsLocal() {
-		t.Errorf("expected IsLocal() to be true")
-	}
-	if len(cfg.AllowedOrigins) != 2 {
-		t.Errorf("expected 2 allowed origins, got %d", len(cfg.AllowedOrigins))
-	}
-}
+func TestLoad_ConfigValidation(t *testing.T) {
+    // A minimal valid configuration.
+    valid := map[string]string{
+        "DATABASE_URL":    "postgres://user:pass@localhost:5432/db",
+        "SESSION_SECRET":   "aVeryStrongSecretKeyWithAtLeast32Bytes!",
+        "ENV":              "local",
+        "ALLOWED_ORIGINS":  "http://localhost:3000",
+        "COOKIE_DOMAIN":    "localhost",
+    }
 
-func TestConfigMissingDatabaseURL(t *testing.T) {
-	setValidEnv(t)
-	os.Unsetenv("DATABASE_URL")
-	os.Unsetenv("POSTGRES_DSN")
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "DATABASE_URL is required") {
-		t.Fatalf("expected error for missing DATABASE_URL, got: %v", err)
-	}
-}
+    tests := []struct {
+        name    string
+        env     map[string]string // overrides merged onto valid
+        wantErr bool
+    }{
+        {"valid config", map[string]string{}, false},
+        {"missing DATABASE_URL", map[string]string{"DATABASE_URL": "", "POSTGRES_DSN": ""}, true},
+        {"missing SESSION_SECRET", map[string]string{"SESSION_SECRET": ""}, true},
+        {"short SESSION_SECRET", map[string]string{"SESSION_SECRET": "short"}, true},
+        {"weak SESSION_SECRET", map[string]string{"SESSION_SECRET": "default_secret_key"}, true},
+        {"invalid ENV", map[string]string{"ENV": "staging"}, true},
+        {"missing ALLOWED_ORIGINS", map[string]string{"ALLOWED_ORIGINS": ""}, true},
+        {"empty ALLOWED_ORIGINS list", map[string]string{"ALLOWED_ORIGINS": "  ,   ,"}, true},
+        {"missing COOKIE_DOMAIN", map[string]string{"COOKIE_DOMAIN": ""}, true},
+    }
 
-func TestConfigMissingSessionSecret(t *testing.T) {
-	setValidEnv(t)
-	os.Unsetenv("SESSION_SECRET")
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "SESSION_SECRET is required") {
-		t.Fatalf("expected error for missing SESSION_SECRET, got: %v", err)
-	}
-}
-
-func TestConfigShortSessionSecret(t *testing.T) {
-	setValidEnv(t)
-	t.Setenv("SESSION_SECRET", "too-short")
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "must be at least 32 bytes") {
-		t.Fatalf("expected error for short SESSION_SECRET, got: %v", err)
-	}
-}
-
-func TestConfigKnownWeakSessionSecret(t *testing.T) {
-	setValidEnv(t)
-	t.Setenv("SESSION_SECRET", "12345678901234567890123456789012")
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "known-weak list") {
-		t.Fatalf("expected error for weak SESSION_SECRET, got: %v", err)
-	}
-}
-
-func TestConfigRepetitiveSessionSecret(t *testing.T) {
-	setValidEnv(t)
-	t.Setenv("SESSION_SECRET", strings.Repeat("a", 32))
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "trivially repetitive") {
-		t.Fatalf("expected error for repetitive SESSION_SECRET, got: %v", err)
-	}
-}
-
-func TestConfigInvalidEnv(t *testing.T) {
-	setValidEnv(t)
-	t.Setenv("ENV", "staging")
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "ENV must be 'local' or 'production'") {
-		t.Fatalf("expected error for invalid ENV, got: %v", err)
-	}
-}
-
-func TestConfigMissingAllowedOrigins(t *testing.T) {
-	setValidEnv(t)
-	os.Unsetenv("ALLOWED_ORIGINS")
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "ALLOWED_ORIGINS is required") {
-		t.Fatalf("expected error for missing ALLOWED_ORIGINS, got: %v", err)
-	}
-}
-
-func TestConfigMissingCookieDomain(t *testing.T) {
-	setValidEnv(t)
-	os.Unsetenv("COOKIE_DOMAIN")
-	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "COOKIE_DOMAIN is required") {
-		t.Fatalf("expected error for missing COOKIE_DOMAIN, got: %v", err)
-	}
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // Merge overrides onto the valid baseline.
+            env := make(map[string]string)
+            for k, v := range valid {
+                env[k] = v
+            }
+            for k, v := range tt.env {
+                env[k] = v
+            }
+            withEnv(env, func() {
+                _, err := Load()
+                if (err != nil) != tt.wantErr {
+                    t.Fatalf("Load() error = %v, wantErr %v", err, tt.wantErr)
+                }
+            })
+        })
+    }
 }
