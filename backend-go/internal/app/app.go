@@ -1,20 +1,14 @@
 package app
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"golang.org/x/crypto/bcrypt"
 	"log/slog"
 	"math"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -91,125 +85,6 @@ func out(w http.ResponseWriter, s int, v any) {
 func fail(w http.ResponseWriter, s int, d string) { out(w, s, map[string]any{"detail": d}) }
 func decode(r *http.Request, v any) bool          { return json.NewDecoder(r.Body).Decode(v) == nil }
 
-type userKey struct{}
-type user struct{ Email, Role string }
-
-func (a *App) auth(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		h := r.Header.Get("Authorization")
-		if !strings.HasPrefix(h, "Bearer ") {
-			fail(w, 401, "Not authenticated")
-			return
-		}
-		t, e := jwt.Parse(strings.TrimPrefix(h, "Bearer "), func(t *jwt.Token) (any, error) { return []byte(a.secret), nil })
-		if e != nil || !t.Valid {
-			fail(w, 401, "Could not validate credentials")
-			return
-		}
-		sub, _ := t.Claims.(jwt.MapClaims)["sub"].(string)
-		var role string
-		e = a.db.QueryRow(r.Context(), "SELECT role FROM users WHERE email=$1", sub).Scan(&role)
-		if e != nil {
-			fail(w, 401, "Could not validate credentials")
-			return
-		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey{}, user{sub, role})))
-	}
-}
-func (a *App) role(roles []string, next http.HandlerFunc) http.HandlerFunc {
-	return a.auth(func(w http.ResponseWriter, r *http.Request) {
-		u := r.Context().Value(userKey{}).(user)
-		if u.Role != "Admin" {
-			ok := false
-			for _, x := range roles {
-				if x == u.Role {
-					ok = true
-				}
-			}
-			if !ok {
-				fail(w, 403, "Operation Denied: Insufficient authorization permissions.")
-				return
-			}
-		}
-		next(w, r)
-	})
-}
-func (a *App) login(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		fail(w, 422, "Invalid form data")
-		return
-	}
-	email, pw := r.Form.Get("username"), r.Form.Get("password")
-	var hash, role string
-	e := a.db.QueryRow(r.Context(), "SELECT password_hash,role FROM users WHERE email=$1", email).Scan(&hash, &role)
-	if e != nil || ((strings.HasPrefix(hash, "$2a$") || strings.HasPrefix(hash, "$2b$")) && bcrypt.CompareHashAndPassword([]byte(hash), []byte(pw)) != nil) || (!strings.HasPrefix(hash, "$2") && hash != pw) {
-		fail(w, 400, "Incorrect email or password")
-		return
-	}
-	token, _ := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": email, "exp": time.Now().UTC().Add(time.Hour).Unix()}).SignedString([]byte(a.secret))
-	out(w, 200, map[string]any{"access_token": token, "token_type": "bearer", "role": role})
-}
-func (a *App) register(w http.ResponseWriter, r *http.Request) {
-	var x struct{ Email, Password, Role string }
-	if !decode(r, &x) {
-		fail(w, 422, "Invalid request body")
-		return
-	}
-	valid := map[string]bool{"Admin": true, "Fleet Manager": true, "Driver": true, "Safety Officer": true, "Financial Analyst": true}
-	if !valid[x.Role] {
-		fail(w, 400, "Invalid role. Must be one of: [Admin Fleet Manager Driver Safety Officer Financial Analyst]")
-		return
-	}
-	var n int
-	a.db.QueryRow(r.Context(), "SELECT count(*) FROM users WHERE email=$1", x.Email).Scan(&n)
-	if n > 0 {
-		fail(w, 400, "An account with this email is already registered.")
-		return
-	}
-	h, _ := bcrypt.GenerateFromPassword([]byte(x.Password), bcrypt.DefaultCost)
-	_, e := a.db.Exec(r.Context(), "INSERT INTO users(email,password_hash,role) VALUES($1,$2,$3)", x.Email, string(h), x.Role)
-	if e != nil {
-		fail(w, 500, "Internal Server Error")
-		return
-	}
-	out(w, 201, map[string]any{"message": "User registered successfully", "email": x.Email, "role": x.Role})
-}
-
-type vehicle struct {
-	RegistrationNumber string  `json:"registration_number"`
-	Model              string  `json:"model"`
-	Type               string  `json:"type"`
-	MaxLoadCapacity    float64 `json:"max_load_capacity"`
-	Odometer           float64 `json:"odometer"`
-	AcquisitionCost    float64 `json:"acquisition_cost"`
-	Status             string  `json:"status"`
-}
-type driver struct {
-	LicenseNumber     string  `json:"license_number"`
-	Name              string  `json:"name"`
-	LicenseCategory   string  `json:"license_category"`
-	LicenseExpiryDate string  `json:"license_expiry_date"`
-	ContactNumber     string  `json:"contact_number"`
-	SafetyScore       float64 `json:"safety_score"`
-	Status            string  `json:"status"`
-}
-
-func rows[T any](ctx context.Context, db *pgxpool.Pool, q string, args ...any) ([]T, error) {
-	rs, e := db.Query(ctx, q, args...)
-	if e != nil {
-		return nil, e
-	}
-	defer rs.Close()
-	return pgx.CollectRows(rs, pgx.RowToStructByName[T])
-}
-func one[T any](ctx context.Context, db *pgxpool.Pool, q string, args ...any) (T, error) {
-	var z T
-	rs, e := rows[T](ctx, db, q, args...)
-	if e != nil || len(rs) == 0 {
-		return z, errors.New("not found")
-	}
-	return rs[0], nil
-}
 func (a *App) vehicles(w http.ResponseWriter, r *http.Request) {
 	v, e := rows[vehicle](r.Context(), a.db, "SELECT * FROM vehicles")
 	if e != nil {
@@ -332,11 +207,6 @@ func (a *App) deleteDriver(w http.ResponseWriter, r *http.Request) {
 	out(w, 200, map[string]string{"message": "Driver profile purged successfully"})
 }
 
-type destination struct {
-	Name   string `json:"name"`
-	Region string `json:"region"`
-}
-
 func (a *App) destinations(w http.ResponseWriter, r *http.Request) {
 	x, e := rows[destination](r.Context(), a.db, "SELECT * FROM destinations")
 	if e != nil {
@@ -365,18 +235,6 @@ func (a *App) deleteDestination(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out(w, 200, map[string]string{"message": "Destination deleted successfully"})
-}
-
-type trip struct {
-	ID              int     `json:"id"`
-	SourceName      string  `json:"source_name"`
-	DestinationName string  `json:"destination_name"`
-	VehicleReg      string  `json:"vehicle_reg"`
-	DriverLicense   string  `json:"driver_license"`
-	CargoWeight     float64 `json:"cargo_weight"`
-	PlannedDistance float64 `json:"planned_distance"`
-	Revenue         float64 `json:"revenue"`
-	Status          string  `json:"status"`
 }
 
 func (a *App) trips(w http.ResponseWriter, r *http.Request) {
@@ -513,16 +371,6 @@ func (a *App) cancel(w http.ResponseWriter, r *http.Request) {
 	out(w, 200, map[string]string{"message": "Trip cancelled. Vehicle and driver restored to Available."})
 }
 
-type maintenance struct {
-	ID          int     `json:"id"`
-	VehicleReg  string  `json:"vehicle_reg"`
-	Description string  `json:"description"`
-	Cost        float64 `json:"cost"`
-	StartDate   string  `json:"start_date"`
-	EndDate     *string `json:"end_date"`
-	Status      string  `json:"status"`
-}
-
 func (a *App) maintenance(w http.ResponseWriter, r *http.Request) {
 	x, e := rows[maintenance](r.Context(), a.db, "SELECT * FROM maintenance_logs")
 	if e != nil {
@@ -578,15 +426,6 @@ func (a *App) closeMaintenance(w http.ResponseWriter, r *http.Request) {
 	a.db.Exec(r.Context(), "UPDATE vehicles SET status='Available' WHERE registration_number=$1", x.VehicleReg)
 	a.broadcast("maintenance.closed", map[string]any{"log_id": id, "vehicle_reg": x.VehicleReg, "status": "Closed"})
 	out(w, 200, map[string]string{"message": "Workshop operations finished. Vehicle returned to fleet."})
-}
-
-type expenseRow struct {
-	ID     int      `json:"id"`
-	TripID int      `json:"trip_id"`
-	Type   string   `json:"type"`
-	Liters *float64 `json:"liters"`
-	Cost   float64  `json:"cost"`
-	Date   string   `json:"date"`
 }
 
 func (a *App) expense(w http.ResponseWriter, r *http.Request) {
