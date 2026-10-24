@@ -592,12 +592,91 @@ func (a *App) retireVehicle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) deleteVehicle(w http.ResponseWriter, r *http.Request) {
-	ct, e := a.db.Exec(r.Context(), "DELETE FROM vehicles WHERE registration_number=$1", r.PathValue("reg"))
-	if e != nil || ct.RowsAffected() == 0 {
+	reg := r.PathValue("reg")
+	if reg == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, "MALFORMED_INPUT", "Registration number is required", nil)
+		return
+	}
+
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to start transaction", nil)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	var status string
+	var isActive bool
+	err = tx.QueryRow(r.Context(),
+		`SELECT status, is_active FROM vehicles WHERE registration_number = $1 FOR UPDATE`, reg).
+		Scan(&status, &isActive)
+	if err != nil {
 		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Vehicle not found", nil)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"message": "Vehicle deleted successfully"})
+
+	// 1. Check if on trip or dispatched trip
+	var dispatchedTrips int
+	_ = tx.QueryRow(r.Context(),
+		`SELECT COUNT(*) FROM trips WHERE vehicle_reg = $1 AND status = 'Dispatched'`, reg).
+		Scan(&dispatchedTrips)
+	if status == string(domain.VehicleStatusOnTrip) || dispatchedTrips > 0 {
+		httpx.WriteError(w, r, http.StatusConflict, "VEHICLE_IN_USE", "Cannot delete vehicle while on trip", nil)
+		return
+	}
+
+	// 2. Check if open maintenance
+	var openMaint int
+	_ = tx.QueryRow(r.Context(),
+		`SELECT COUNT(*) FROM maintenance_logs WHERE vehicle_reg = $1 AND status = 'Open'`, reg).
+		Scan(&openMaint)
+	if status == string(domain.VehicleStatusInShop) || openMaint > 0 {
+		httpx.WriteError(w, r, http.StatusConflict, "VEHICLE_IN_USE", "Cannot delete vehicle with open maintenance", nil)
+		return
+	}
+
+	// 3. Check if any history exists (trips or maintenance logs)
+	var tripHistory int
+	_ = tx.QueryRow(r.Context(), `SELECT COUNT(*) FROM trips WHERE vehicle_reg = $1`, reg).Scan(&tripHistory)
+
+	var maintHistory int
+	_ = tx.QueryRow(r.Context(), `SELECT COUNT(*) FROM maintenance_logs WHERE vehicle_reg = $1`, reg).Scan(&maintHistory)
+
+	if tripHistory > 0 || maintHistory > 0 {
+		// Soft delete: set is_active = false
+		_, err = tx.Exec(r.Context(),
+			`UPDATE vehicles SET is_active = false, updated_at = now() WHERE registration_number = $1`, reg)
+		if err != nil {
+			status, code, msg := httpx.MapDBError(err, a.log)
+			httpx.WriteError(w, r, status, code, msg, nil)
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
+			"message":      "Vehicle archived successfully",
+			"soft_deleted": true,
+		})
+		return
+	}
+
+	// Zero history -> Hard delete
+	_, err = tx.Exec(r.Context(), `DELETE FROM vehicles WHERE registration_number = $1`, reg)
+	if err != nil {
+		status, code, msg := httpx.MapDBError(err, a.log)
+		httpx.WriteError(w, r, status, code, msg, nil)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"message":      "Vehicle deleted successfully",
+		"soft_deleted": false,
+	})
 }
 
 func (a *App) drivers(w http.ResponseWriter, r *http.Request) {
@@ -892,12 +971,78 @@ func (a *App) setDriverAvailable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) deleteDriver(w http.ResponseWriter, r *http.Request) {
-	ct, e := a.db.Exec(r.Context(), "DELETE FROM drivers WHERE license_number=$1", r.PathValue("license"))
-	if e != nil || ct.RowsAffected() == 0 {
+	license := r.PathValue("license")
+	if license == "" {
+		httpx.WriteError(w, r, http.StatusBadRequest, "MALFORMED_INPUT", "License number is required", nil)
+		return
+	}
+
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to start transaction", nil)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	var status string
+	var isActive bool
+	err = tx.QueryRow(r.Context(),
+		`SELECT status, is_active FROM drivers WHERE license_number = $1 FOR UPDATE`, license).
+		Scan(&status, &isActive)
+	if err != nil {
 		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Driver not found", nil)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"message": "Driver profile purged successfully"})
+
+	// 1. Check if currently on trip
+	var dispatchedTrips int
+	_ = tx.QueryRow(r.Context(),
+		`SELECT COUNT(*) FROM trips WHERE driver_license = $1 AND status = 'Dispatched'`, license).
+		Scan(&dispatchedTrips)
+	if status == string(domain.DriverStatusOnTrip) || dispatchedTrips > 0 {
+		httpx.WriteError(w, r, http.StatusConflict, "DRIVER_IN_USE", "Cannot delete driver currently on trip", nil)
+		return
+	}
+
+	// 2. Check if any trip history exists
+	var tripHistory int
+	_ = tx.QueryRow(r.Context(), `SELECT COUNT(*) FROM trips WHERE driver_license = $1`, license).Scan(&tripHistory)
+
+	if tripHistory > 0 {
+		// Soft delete: set is_active = false
+		_, err = tx.Exec(r.Context(),
+			`UPDATE drivers SET is_active = false, updated_at = now() WHERE license_number = $1`, license)
+		if err != nil {
+			status, code, msg := httpx.MapDBError(err, a.log)
+			httpx.WriteError(w, r, status, code, msg, nil)
+			return
+		}
+		if err := tx.Commit(r.Context()); err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
+			"message":      "Driver archived successfully",
+			"soft_deleted": true,
+		})
+		return
+	}
+
+	// Zero history -> Hard delete
+	_, err = tx.Exec(r.Context(), `DELETE FROM drivers WHERE license_number = $1`, license)
+	if err != nil {
+		status, code, msg := httpx.MapDBError(err, a.log)
+		httpx.WriteError(w, r, status, code, msg, nil)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"message":      "Driver profile purged successfully",
+		"soft_deleted": false,
+	})
 }
 
 func (a *App) destinations(w http.ResponseWriter, r *http.Request) {
@@ -938,8 +1083,14 @@ func (a *App) createDestination(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) deleteDestination(w http.ResponseWriter, r *http.Request) {
-	ct, e := a.db.Exec(r.Context(), "DELETE FROM destinations WHERE name=$1", r.PathValue("name"))
-	if e != nil || ct.RowsAffected() == 0 {
+	name := r.PathValue("name")
+	ct, e := a.db.Exec(r.Context(), "DELETE FROM destinations WHERE name=$1", name)
+	if e != nil {
+		status, code, msg := httpx.MapDBError(e, a.log)
+		httpx.WriteError(w, r, status, code, msg, nil)
+		return
+	}
+	if ct.RowsAffected() == 0 {
 		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Destination hub not found", nil)
 		return
 	}
