@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -399,19 +400,109 @@ func (a *App) changePassword(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func decodeCursor(c string) (string, error) {
+	if c == "" {
+		return "", nil
+	}
+	b, err := base64.URLEncoding.DecodeString(c)
+	if err != nil {
+		b, err = base64.RawURLEncoding.DecodeString(c)
+		if err != nil {
+			b, err = base64.StdEncoding.DecodeString(c)
+			if err != nil {
+				return "", fmt.Errorf("invalid cursor")
+			}
+		}
+	}
+	return string(b), nil
+}
+
+func encodeCursor(val string) string {
+	return base64.URLEncoding.EncodeToString([]byte(val))
+}
+
+func parsePaginationParams(r *http.Request) (cursor string, limit int, err error) {
+	limit = 25
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		parsed, err := strconv.Atoi(lStr)
+		if err != nil || parsed <= 0 {
+			limit = 25
+		} else if parsed > 100 {
+			limit = 100
+		} else {
+			limit = parsed
+		}
+	}
+	cursorRaw := r.URL.Query().Get("cursor")
+	if cursorRaw != "" {
+		c, err := decodeCursor(cursorRaw)
+		if err != nil {
+			return "", 0, err
+		}
+		cursor = c
+	}
+	return cursor, limit, nil
+}
+
 // Business handlers
 func (a *App) vehicles(w http.ResponseWriter, r *http.Request) {
-	v, e := rows[vehicle](r.Context(), a.db, "SELECT * FROM vehicles")
-	if e != nil {
+	cursor, limit, err := parsePaginationParams(r)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_CURSOR", "Invalid pagination cursor", nil)
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	vType := r.URL.Query().Get("type")
+	status := r.URL.Query().Get("status")
+
+	includeInactive := false
+	if r.URL.Query().Get("include_inactive") == "true" {
+		user := middleware.GetUser(r)
+		if user != nil && (user.Role == rbac.RoleAdmin || user.Role == rbac.RoleFleetManager) {
+			includeInactive = true
+		}
+	}
+
+	query := `
+		SELECT registration_number, model, type, max_load_capacity, odometer, acquisition_cost, status, is_active
+		FROM vehicles
+		WHERE ($1::text = '' OR registration_number > $1)
+		  AND ($2::text = '' OR type = $2)
+		  AND ($3::text = '' OR status = $3)
+		  AND ($4::boolean OR is_active = true)
+		  AND ($5::text = '' OR (registration_number ILIKE '%' || $5 || '%' OR model ILIKE '%' || $5 || '%'))
+		ORDER BY registration_number ASC
+		LIMIT $6`
+
+	v, err := rows[vehicle](r.Context(), a.db, query, cursor, vType, status, includeInactive, q, limit+1)
+	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch vehicles", nil)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, v)
+
+	var nextCursor *string
+	items := v
+	if len(v) > limit {
+		nc := encodeCursor(v[limit-1].RegistrationNumber)
+		nextCursor = &nc
+		items = v[:limit]
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, PaginatedResponse[vehicle]{
+		Items:      items,
+		NextCursor: nextCursor,
+	})
 }
 
 func (a *App) vehicle(w http.ResponseWriter, r *http.Request) {
-	v, e := one[vehicle](r.Context(), a.db, "SELECT * FROM vehicles WHERE registration_number=$1", r.PathValue("reg"))
-	if e != nil {
+	reg := r.PathValue("reg")
+	var v vehicle
+	err := a.db.QueryRow(r.Context(),
+		`SELECT registration_number, model, type, max_load_capacity, odometer, acquisition_cost, status, is_active
+		 FROM vehicles WHERE registration_number = $1`, reg).
+		Scan(&v.RegistrationNumber, &v.Model, &v.Type, &v.MaxLoadCapacity, &v.Odometer, &v.AcquisitionCost, &v.Status, &v.IsActive)
+	if err != nil {
 		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Vehicle not found", nil)
 		return
 	}
@@ -680,21 +771,106 @@ func (a *App) deleteVehicle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) drivers(w http.ResponseWriter, r *http.Request) {
-	v, e := rows[driver](r.Context(), a.db, "SELECT * FROM drivers")
-	if e != nil {
+	user := middleware.GetUser(r)
+	if user != nil && user.Role == rbac.RoleDriver {
+		ownLicense := user.DriverLicense
+		if ownLicense == "" {
+			httpx.WriteJSON(w, http.StatusOK, PaginatedResponse[driver]{
+				Items:      []driver{},
+				NextCursor: nil,
+			})
+			return
+		}
+		var d driver
+		err := a.db.QueryRow(r.Context(),
+			`SELECT license_number, name, license_category, license_expiry_date::text, contact_number, safety_score, status, is_active
+			 FROM drivers WHERE license_number = $1`, ownLicense).
+			Scan(&d.LicenseNumber, &d.Name, &d.LicenseCategory, &d.LicenseExpiryDate, &d.ContactNumber, &d.SafetyScore, &d.Status, &d.IsActive)
+		if err != nil {
+			httpx.WriteJSON(w, http.StatusOK, PaginatedResponse[driver]{
+				Items:      []driver{},
+				NextCursor: nil,
+			})
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, PaginatedResponse[driver]{
+			Items:      []driver{d},
+			NextCursor: nil,
+		})
+		return
+	}
+
+	cursor, limit, err := parsePaginationParams(r)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_CURSOR", "Invalid pagination cursor", nil)
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	status := r.URL.Query().Get("status")
+	expiringDays := 0
+	if dStr := r.URL.Query().Get("license_expiring_within_days"); dStr != "" {
+		expiringDays, _ = strconv.Atoi(dStr)
+	}
+
+	includeInactive := false
+	if r.URL.Query().Get("include_inactive") == "true" {
+		if user != nil && (user.Role == rbac.RoleAdmin || user.Role == rbac.RoleFleetManager) {
+			includeInactive = true
+		}
+	}
+
+	query := `
+		SELECT license_number, name, license_category, license_expiry_date::text, contact_number, safety_score, status, is_active
+		FROM drivers
+		WHERE ($1::text = '' OR license_number > $1)
+		  AND ($2::text = '' OR status = $2)
+		  AND ($3::boolean OR is_active = true)
+		  AND ($4::text = '' OR (name ILIKE '%' || $4 || '%' OR license_number ILIKE '%' || $4 || '%'))
+		  AND ($5::int = 0 OR (license_expiry_date <= CURRENT_DATE + ($5::int * INTERVAL '1 day')))
+		ORDER BY license_number ASC
+		LIMIT $6`
+
+	v, err := rows[driver](r.Context(), a.db, query, cursor, status, includeInactive, q, expiringDays, limit+1)
+	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve drivers", nil)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, v)
+
+	var nextCursor *string
+	items := v
+	if len(v) > limit {
+		nc := encodeCursor(v[limit-1].LicenseNumber)
+		nextCursor = &nc
+		items = v[:limit]
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, PaginatedResponse[driver]{
+		Items:      items,
+		NextCursor: nextCursor,
+	})
 }
 
 func (a *App) driver(w http.ResponseWriter, r *http.Request) {
-	v, e := one[driver](r.Context(), a.db, "SELECT * FROM drivers WHERE license_number=$1", r.PathValue("license"))
-	if e != nil {
+	lic := r.PathValue("license")
+	user := middleware.GetUser(r)
+	if user != nil && user.Role == rbac.RoleDriver {
+		if user.DriverLicense == "" || user.DriverLicense != lic {
+			httpx.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "Access denied: drivers may only access their own record", nil)
+			return
+		}
+	}
+
+	var d driver
+	err := a.db.QueryRow(r.Context(),
+		`SELECT license_number, name, license_category, license_expiry_date::text, contact_number, safety_score, status, is_active
+		 FROM drivers WHERE license_number = $1`, lic).
+		Scan(&d.LicenseNumber, &d.Name, &d.LicenseCategory, &d.LicenseExpiryDate, &d.ContactNumber, &d.SafetyScore, &d.Status, &d.IsActive)
+	if err != nil {
 		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Driver profile not found", nil)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, v)
+	httpx.WriteJSON(w, http.StatusOK, d)
 }
 
 func (a *App) createDriver(w http.ResponseWriter, r *http.Request) {
@@ -1046,12 +1222,39 @@ func (a *App) deleteDriver(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) destinations(w http.ResponseWriter, r *http.Request) {
-	x, e := rows[destination](r.Context(), a.db, "SELECT * FROM destinations")
-	if e != nil {
+	cursor, limit, err := parsePaginationParams(r)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_CURSOR", "Invalid pagination cursor", nil)
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	query := `
+		SELECT name, region
+		FROM destinations
+		WHERE ($1::text = '' OR name > $1)
+		  AND ($2::text = '' OR (name ILIKE '%' || $2 || '%' OR region ILIKE '%' || $2 || '%'))
+		ORDER BY name ASC
+		LIMIT $3`
+
+	x, err := rows[destination](r.Context(), a.db, query, cursor, q, limit+1)
+	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch destinations", nil)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, x)
+
+	var nextCursor *string
+	items := x
+	if len(x) > limit {
+		nc := encodeCursor(x[limit-1].Name)
+		nextCursor = &nc
+		items = x[:limit]
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, PaginatedResponse[destination]{
+		Items:      items,
+		NextCursor: nextCursor,
+	})
 }
 
 func (a *App) createDestination(w http.ResponseWriter, r *http.Request) {
