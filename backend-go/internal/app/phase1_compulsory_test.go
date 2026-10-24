@@ -57,7 +57,7 @@ func ensureTestSchema(t *testing.T, pool *pgxpool.Pool) {
 		if err == nil {
 			_, _ = pool.Exec(ctx, string(m1))
 		}
-		m2, err := os.ReadFile(filepath.Join(root, "backend-go", "migrations", "000002_auth_foundation.up.sql"))
+		m2, err := os.ReadFile(filepath.Join(root, "backend-go", "migrations", "000002_final_schema.up.sql"))
 		if err == nil {
 			_, _ = pool.Exec(ctx, string(m2))
 		}
