@@ -18,7 +18,7 @@ import (
 func main() {
 	envVal := strings.ToLower(os.Getenv("ENV"))
 	if envVal == "production" {
-		fmt.Fprintln(os.Stderr, "Error: seeding is strictly refused when ENV=production")
+		fmt.Fprintln(os.Stderr, "Error: seeding is strictly refused when ENV=production (zero rows written)")
 		os.Exit(1)
 	}
 
@@ -64,8 +64,12 @@ func main() {
 	defer tx.Rollback(ctx)
 
 	// Seed Users with secure Argon2id hashes
-	initialAdminPass := os.Getenv("INITIAL_ADMIN_PASSWORD")
-	var generatedAdminPass string
+	seedPassEnv := strings.TrimSpace(os.Getenv("SEED_PASSWORD"))
+	if seedPassEnv == "" {
+		seedPassEnv = strings.TrimSpace(os.Getenv("INITIAL_ADMIN_PASSWORD"))
+	}
+
+	generatedPasswords := make(map[string]string)
 
 	for _, u := range d["users"] {
 		email, _ := u["email"].(string)
@@ -74,14 +78,12 @@ func main() {
 			continue
 		}
 
-		userPass := initialAdminPass
+		userPass := seedPassEnv
 		if userPass == "" {
 			b := make([]byte, 16)
 			_, _ = rand.Read(b)
 			userPass = hex.EncodeToString(b)
-			if role == "Admin" && generatedAdminPass == "" {
-				generatedAdminPass = userPass
-			}
+			generatedPasswords[email] = userPass
 		}
 
 		hash, err := auth.HashPassword(userPass)
@@ -98,6 +100,7 @@ func main() {
 			 VALUES($1, $2, $3, $4, true, $5, $5)
 			 ON CONFLICT (email) DO NOTHING`,
 			id, email, hash, role, now)
+
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: inserting user failed: %v\n", err)
 			os.Exit(1)
@@ -137,9 +140,14 @@ func main() {
 	}
 
 	fmt.Println("Database seeding completed cleanly.")
-	if generatedAdminPass != "" {
+	if len(generatedPasswords) > 0 {
 		fmt.Println("-----------------------------------------------------------------")
-		fmt.Printf("INITIAL SEEDED ADMIN PASSWORD (printed once):\n%s\n", generatedAdminPass)
+		fmt.Println("GENERATED SEED PASSWORDS (printed once, store securely):")
+		for email, pw := range generatedPasswords {
+			fmt.Printf("%s: %s\n", email, pw)
+		}
 		fmt.Println("-----------------------------------------------------------------")
+	} else if seedPassEnv != "" {
+		fmt.Println("Seed passwords set from environment variable.")
 	}
 }
