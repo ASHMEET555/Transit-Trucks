@@ -223,6 +223,20 @@ func main() {
 	}
 
 	// 5. Historical Trips (>= 200 historical trips)
+	// Clear existing dependent records so seeding is idempotent
+	if _, err := tx.Exec(ctx, `DELETE FROM expenses`); err != nil {
+		fmt.Fprintf(os.Stderr, "Error clearing expenses: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM maintenance_logs`); err != nil {
+		fmt.Fprintf(os.Stderr, "Error clearing maintenance_logs: %v\n", err)
+		os.Exit(1)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM trips`); err != nil {
+		fmt.Fprintf(os.Stderr, "Error clearing trips: %v\n", err)
+		os.Exit(1)
+	}
+
 	dispatchedVehicles := make(map[string]bool)
 	dispatchedDrivers := make(map[string]bool)
 

@@ -58,6 +58,9 @@ func main() {
 		"/api/v1/fleet/drivers",
 		"/api/v1/destinations/",
 		"/api/v1/trips/",
+		"/api/v1/vehicles",
+		"/api/v1/drivers",
+		"/api/v1/destinations",
 	}
 
 	iterations := 100
@@ -89,8 +92,8 @@ func main() {
 		results[ep] = durations
 	}
 
-	out := "# Phase 2 Baseline Latency Benchmark\n\n"
-	out += fmt.Sprintf("Measured %d iterations per endpoint against PostgreSQL seed.\n\n", iterations)
+	out := "# Phase 2 Post-Implementation Latency Benchmark\n\n"
+	out += fmt.Sprintf("Measured %d iterations per endpoint against Seed v2 PostgreSQL database.\n\n", iterations)
 	out += "| Endpoint | p50 (ms) | p95 (ms) | p99 (ms) | Min (ms) | Max (ms) |\n"
 	out += "|---|---|---|---|---|---|\n"
 
@@ -107,10 +110,11 @@ func main() {
 
 	fmt.Print(out)
 
-	// Write to docs/phase-2-baseline.md
-	docPath := filepath.Join("docs", "phase-2-baseline.md")
-	if err := os.WriteFile(docPath, []byte(out), 0644); err != nil {
-		// Try relative to repo
-		_ = os.WriteFile(filepath.Join("backend-go", "docs", "phase-2-baseline.md"), []byte(out), 0644)
+	targetFile := os.Getenv("BENCH_OUTPUT")
+	if targetFile == "" {
+		targetFile = filepath.Join("docs", "phase-2-post-bench.md")
+	}
+	if err := os.WriteFile(targetFile, []byte(out), 0644); err != nil {
+		_ = os.WriteFile(filepath.Join("backend-go", targetFile), []byte(out), 0644)
 	}
 }
