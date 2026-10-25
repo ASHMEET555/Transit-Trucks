@@ -3,10 +3,15 @@ import { BACKEND_URL } from "@/data/data"
 export class ApiError extends Error {
   status: number
   detail: string
-  constructor(status: number, detail: string) {
-    super(detail)
+  code?: string
+  requestId?: string
+
+  constructor(status: number, detail: string, code?: string, requestId?: string) {
+    super(code ? `[${code}] ${detail}` : detail)
     this.status = status
     this.detail = detail
+    this.code = code
+    this.requestId = requestId
   }
 }
 
@@ -28,14 +33,15 @@ type RequestOptions = {
   body?: unknown
   form?: boolean
   auth?: boolean
+  headers?: Record<string, string>
 }
 
 export async function apiRequest<T = unknown>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { method = "GET", body, form = false, auth = true } = options
-  const headers: Record<string, string> = {}
+  const { method = "GET", body, form = false, auth = true, headers: customHeaders } = options
+  const headers: Record<string, string> = { ...customHeaders }
 
   let payload: BodyInit | undefined
   if (body !== undefined) {
@@ -68,10 +74,20 @@ export async function apiRequest<T = unknown>(
 
   if (!response.ok) {
     let detail = `Request failed (${response.status})`
+    let code: string | undefined
+    let requestId: string | undefined
     try {
       const data = await response.json()
-      if (data.error && typeof data.error.message === "string") {
-        detail = data.error.message
+      if (data.error && typeof data.error === "object") {
+        if (typeof data.error.message === "string") {
+          detail = data.error.message
+        }
+        if (typeof data.error.code === "string") {
+          code = data.error.code
+        }
+        if (typeof data.error.request_id === "string") {
+          requestId = data.error.request_id
+        }
       } else if (typeof data.detail === "string") {
         detail = data.detail
       } else if (data.detail) {
@@ -80,7 +96,7 @@ export async function apiRequest<T = unknown>(
     } catch {
       // ignore
     }
-    throw new ApiError(response.status, detail)
+    throw new ApiError(response.status, detail, code, requestId)
   }
 
   if (response.status === 204) return undefined as T

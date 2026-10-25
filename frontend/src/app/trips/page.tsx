@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/Button"
 import { Input } from "@/components/Input"
 import {
@@ -22,6 +22,17 @@ import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
 import { canWrite } from "@/lib/rbacConfig"
 import { BACKEND_URL } from "@/data/data"
+
+function generateUUID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID()
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === "x" ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
 
 type Destination = { name: string; region: string }
 type Vehicle = {
@@ -47,6 +58,10 @@ type Trip = {
   planned_distance: number
   revenue: number
   status: string
+  start_odometer?: number
+  final_odometer?: number
+  fuel_liters?: number
+  fuel_cost?: number
 }
 
 type TripSuggestion = {
@@ -66,8 +81,27 @@ export default function TripsPage() {
   const [destinations, setDestinations] = useState<Destination[]>([])
   const [error, setError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
+  const [dispatchImmediately, setDispatchImmediately] = useState(true)
+  const [createIdempotencyKey, setCreateIdempotencyKey] = useState(generateUUID)
+
   const [odometer, setOdometer] = useState("")
+  const [fuelLiters, setFuelLiters] = useState("")
+  const [fuelCost, setFuelCost] = useState("")
   const [completeId, setCompleteId] = useState<number | null>(null)
+  const [completeIdempotencyKey, setCompleteIdempotencyKey] = useState<string | null>(null)
+
+  const actionKeysRef = useRef<Record<string, string>>({})
+  function getActionKey(action: string, id: number): string {
+    const keyName = `${action}-${id}`
+    if (!actionKeysRef.current[keyName]) {
+      actionKeysRef.current[keyName] = generateUUID()
+    }
+    return actionKeysRef.current[keyName]
+  }
+  function clearActionKey(action: string, id: number) {
+    delete actionKeysRef.current[`${action}-${id}`]
+  }
+
   const [sourceFilter, setSourceFilter] = useState("All")
   const [destinationFilter, setDestinationFilter] = useState("All")
   const [vehicleFilter, setVehicleFilter] = useState("All")
@@ -99,7 +133,11 @@ export default function TripsPage() {
       setDrivers(extractItems<Driver>(d))
       setDestinations(extractItems<Destination>(dest))
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to load trips")
+      if (err instanceof ApiError) {
+        setError(err.code ? `[${err.code}] ${err.detail}` : err.detail)
+      } else {
+        setError("Failed to load trips")
+      }
     }
   }
 
@@ -187,11 +225,15 @@ export default function TripsPage() {
       ? Number(form.cargo_weight) > selectedVehicle.max_load_capacity
       : false
 
+  const canActOnTrip = (t: Trip) =>
+    canManage || (currentProfile?.role === "Driver" && currentProfile?.driver_license === t.driver_license)
+
   async function createTrip(e: React.FormEvent) {
     e.preventDefault()
     try {
       await apiRequest("/trips/", {
         method: "POST",
+        headers: { "Idempotency-Key": createIdempotencyKey },
         body: {
           source_name: form.source_name,
           destination_name: form.destination_name,
@@ -200,6 +242,7 @@ export default function TripsPage() {
           cargo_weight: Number(form.cargo_weight),
           planned_distance: Number(form.planned_distance),
           revenue: Number(form.revenue),
+          dispatch: dispatchImmediately,
         },
       })
       setShowForm(false)
@@ -213,9 +256,14 @@ export default function TripsPage() {
         revenue: "0",
       })
       setSuggestion(null)
+      setCreateIdempotencyKey(generateUUID())
       await load()
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to create trip")
+      if (err instanceof ApiError) {
+        setError(err.code ? `[${err.code}] ${err.detail}` : err.detail)
+      } else {
+        setError("Failed to create trip")
+      }
     }
   }
 
@@ -251,39 +299,97 @@ export default function TripsPage() {
       }))
       setError(null)
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to suggest assignment")
+      if (err instanceof ApiError) {
+        setError(err.code ? `[${err.code}] ${err.detail}` : err.detail)
+      } else {
+        setError("Failed to suggest assignment")
+      }
     } finally {
       setSuggesting(false)
     }
   }
 
+  function startComplete(id: number) {
+    setCompleteId(id)
+    setOdometer("")
+    setFuelLiters("")
+    setFuelCost("")
+    setCompleteIdempotencyKey(generateUUID())
+  }
+
   async function completeTrip() {
     if (completeId == null) return
+    const key = completeIdempotencyKey || generateUUID()
+    const body: { final_odometer: number; fuel_liters?: number; fuel_cost?: number } = {
+      final_odometer: Number(odometer),
+    }
+    if (fuelLiters.trim() !== "" && fuelCost.trim() !== "") {
+      body.fuel_liters = Number(fuelLiters)
+      body.fuel_cost = Number(fuelCost)
+    }
+
     try {
-      await apiRequest(
-        `/trips/${completeId}/complete?final_odometer=${Number(odometer)}`,
-        { method: "PUT" },
-      )
+      await apiRequest(`/trips/${completeId}/complete`, {
+        method: "POST",
+        headers: { "Idempotency-Key": key },
+        body,
+      })
       setCompleteId(null)
       setOdometer("")
+      setFuelLiters("")
+      setFuelCost("")
+      setCompleteIdempotencyKey(null)
       await load()
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to complete trip")
+      if (err instanceof ApiError) {
+        setError(err.code ? `[${err.code}] ${err.detail}` : err.detail)
+      } else {
+        setError("Failed to complete trip")
+      }
+    }
+  }
+
+  async function dispatchTrip(id: number) {
+    const key = getActionKey("dispatch", id)
+    try {
+      await apiRequest(`/trips/${id}/dispatch`, {
+        method: "POST",
+        headers: { "Idempotency-Key": key },
+      })
+      clearActionKey("dispatch", id)
+      await load()
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.code ? `[${err.code}] ${err.detail}` : err.detail)
+      } else {
+        setError("Failed to dispatch trip")
+      }
     }
   }
 
   async function cancelTrip(id: number) {
     if (!confirm("Cancel this trip?")) return
+    const key = getActionKey("cancel", id)
     try {
-      await apiRequest(`/trips/${id}/cancel`, { method: "PUT" })
+      await apiRequest(`/trips/${id}/cancel`, {
+        method: "POST",
+        headers: { "Idempotency-Key": key },
+      })
+      clearActionKey("cancel", id)
       await load()
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to cancel trip")
+      if (err instanceof ApiError) {
+        setError(err.code ? `[${err.code}] ${err.detail}` : err.detail)
+      } else {
+        setError("Failed to cancel trip")
+      }
     }
   }
 
   const statusColor = (status: string) => {
     switch (status) {
+      case "Draft":
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
       case "Dispatched":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
       case "Completed":
@@ -462,6 +568,18 @@ export default function TripsPage() {
                 onChange={(e) => setForm({ ...form, revenue: e.target.value })}
               />
             </div>
+            <div className="flex items-center gap-2 md:col-span-2 lg:col-span-3">
+              <input
+                id="dispatch-toggle"
+                type="checkbox"
+                checked={dispatchImmediately}
+                onChange={(e) => setDispatchImmediately(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="dispatch-toggle" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Dispatch immediately (uncheck to save as Draft)
+              </label>
+            </div>
             <div className="flex items-end gap-2 md:col-span-2 lg:col-span-3">
               <Button
                 type="button"
@@ -472,7 +590,7 @@ export default function TripsPage() {
                 {suggesting ? "Suggesting..." : "Suggest Vehicle & Driver"}
               </Button>
               <Button type="submit" disabled={overload}>
-                Dispatch Trip
+                {dispatchImmediately ? "Dispatch Trip" : "Create Draft"}
               </Button>
               <Button
                 type="button"
@@ -498,7 +616,7 @@ export default function TripsPage() {
           <h2 className="mb-4 text-lg font-semibold">
             Complete Trip #{completeId}
           </h2>
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div>
               <label className="mb-2 block text-sm font-medium">
                 Final Odometer *
@@ -510,6 +628,30 @@ export default function TripsPage() {
                 onChange={(e) => setOdometer(e.target.value)}
               />
             </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Fuel Liters (Optional)
+              </label>
+              <Input
+                type="number"
+                placeholder="e.g. 45.5"
+                value={fuelLiters}
+                onChange={(e) => setFuelLiters(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Fuel Cost (Optional)
+              </label>
+              <Input
+                type="number"
+                placeholder="e.g. 110.0"
+                value={fuelCost}
+                onChange={(e) => setFuelCost(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="mt-4 flex gap-2">
             <Button onClick={completeTrip}>Confirm Complete</Button>
             <Button variant="secondary" onClick={() => setCompleteId(null)}>
               Cancel
@@ -629,11 +771,27 @@ export default function TripsPage() {
                     </span>
                   </TableCell>
                   <TableCell>
-                    {t.status === "Dispatched" && (
+                    {t.status === "Draft" && canActOnTrip(t) && (
                       <div className="flex gap-2">
                         <Button
                           variant="secondary"
-                          onClick={() => setCompleteId(t.id)}
+                          onClick={() => dispatchTrip(t.id)}
+                        >
+                          Dispatch
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          onClick={() => cancelTrip(t.id)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
+                    {t.status === "Dispatched" && canActOnTrip(t) && (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="secondary"
+                          onClick={() => startComplete(t.id)}
                         >
                           Complete
                         </Button>

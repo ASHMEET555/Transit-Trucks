@@ -16,6 +16,7 @@ export interface Profile {
   email: string
   initials: string
   role: string
+  driver_license?: string
 }
 
 interface ProfileContextType {
@@ -29,7 +30,7 @@ interface ProfileContextType {
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined)
 
-function profileFromUser(user: { id?: string; email: string; role: string }): Profile {
+function profileFromUser(user: { id?: string; email: string; role: string; driver_license?: string }): Profile {
   const local = user.email.split("@")[0] || "User"
   return {
     id: user.id || user.email,
@@ -37,6 +38,7 @@ function profileFromUser(user: { id?: string; email: string; role: string }): Pr
     email: user.email,
     initials: (local.length >= 2 ? local.slice(0, 2) : local).toUpperCase(),
     role: user.role,
+    driver_license: user.driver_license,
   }
 }
 
