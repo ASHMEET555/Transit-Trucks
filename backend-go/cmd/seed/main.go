@@ -288,6 +288,9 @@ func main() {
 				`INSERT INTO expenses (trip_id, type, liters, cost, date, created_at, updated_at)
 				 VALUES ($1, 'Fuel', $2, $3, $4, $5, $5)`,
 				tripId, liters, fuelCost, now.Format(domain.DateFormat), now)
+		} else if status == "Dispatched" {
+			_, _ = tx.Exec(ctx, `UPDATE vehicles SET status = 'On Trip' WHERE registration_number = $1`, vReg)
+			_, _ = tx.Exec(ctx, `UPDATE drivers SET status = 'On Trip' WHERE license_number = $1`, dLic)
 		}
 	}
 

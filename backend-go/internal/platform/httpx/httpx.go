@@ -127,6 +127,14 @@ func MapDBError(err error, logger *slog.Logger) (int, string, string) {
 		switch pgErr.Code {
 		case "23505": // unique_violation
 			switch pgErr.ConstraintName {
+			case "idx_trips_vehicle_dispatched":
+				return http.StatusConflict, "TRIP_VEHICLE_UNAVAILABLE", "Vehicle is actively dispatched on another trip."
+			case "idx_trips_driver_dispatched":
+				return http.StatusConflict, "TRIP_DRIVER_UNAVAILABLE", "Driver is actively dispatched on another trip."
+			case "idx_maintenance_vehicle_open":
+				return http.StatusConflict, "VEHICLE_IN_MAINTENANCE", "Vehicle currently has an open maintenance log."
+			case "idempotency_keys_pkey":
+				return http.StatusConflict, "IDEMPOTENCY_IN_PROGRESS", "A request with this idempotency key is currently in progress."
 			case "vehicles_pkey":
 				return http.StatusConflict, "VEHICLE_EXISTS", "A vehicle with this registration number already exists."
 			case "drivers_pkey":
