@@ -50,7 +50,24 @@ type PaginatedResponse[T any] struct {
 }
 
 type trip struct {
-	ID              int     `json:"id"`
+	ID              int      `json:"id"`
+	SourceName      string   `json:"source_name"`
+	DestinationName string   `json:"destination_name"`
+	VehicleReg      string   `json:"vehicle_reg"`
+	DriverLicense   string   `json:"driver_license"`
+	CargoWeight     float64  `json:"cargo_weight"`
+	PlannedDistance float64  `json:"planned_distance"`
+	Revenue         float64  `json:"revenue"`
+	Status          string   `json:"status"`
+	StartOdometer   *float64 `json:"start_odometer,omitempty"`
+	FinalOdometer   *float64 `json:"final_odometer,omitempty"`
+	FuelLiters      *float64 `json:"fuel_liters,omitempty"`
+	FuelCost        *float64 `json:"fuel_cost,omitempty"`
+	CreatedAt       string   `json:"created_at,omitempty"`
+	UpdatedAt       string   `json:"updated_at,omitempty"`
+}
+
+type createTripRequest struct {
 	SourceName      string  `json:"source_name"`
 	DestinationName string  `json:"destination_name"`
 	VehicleReg      string  `json:"vehicle_reg"`
@@ -58,7 +75,13 @@ type trip struct {
 	CargoWeight     float64 `json:"cargo_weight"`
 	PlannedDistance float64 `json:"planned_distance"`
 	Revenue         float64 `json:"revenue"`
-	Status          string  `json:"status"`
+	Dispatch        *bool   `json:"dispatch,omitempty"`
+}
+
+type completeTripRequest struct {
+	FinalOdometer float64  `json:"final_odometer"`
+	FuelLiters    *float64 `json:"fuel_liters,omitempty"`
+	FuelCost      *float64 `json:"fuel_cost,omitempty"`
 }
 
 type maintenance struct {

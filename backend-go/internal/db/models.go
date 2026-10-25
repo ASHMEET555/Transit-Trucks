@@ -57,6 +57,7 @@ type IdempotencyKey struct {
 	StatusCode   int32
 	ResponseBody string
 	CreatedAt    pgtype.Timestamptz
+	ExpiresAt    pgtype.Timestamptz
 }
 
 type LoginAttempt struct {
@@ -102,6 +103,10 @@ type Trip struct {
 	Status          string
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+	StartOdometer   pgtype.Numeric
+	FinalOdometer   pgtype.Numeric
+	FuelLiters      pgtype.Numeric
+	FuelCost        pgtype.Numeric
 }
 
 type User struct {
