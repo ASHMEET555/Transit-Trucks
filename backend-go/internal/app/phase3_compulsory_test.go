@@ -233,8 +233,8 @@ func TestCompulsory_ConcurrentDispatchAndComplete(t *testing.T) {
 	ctx := context.Background()
 
 	adminCookie := createTestUserAndLogin(t, app, "admin.disp.comp@transitops.com", rbac.RoleAdmin)
-	vReg := "CDC-V-1"
-	dLic := "CDC-D-1"
+	vReg := fmt.Sprintf("CDC-V-1-%s", uuid.NewString()[:6])
+	dLic := fmt.Sprintf("CDC-D-1-%s", uuid.NewString()[:6])
 	createTestVehicle(t, db, vReg, "Available", "Van", 10000, 1000)
 	createTestDriver(t, db, dLic, "Available", "Heavy", time.Now().AddDate(1, 0, 0), 95.0)
 
@@ -475,8 +475,8 @@ func TestCompulsory_LockOrderNoDeadlock(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 
-	vReg := "LOCK-V-1"
-	dLic := "LOCK-D-1"
+	vReg := fmt.Sprintf("LOCK-V-1-%s", uuid.NewString()[:6])
+	dLic := fmt.Sprintf("LOCK-D-1-%s", uuid.NewString()[:6])
 	createTestVehicle(t, db, vReg, "Available", "Van", 10000, 1000)
 	createTestDriver(t, db, dLic, "Available", "Heavy", time.Now().AddDate(1, 0, 0), 95.0)
 	defer func() {
@@ -884,8 +884,8 @@ func TestCompulsory_IdempotencyKey(t *testing.T) {
 	ctx := context.Background()
 
 	adminCookie := createTestUserAndLogin(t, app, "admin.idem.comp@transitops.com", rbac.RoleAdmin)
-	vReg := "IDEM-V-1"
-	dLic := "IDEM-D-1"
+	vReg := fmt.Sprintf("IDEM-V-%s", uuid.NewString()[:6])
+	dLic := fmt.Sprintf("IDEM-D-%s", uuid.NewString()[:6])
 	createTestVehicle(t, db, vReg, "Available", "Van", 10000, 1000)
 	createTestDriver(t, db, dLic, "Available", "Heavy", time.Now().AddDate(1, 0, 0), 90.0)
 

@@ -107,7 +107,7 @@ func (a *App) handleCompleteTrip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.FinalOdometer <= startOdo {
-		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_ODOMETER", fmt.Sprintf("Final odometer reading (%.1f) must be higher than start odometer (%.1f).", req.FinalOdometer, startOdo), nil)
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "INVALID_ODOMETER", fmt.Sprintf("Final odometer reading (%.1f) must be higher than start odometer (%.1f).", req.FinalOdometer, startOdo), nil)
 		return
 	}
 

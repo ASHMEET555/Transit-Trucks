@@ -70,7 +70,7 @@ func lockVehicleAndDriver(ctx context.Context, tx pgx.Tx, vehicleReg, driverLice
 	}
 
 	// 2. Lock driver second
-	err = tx.QueryRow(ctx, `SELECT license_number, name, license_category, license_expiry_date, status, is_active
+	err = tx.QueryRow(ctx, `SELECT license_number, name, license_category, TO_CHAR(license_expiry_date, 'YYYY-MM-DD'), status, is_active
 		FROM drivers WHERE license_number = $1 FOR UPDATE`, driverLicense).
 		Scan(&res.Driver.License, &res.Driver.Name, &res.Driver.Category, &res.Driver.ExpiryDate, &res.Driver.Status, &res.Driver.IsActive)
 	if err != nil {

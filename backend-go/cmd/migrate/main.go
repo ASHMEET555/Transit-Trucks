@@ -62,6 +62,16 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("Migration step executed successfully.")
+	case "force":
+		version := 1
+		if len(args) > 1 {
+			_, _ = fmt.Sscanf(args[1], "%d", &version)
+		}
+		if err := m.Force(version); err != nil {
+			fmt.Fprintf(os.Stderr, "Migration force failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Migration forced to version %d.\n", version)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s. Use 'up' or 'down'\n", cmd)
 		os.Exit(1)
