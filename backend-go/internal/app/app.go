@@ -184,11 +184,17 @@ func (a *App) routes() {
 	a.registerRoute("DELETE", "/api/v1/destinations/{name}", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.deleteDestination)
 
 	// Trips
-	a.registerRoute("GET", "/api/v1/trips/", rbac.AnyAuthenticated, false, a.trips)
-	a.registerRoute("POST", "/api/v1/trips/suggest", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.suggest)
-	a.registerRoute("POST", "/api/v1/trips/", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.dispatch)
-	a.registerRoute("PUT", "/api/v1/trips/{id}/complete", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.complete)
-	a.registerRoute("PUT", "/api/v1/trips/{id}/cancel", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.cancel)
+	for _, prefix := range []string{"/api/v1/trips", "/api/v1/trips/"} {
+		a.registerRoute("GET", prefix, rbac.AnyAuthenticated, false, a.trips)
+		a.registerRoute("POST", prefix, []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleCreateTrip)
+	}
+	a.registerRoute("GET", "/api/v1/trips/{id}", rbac.AnyAuthenticated, false, a.handleGetTrip)
+	a.registerRoute("POST", "/api/v1/trips/{id}/dispatch", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleDispatchTrip)
+	a.registerRoute("POST", "/api/v1/trips/{id}/complete", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleCompleteTrip)
+	a.registerRoute("PUT", "/api/v1/trips/{id}/complete", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleCompleteTrip)
+	a.registerRoute("POST", "/api/v1/trips/{id}/cancel", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleCancelTrip)
+	a.registerRoute("PUT", "/api/v1/trips/{id}/cancel", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleCancelTrip)
+	a.registerRoute("POST", "/api/v1/trips/suggest", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleSuggest)
 
 	// Maintenance
 	a.registerRoute("GET", "/api/v1/maintenance/", rbac.AnyAuthenticated, false, a.maintenance)
@@ -1301,148 +1307,35 @@ func (a *App) deleteDestination(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) trips(w http.ResponseWriter, r *http.Request) {
-	x, e := rows[trip](r.Context(), a.db, "SELECT * FROM trips")
-	if e != nil {
+	ctx := r.Context()
+	rowsTrips, err := a.db.Query(ctx, `SELECT id, source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, fuel_liters, fuel_cost, created_at, updated_at
+		FROM trips ORDER BY id ASC`)
+	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch trips", nil)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, x)
-}
+	defer rowsTrips.Close()
 
-func (a *App) suggest(w http.ResponseWriter, r *http.Request) {
-	var x trip
-	if err := httpx.DecodeJSON(w, r, &x); err != nil {
-		return
-	}
-	if x.SourceName == x.DestinationName {
-		httpx.WriteError(w, r, http.StatusBadRequest, "MALFORMED_INPUT", "Source and destination must be different.", nil)
-		return
-	}
-	vs, _ := rows[vehicle](r.Context(), a.db, "SELECT * FROM vehicles WHERE status='Available' AND max_load_capacity >= $1", x.CargoWeight)
-	if len(vs) == 0 {
-		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "No available vehicle can carry this cargo.", nil)
-		return
-	}
-	ds, _ := rows[driver](r.Context(), a.db, "SELECT * FROM drivers WHERE status='Available' AND license_expiry_date > $1", time.Now().Format("2006-01-02"))
-	if len(ds) == 0 {
-		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "No available and compliant driver found.", nil)
-		return
-	}
-	var bv vehicle
-	var bd driver
-	best := -math.MaxFloat64
-	var util float64
-	for _, v := range vs {
-		u := x.CargoWeight / v.MaxLoadCapacity
-		for _, d := range ds {
-			s := u*100 + d.SafetyScore*.6 - v.Odometer/100000 - (v.MaxLoadCapacity-x.CargoWeight)/1000
-			if s > best {
-				best = s
-				bv = v
-				bd = d
-				util = u
-			}
+	var items []trip
+	for rowsTrips.Next() {
+		var t trip
+		var startOdo, finalOdo, fuelLiters, fuelCost *float64
+		var createdAt, updatedAt time.Time
+		if err := rowsTrips.Scan(&t.ID, &t.SourceName, &t.DestinationName, &t.VehicleReg, &t.DriverLicense, &t.CargoWeight, &t.PlannedDistance, &t.Revenue, &t.Status, &startOdo, &finalOdo, &fuelLiters, &fuelCost, &createdAt, &updatedAt); err != nil {
+			continue
 		}
+		t.StartOdometer = startOdo
+		t.FinalOdometer = finalOdo
+		t.FuelLiters = fuelLiters
+		t.FuelCost = fuelCost
+		t.CreatedAt = createdAt.Format(time.RFC3339)
+		t.UpdatedAt = updatedAt.Format(time.RFC3339)
+		items = append(items, t)
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"source_name":              x.SourceName,
-		"destination_name":         x.DestinationName,
-		"cargo_weight":             x.CargoWeight,
-		"suggested_vehicle_reg":    bv.RegistrationNumber,
-		"suggested_driver_license": bd.LicenseNumber,
-		"suggested_driver_name":    bd.Name,
-		"capacity_utilization":     math.Round(util*10000) / 10000,
-		"heuristic_score":          math.Round(best*100) / 100,
+
+	httpx.WriteJSON(w, http.StatusOK, PaginatedResponse[trip]{
+		Items: items,
 	})
-}
-
-func (a *App) dispatch(w http.ResponseWriter, r *http.Request) {
-	var x trip
-	if err := httpx.DecodeJSON(w, r, &x); err != nil {
-		return
-	}
-	v, e := one[vehicle](r.Context(), a.db, "SELECT * FROM vehicles WHERE registration_number=$1", x.VehicleReg)
-	d, de := one[driver](r.Context(), a.db, "SELECT * FROM drivers WHERE license_number=$1", x.DriverLicense)
-	if e != nil || de != nil {
-		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Assigned Vehicle or Driver profile not found.", nil)
-		return
-	}
-	if x.CargoWeight > v.MaxLoadCapacity {
-		httpx.WriteError(w, r, http.StatusBadRequest, "OVERLOAD_ERROR", fmt.Sprintf("Cargo (%vkg) exceeds max vehicle capacity (%vkg).", x.CargoWeight, v.MaxLoadCapacity), nil)
-		return
-	}
-	if v.Status == "In Shop" || v.Status == "Retired" {
-		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_STATE", fmt.Sprintf("Vehicle cannot be dispatched. Current Status: %s.", v.Status), nil)
-		return
-	}
-	if v.Status == "On Trip" {
-		httpx.WriteError(w, r, http.StatusConflict, "CONFLICT", "Vehicle is already actively deployed on another trip.", nil)
-		return
-	}
-	if d.LicenseExpiryDate <= time.Now().Format("2006-01-02") {
-		httpx.WriteError(w, r, http.StatusBadRequest, "COMPLIANCE_FAILURE", "Driver license has expired.", nil)
-		return
-	}
-	if d.Status == "Suspended" {
-		httpx.WriteError(w, r, http.StatusBadRequest, "COMPLIANCE_FAILURE", "Assigned driver is currently suspended.", nil)
-		return
-	}
-	if d.Status == "On Trip" {
-		httpx.WriteError(w, r, http.StatusConflict, "CONFLICT", "Driver is already assigned to an active trip.", nil)
-		return
-	}
-	x.Status = "Dispatched"
-	e = a.db.QueryRow(r.Context(), "INSERT INTO trips(source_name,destination_name,vehicle_reg,driver_license,cargo_weight,planned_distance,revenue,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id", x.SourceName, x.DestinationName, x.VehicleReg, x.DriverLicense, x.CargoWeight, x.PlannedDistance, x.Revenue, x.Status).Scan(&x.ID)
-	if e != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal Server Error", nil)
-		return
-	}
-	a.db.Exec(r.Context(), "UPDATE vehicles SET status='On Trip' WHERE registration_number=$1", x.VehicleReg)
-	a.db.Exec(r.Context(), "UPDATE drivers SET status='On Trip' WHERE license_number=$1", x.DriverLicense)
-	a.broadcast("trip.dispatched", map[string]any{"trip_id": x.ID, "vehicle_reg": x.VehicleReg, "driver_license": x.DriverLicense, "status": "Dispatched"})
-	httpx.WriteJSON(w, http.StatusCreated, x)
-}
-
-func (a *App) complete(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("id"))
-	x, e := one[trip](r.Context(), a.db, "SELECT * FROM trips WHERE id=$1", id)
-	if e != nil {
-		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Trip record not found.", nil)
-		return
-	}
-	if x.Status != "Dispatched" {
-		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_STATE", "Only actively dispatched transits can be finalized.", nil)
-		return
-	}
-	n, _ := strconv.ParseFloat(r.URL.Query().Get("final_odometer"), 64)
-	v, _ := one[vehicle](r.Context(), a.db, "SELECT * FROM vehicles WHERE registration_number=$1", x.VehicleReg)
-	if n <= v.Odometer {
-		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_ODOMETER", fmt.Sprintf("Odometer reading must be higher than starting values (%v).", v.Odometer), nil)
-		return
-	}
-	a.db.Exec(r.Context(), "UPDATE trips SET status='Completed' WHERE id=$1", id)
-	a.db.Exec(r.Context(), "UPDATE vehicles SET odometer=$1,status='Available' WHERE registration_number=$2", n, x.VehicleReg)
-	a.db.Exec(r.Context(), "UPDATE drivers SET status='Available' WHERE license_number=$1", x.DriverLicense)
-	a.broadcast("trip.completed", map[string]any{"trip_id": id, "vehicle_reg": x.VehicleReg, "driver_license": x.DriverLicense, "status": "Completed", "final_odometer": n})
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"message": "Trip completed successfully. Resources released back to active pools."})
-}
-
-func (a *App) cancel(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("id"))
-	x, e := one[trip](r.Context(), a.db, "SELECT * FROM trips WHERE id=$1", id)
-	if e != nil {
-		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Trip record not found.", nil)
-		return
-	}
-	if x.Status != "Dispatched" {
-		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_STATE", "Only actively dispatched transits can be cancelled.", nil)
-		return
-	}
-	a.db.Exec(r.Context(), "UPDATE trips SET status='Cancelled' WHERE id=$1", id)
-	a.db.Exec(r.Context(), "UPDATE vehicles SET status='Available' WHERE registration_number=$1", x.VehicleReg)
-	a.db.Exec(r.Context(), "UPDATE drivers SET status='Available' WHERE license_number=$1", x.DriverLicense)
-	a.broadcast("trip.cancelled", map[string]any{"trip_id": id, "vehicle_reg": x.VehicleReg, "driver_license": x.DriverLicense, "status": "Cancelled"})
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"message": "Trip cancelled. Vehicle and driver restored to Available."})
 }
 
 func (a *App) maintenance(w http.ResponseWriter, r *http.Request) {
