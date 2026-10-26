@@ -38,8 +38,13 @@ func Recover(logger *slog.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if rec := recover(); rec != nil {
+					reqID := httpx.RequestID(r)
 					if logger != nil {
-						logger.Error("panic recovered", "panic", fmt.Sprintf("%v", rec), "path", r.URL.Path)
+						logger.Error("panic recovered",
+							"request_id", reqID,
+							"panic", fmt.Sprintf("%v", rec),
+							"path", r.URL.Path,
+						)
 					}
 					httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "internal error", nil)
 				}
@@ -61,9 +66,22 @@ func RequestID() func(http.Handler) http.Handler {
 }
 
 // 3. AccessLog middleware
+type accessLogContextKey string
+
+const accessLogRecorderKey accessLogContextKey = "access_log_recorder"
+
 type responseRecorder struct {
 	http.ResponseWriter
 	statusCode int
+	userID     string
+	role       string
+}
+
+func SetLogUser(ctx context.Context, userID, role string) {
+	if rec, ok := ctx.Value(accessLogRecorderKey).(*responseRecorder); ok {
+		rec.userID = userID
+		rec.role = role
+	}
 }
 
 func (rw *responseRecorder) WriteHeader(code int) {
@@ -89,17 +107,31 @@ func AccessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			rec := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
+			ctx := context.WithValue(r.Context(), accessLogRecorderKey, rec)
+			r = r.WithContext(ctx)
+
 			next.ServeHTTP(rec, r)
 			duration := time.Since(start)
 
 			if logger != nil {
+				routePattern := r.Pattern
+				if routePattern == "" {
+					routePattern = r.URL.Path
+				} else {
+					parts := strings.SplitN(routePattern, " ", 2)
+					if len(parts) == 2 {
+						routePattern = parts[1]
+					}
+				}
+
 				logger.Info("http request",
-					"method", r.Method,
-					"path", r.URL.Path,
-					"status", rec.statusCode,
-					"duration_ms", duration.Milliseconds(),
 					"request_id", httpx.RequestID(r),
-					"remote_addr", r.RemoteAddr,
+					"method", r.Method,
+					"route", routePattern,
+					"status", rec.statusCode,
+					"latency_ms", duration.Milliseconds(),
+					"user_id", rec.userID,
+					"role", rec.role,
 				)
 			}
 		})
@@ -236,6 +268,7 @@ func Auth(db *pgxpool.Pool) func(http.Handler) http.Handler {
 				user, err := auth.ValidateSession(r.Context(), db, token)
 				if err == nil && user != nil {
 					r = r.WithContext(WithUser(r.Context(), user))
+					SetLogUser(r.Context(), user.ID, user.Role)
 				}
 			}
 			next.ServeHTTP(w, r)
