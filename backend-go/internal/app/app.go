@@ -224,6 +224,9 @@ func (a *App) routes() {
 	a.registerRoute("GET", "/api/v1/dashboard/me", []string{rbac.RoleDriver}, false, a.handleDriverSelfDashboard)
 	a.registerRoute("GET", "/api/v1/dashboard/export.csv", exportRoles, false, a.handleDashboardExportCSV)
 
+	// Audit Log
+	a.registerRoute("GET", "/api/v1/audit", []string{rbac.RoleAdmin}, false, a.handleListAuditLogs)
+
 	// WebSocket Hub
 	a.registerRoute("GET", "/ws/fleet", rbac.AnyAuthenticated, false, a.ws)
 }

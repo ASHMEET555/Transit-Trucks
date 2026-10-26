@@ -1299,3 +1299,139 @@ func TestCompulsory_DataMinimization_ComprehensiveMatrix(t *testing.T) {
 		}
 	}
 }
+
+// ---------------- 6. AUDIT LOG COMPULSORY TESTS ----------------
+
+func TestCompulsory_Audit_RoleMatrix(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	app := setupTestApp(t, db, true)
+
+	adminCookie := createTestUserAndLogin(t, app, "admin.audit.rm@transitops.com", rbac.RoleAdmin)
+	fleetCookie := createTestUserAndLogin(t, app, "fleet.audit.rm@transitops.com", rbac.RoleFleetManager)
+	finCookie := createTestUserAndLogin(t, app, "fin.audit.rm@transitops.com", rbac.RoleFinancialAnalyst)
+	safetyCookie := createTestUserAndLogin(t, app, "safety.audit.rm@transitops.com", rbac.RoleSafetyOfficer)
+	driverCookie := createTestUserAndLogin(t, app, "driver.audit.rm@transitops.com", rbac.RoleDriver)
+
+	checkAudit := func(cookie *http.Cookie, expectedCode int) {
+		req := httptest.NewRequest("GET", "/api/v1/audit", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, req)
+		if w.Code != expectedCode {
+			t.Errorf("GET /audit expected %d, got %d", expectedCode, w.Code)
+		}
+	}
+
+	checkAudit(adminCookie, http.StatusOK)
+	checkAudit(fleetCookie, http.StatusForbidden)
+	checkAudit(finCookie, http.StatusForbidden)
+	checkAudit(safetyCookie, http.StatusForbidden)
+	checkAudit(driverCookie, http.StatusForbidden)
+}
+
+func TestCompulsory_Audit_MutatingActionLoggingAndFiltering(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	app := setupTestApp(t, db, true)
+
+	adminEmail := fmt.Sprintf("admin.audit.act.%s@transitops.com", uuid.NewString()[:6])
+	adminCookie := createTestUserAndLogin(t, app, adminEmail, rbac.RoleAdmin)
+
+	vReg := fmt.Sprintf("AUD-V-%s", uuid.NewString()[:6])
+	dLic := fmt.Sprintf("AUD-D-%s", uuid.NewString()[:6])
+	createP4Vehicle(t, db, vReg, "Available", "Van", 5000, 1000, 20000, true)
+	createP4Driver(t, db, dLic, "Available", "Heavy", time.Now().AddDate(1, 0, 0))
+
+	// 1. Create a trip via API
+	tripBody, _ := json.Marshal(map[string]any{
+		"source_name":      "New York Central Hub",
+		"destination_name": "Chicago Logistics Hub",
+		"vehicle_reg":      vReg,
+		"driver_license":   dLic,
+		"cargo_weight":     1500,
+	})
+	reqCreate := httptest.NewRequest("POST", "/api/v1/trips", bytes.NewReader(tripBody))
+	reqCreate.Header.Set("Content-Type", "application/json")
+	reqCreate.Header.Set("Idempotency-Key", uuid.NewString())
+	reqCreate.AddCookie(adminCookie)
+	wCreate := httptest.NewRecorder()
+	app.ServeHTTP(wCreate, reqCreate)
+
+	if wCreate.Code != http.StatusCreated && wCreate.Code != http.StatusOK {
+		t.Fatalf("failed to create trip: %d: %s", wCreate.Code, wCreate.Body.String())
+	}
+	var createdTrip map[string]any
+	_ = json.Unmarshal(wCreate.Body.Bytes(), &createdTrip)
+	tripIDVal := createdTrip["id"]
+	tripIDStr := fmt.Sprintf("%.0f", tripIDVal.(float64))
+
+	// 2. Dispatch the trip
+	reqDisp := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/trips/%s/dispatch", tripIDStr), strings.NewReader(`{}`))
+	reqDisp.Header.Set("Content-Type", "application/json")
+	reqDisp.Header.Set("Idempotency-Key", uuid.NewString())
+	reqDisp.AddCookie(adminCookie)
+	wDisp := httptest.NewRecorder()
+	app.ServeHTTP(wDisp, reqDisp)
+
+	if wDisp.Code != http.StatusOK {
+		t.Fatalf("failed to dispatch trip: %d: %s", wDisp.Code, wDisp.Body.String())
+	}
+
+	// 3. Query audit log with entity=trips and entity_id=tripIDStr
+	reqAudit := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/audit?entity=trips&entity_id=%s", tripIDStr), nil)
+	reqAudit.AddCookie(adminCookie)
+	wAudit := httptest.NewRecorder()
+	app.ServeHTTP(wAudit, reqAudit)
+
+	if wAudit.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for /audit query, got %d: %s", wAudit.Code, wAudit.Body.String())
+	}
+
+	var auditResp PaginatedResponse[AuditEntry]
+	if err := json.Unmarshal(wAudit.Body.Bytes(), &auditResp); err != nil {
+		t.Fatalf("failed to parse audit response: %v", err)
+	}
+
+	if len(auditResp.Items) < 1 {
+		t.Fatalf("expected at least 1 audit entry for trip %s, got %d", tripIDStr, len(auditResp.Items))
+	}
+
+	// Verify actor and action
+	foundDispatch := false
+	for _, entry := range auditResp.Items {
+		if entry.Action == "dispatch" {
+			foundDispatch = true
+			if entry.ActorEmail == nil || *entry.ActorEmail != adminEmail {
+				t.Errorf("expected actor_email %s, got %v", adminEmail, entry.ActorEmail)
+			}
+		}
+	}
+	if !foundDispatch {
+		t.Errorf("dispatch action not recorded in audit log")
+	}
+
+	// 4. Test date range filtering
+	today := time.Now().UTC().Format("2006-01-02")
+	reqDateAudit := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/audit?entity=trips&from=%s&to=%s", today, today), nil)
+	reqDateAudit.AddCookie(adminCookie)
+	wDateAudit := httptest.NewRecorder()
+	app.ServeHTTP(wDateAudit, reqDateAudit)
+
+	if wDateAudit.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for date filtered audit, got %d", wDateAudit.Code)
+	}
+
+	// Past date range that shouldn't match our newly created trip
+	pastDate := "2020-01-01"
+	reqPastAudit := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/audit?entity=trips&entity_id=%s&from=%s&to=%s", tripIDStr, pastDate, pastDate), nil)
+	reqPastAudit.AddCookie(adminCookie)
+	wPastAudit := httptest.NewRecorder()
+	app.ServeHTTP(wPastAudit, reqPastAudit)
+
+	var pastResp PaginatedResponse[AuditEntry]
+	_ = json.Unmarshal(wPastAudit.Body.Bytes(), &pastResp)
+	if len(pastResp.Items) != 0 {
+		t.Errorf("expected 0 entries for past date filter, got %d", len(pastResp.Items))
+	}
+}
