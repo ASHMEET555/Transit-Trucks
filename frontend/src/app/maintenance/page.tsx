@@ -21,6 +21,7 @@ import {
 import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
 import { canWrite } from "@/lib/rbacConfig"
+import { sanitizeCsvCell } from "@/lib/utils"
 import jsPDF from "jspdf"
 
 type Vehicle = {
@@ -146,10 +147,18 @@ export default function MaintenancePage() {
     const rows = [
       "id,vehicle_reg,description,cost,start_date,end_date,status",
       ...logs.map((log) =>
-        [log.id, log.vehicle_reg, log.description, log.cost, log.start_date, log.end_date || "", log.status].join(","),
+        [
+          sanitizeCsvCell(log.id),
+          sanitizeCsvCell(log.vehicle_reg),
+          sanitizeCsvCell(log.description),
+          sanitizeCsvCell(log.cost),
+          sanitizeCsvCell(log.start_date),
+          sanitizeCsvCell(log.end_date || ""),
+          sanitizeCsvCell(log.status),
+        ].join(","),
       ),
     ]
-    const blob = new Blob([rows.join("\n")], { type: "text/csv" })
+    const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url

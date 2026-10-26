@@ -63,9 +63,14 @@ export async function apiRequest<T = unknown>(
     }
   }
 
-  const url = path.startsWith("http")
-    ? path
-    : `${BACKEND_URL}${path.startsWith("/") ? "" : "/"}${path}`
+  let normalizedPath = path
+  if (BACKEND_URL.endsWith("/api/v1") && normalizedPath.startsWith("/api/v1/")) {
+    normalizedPath = normalizedPath.slice("/api/v1".length)
+  }
+
+  const url = normalizedPath.startsWith("http")
+    ? normalizedPath
+    : `${BACKEND_URL}${normalizedPath.startsWith("/") ? "" : "/"}${normalizedPath}`
 
   const response = await fetch(url, {
     method,

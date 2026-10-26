@@ -21,6 +21,7 @@ import {
 import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
 import { canWrite } from "@/lib/rbacConfig"
+import { sanitizeCsvCell } from "@/lib/utils"
 import jsPDF from "jspdf"
 
 type Trip = {
@@ -58,8 +59,10 @@ export default function FuelAndExpensesPage() {
     apiRequest<any>("/trips/")
       .then((res) => {
         const data = extractItems<Trip>(res)
-        setTrips(data)
-        if (data.length) setTripId(String(data[0].id))
+        // Expenses can only be logged for Dispatched or Completed trips
+        const eligible = data.filter((t) => t.status === "Dispatched" || t.status === "Completed")
+        setTrips(eligible)
+        if (eligible.length) setTripId(String(eligible[0].id))
       })
       .catch((err) =>
         setError(err instanceof ApiError ? err.detail : "Failed to load trips"),
@@ -123,10 +126,17 @@ export default function FuelAndExpensesPage() {
     const rows = [
       "id,trip_id,type,liters,cost,date",
       ...expenses.map((e) =>
-        [e.id, e.trip_id, e.type, e.liters ?? "", e.cost, e.date].join(","),
+        [
+          sanitizeCsvCell(e.id),
+          sanitizeCsvCell(e.trip_id),
+          sanitizeCsvCell(e.type),
+          sanitizeCsvCell(e.liters ?? ""),
+          sanitizeCsvCell(e.cost),
+          sanitizeCsvCell(e.date),
+        ].join(","),
       ),
     ]
-    const blob = new Blob([rows.join("\n")], { type: "text/csv" })
+    const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url

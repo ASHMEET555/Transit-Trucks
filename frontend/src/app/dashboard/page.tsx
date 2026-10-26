@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { BarChart } from "@/components/BarChart"
 import { LiveFleetMap } from "@/components/map/LiveFleetMap"
 import {
@@ -22,6 +22,7 @@ import {
 import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import { useFleetEvents } from "@/lib/realtime/useFleetEvents"
 import { RealtimeIndicator } from "@/components/RealtimeIndicator"
+import { useProfile } from "@/lib/ProfileContext"
 import type { Destination, Trip } from "@/lib/tripTypes"
 
 type DashboardKPIs = {
@@ -45,6 +46,22 @@ type DashboardKPIs = {
   }>
 }
 
+type DriverDashboard = {
+  driver_license: string
+  trips_by_status: Record<string, number>
+  total_completed_trips: number
+  total_distance: number
+  recent_trips: Array<{
+    id: number
+    source_name: string
+    destination_name: string
+    cargo_weight: number
+    planned_distance: number
+    distance: number
+    completed_at: string
+  }>
+}
+
 function Kpi({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="kpi-card">
@@ -55,7 +72,11 @@ function Kpi({ label, value }: { label: string; value: string | number }) {
 }
 
 export default function DashboardPage() {
+  const { currentProfile, isLoaded } = useProfile()
+  const isDriver = currentProfile?.role === "Driver"
+
   const [data, setData] = useState<DashboardKPIs | null>(null)
+  const [driverData, setDriverData] = useState<DriverDashboard | null>(null)
   const [trips, setTrips] = useState<Trip[]>([])
   const [destinations, setDestinations] = useState<Destination[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -63,14 +84,24 @@ export default function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [lastRealtimeEvent, setLastRealtimeEvent] = useState<string | null>(null)
 
-  const loadKpis = () =>
-    apiRequest<DashboardKPIs>("/dashboard/kpis")
-      .then(setData)
-      .catch((err) =>
-        setError(err instanceof ApiError ? err.detail : "Failed to load KPIs"),
-      )
+  const loadKpis = useCallback(() => {
+    if (!isLoaded) return
+    if (isDriver) {
+      apiRequest<DriverDashboard>("/dashboard/me")
+        .then(setDriverData)
+        .catch((err) =>
+          setError(err instanceof ApiError ? err.detail : "Failed to load driver dashboard"),
+        )
+    } else {
+      apiRequest<DashboardKPIs>("/dashboard/kpis")
+        .then(setData)
+        .catch((err) =>
+          setError(err instanceof ApiError ? err.detail : "Failed to load KPIs"),
+        )
+    }
+  }, [isLoaded, isDriver])
 
-  const loadMapData = () =>
+  const loadMapData = useCallback(() => {
     Promise.all([
       apiRequest<any>("/trips/"),
       apiRequest<any>("/destinations/"),
@@ -82,11 +113,14 @@ export default function DashboardPage() {
       .catch(() => {
         // Map is optional on dashboard
       })
+  }, [])
 
   useEffect(() => {
-    loadKpis()
-    loadMapData()
-  }, [])
+    if (isLoaded) {
+      loadKpis()
+      loadMapData()
+    }
+  }, [isLoaded, loadKpis, loadMapData])
 
   const { status } = useFleetEvents({
     onEvent: (event) => {
@@ -101,7 +135,68 @@ export default function DashboardPage() {
   })
 
   if (error) return <div className="p-6 text-red-500">{error}</div>
-  if (!data) return <div className="p-6 text-gray-500">Loading dashboard...</div>
+  if (!isLoaded || (!data && !driverData)) return <div className="p-6 text-gray-500">Loading dashboard...</div>
+
+  // Driver view
+  if (isDriver && driverData) {
+    return (
+      <div className="page-shell space-y-6">
+        <div className="page-header">
+          <div>
+            <div className="flex items-center gap-3">
+              <p className="page-eyebrow">Driver Portal</p>
+              <RealtimeIndicator status={status} />
+            </div>
+            <h1 className="page-title">Driver Dashboard</h1>
+            <p className="page-subtitle">
+              Overview for License: {driverData.driver_license}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Kpi label="Dispatched Trips" value={driverData.trips_by_status["Dispatched"] || 0} />
+          <Kpi label="Completed Trips" value={driverData.total_completed_trips} />
+          <Kpi label="Total Distance" value={`${driverData.total_distance.toLocaleString()} km`} />
+          <Kpi label="Draft Trips" value={driverData.trips_by_status["Draft"] || 0} />
+        </div>
+
+        <div className="rounded-lg border p-4 dark:border-gray-800">
+          <h2 className="mb-3 font-semibold">Recent Completed Trips</h2>
+          {driverData.recent_trips.length > 0 ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableHeaderCell>Trip #</TableHeaderCell>
+                    <TableHeaderCell>Route</TableHeaderCell>
+                    <TableHeaderCell>Cargo</TableHeaderCell>
+                    <TableHeaderCell>Distance</TableHeaderCell>
+                    <TableHeaderCell>Completed</TableHeaderCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {driverData.recent_trips.map((t) => (
+                    <TableRow key={t.id}>
+                      <TableCell>#{t.id}</TableCell>
+                      <TableCell>{t.source_name} → {t.destination_name}</TableCell>
+                      <TableCell>{t.cargo_weight.toFixed(1)} kg</TableCell>
+                      <TableCell>{t.distance.toFixed(1)} km</TableCell>
+                      <TableCell>{new Date(t.completed_at).toLocaleDateString()}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-gray-500">No completed trips yet</p>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  if (!data) return null
 
   const filtered = data.vehicles.filter((v) => {
     if (typeFilter !== "all" && v.type !== typeFilter) return false
@@ -111,7 +206,7 @@ export default function DashboardPage() {
 
   const chartData = filtered.map((v) => ({
     name: v.registration_number,
-    ROI: Number(((v.roi ?? 0) * 100).toFixed(1)),
+    ROI: Number((v.roi ?? 0).toFixed(1)),
   }))
 
   const types = Array.from(new Set(data.vehicles.map((v) => v.type)))
@@ -239,7 +334,7 @@ export default function DashboardPage() {
                 </TableCell>
                 <TableCell>{v.status}</TableCell>
                 <TableCell>
-                  {v.roi != null ? `${(v.roi * 100).toFixed(1)}%` : "N/A"}
+                  {v.roi != null ? `${v.roi.toFixed(1)}%` : "N/A"}
                 </TableCell>
                 <TableCell>
                   {v.fuel_efficiency != null

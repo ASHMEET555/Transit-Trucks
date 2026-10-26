@@ -61,7 +61,7 @@ export function useFleetEvents(options: UseFleetEventsOptions = {}) {
     try {
       // 1. Fetch single-use ticket
       const { ticket } = await apiRequest<{ ticket: string; expires_in: number }>(
-        "/api/v1/realtime/ticket",
+        "/realtime/ticket",
         { method: "POST" }
       )
 
@@ -82,7 +82,12 @@ export function useFleetEvents(options: UseFleetEventsOptions = {}) {
         setStatus("live")
         reconnectAttemptRef.current = 0
         if (hasConnectedOnceRef.current) {
-          onReconnectRef.current?.()
+          // Debounced reconnect refetch
+          setTimeout(() => {
+            if (!isUnmountedRef.current) {
+              onReconnectRef.current?.()
+            }
+          }, 300)
         }
         hasConnectedOnceRef.current = true
       }
@@ -130,10 +135,9 @@ export function useFleetEvents(options: UseFleetEventsOptions = {}) {
     if (reconnectTimerRef.current || isUnmountedRef.current || !enabled) return
 
     reconnectAttemptRef.current += 1
-    // Exponential backoff: min(30s, 1s * 1.5^attempt + jitter)
-    const baseDelay = Math.min(30000, Math.floor(Math.pow(1.5, reconnectAttemptRef.current) * 1000))
-    const jitter = Math.floor(Math.random() * 500)
-    const delay = baseDelay + jitter
+    // Exponential backoff with full jitter: min(30s, 1s * 2^attempt)
+    const maxDelay = Math.min(30000, Math.floor(Math.pow(2, reconnectAttemptRef.current) * 1000))
+    const delay = Math.floor(Math.random() * maxDelay)
 
     reconnectTimerRef.current = setTimeout(() => {
       reconnectTimerRef.current = null
@@ -152,8 +156,18 @@ export function useFleetEvents(options: UseFleetEventsOptions = {}) {
       setStatus("offline")
     }
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && enabled) {
+        if (!socketRef.current || socketRef.current.readyState === WebSocket.CLOSED) {
+          connect()
+        }
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+
     return () => {
       isUnmountedRef.current = true
+      document.removeEventListener("visibilitychange", handleVisibilityChange)
       cleanup()
     }
   }, [enabled, connect, cleanup])

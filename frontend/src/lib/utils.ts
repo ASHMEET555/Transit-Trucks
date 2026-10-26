@@ -96,3 +96,15 @@ export const formatters: FormatterFunctions = {
     }).format(number)}M`
   },
 }
+
+export function sanitizeCsvCell(val: unknown): string {
+  if (val === null || val === undefined) return ""
+  let str = String(val)
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`
+  }
+  if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
+    str = `"${str.replace(/"/g, '""')}"`
+  }
+  return str
+}
