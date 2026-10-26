@@ -65,6 +65,7 @@ type trip struct {
 	FuelCost        *float64 `json:"fuel_cost,omitempty"`
 	CreatedAt       string   `json:"created_at,omitempty"`
 	UpdatedAt       string   `json:"updated_at,omitempty"`
+	CompletedAt     *string  `json:"completed_at,omitempty"`
 }
 
 type createTripRequest struct {
@@ -97,10 +98,14 @@ type maintenance struct {
 }
 
 type expenseRow struct {
-	ID     int      `json:"id"`
-	TripID int      `json:"trip_id"`
-	Type   string   `json:"type"`
-	Liters *float64 `json:"liters"`
-	Cost   float64  `json:"cost"`
-	Date   string   `json:"date"`
+	ID         int      `json:"id"`
+	TripID     *int     `json:"trip_id,omitempty"`
+	VehicleReg *string  `json:"vehicle_reg,omitempty"`
+	Type       string   `json:"type"`
+	Liters     *float64 `json:"liters,omitempty"`
+	Cost       float64  `json:"cost"`
+	Amount     float64  `json:"amount"`
+	Date       string   `json:"date"`
+	CreatedAt  *string  `json:"created_at,omitempty"`
+	UpdatedAt  *string  `json:"updated_at,omitempty"`
 }

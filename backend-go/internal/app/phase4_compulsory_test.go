@@ -499,3 +499,280 @@ func TestCompulsory_Maintenance_RoleMatrix(t *testing.T) {
 	checkGet(finCookie, http.StatusForbidden)
 	checkGet(driverCookie, http.StatusForbidden)
 }
+
+// ---------------- 2. FINANCE COMPULSORY TESTS ----------------
+
+func TestCompulsory_Finance_ExpenseValidation(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	app := setupTestApp(t, db, true)
+	ctx := context.Background()
+
+	adminCookie := createTestUserAndLogin(t, app, "admin.fin.val@transitops.com", rbac.RoleAdmin)
+
+	vReg := fmt.Sprintf("FIN-VAL-V-%s", uuid.NewString()[:6])
+	dLic := fmt.Sprintf("FIN-VAL-D-%s", uuid.NewString()[:6])
+	createP4Vehicle(t, db, vReg, "Available", "Van", 5000, 1000, 20000, true)
+	createP4Driver(t, db, dLic, "Available", "Heavy", time.Now().AddDate(1, 0, 0))
+
+	createTrip := func(status string) int64 {
+		var id int64
+		err := db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, created_at, updated_at)
+			VALUES ('New York Central Hub', 'Chicago Logistics Hub', $1, $2, 1000, 200, 800, $3, 1000, 1200, now(), now()) RETURNING id`,
+			vReg, dLic, status).Scan(&id)
+		if err != nil {
+			t.Fatalf("failed to insert trip: %v", err)
+		}
+		return id
+	}
+
+	draftTripID := createTrip("Draft")
+	cancelledTripID := createTrip("Cancelled")
+	dispatchedTripID := createTrip("Dispatched")
+	completedTripID := createTrip("Completed")
+
+	postExpense := func(body map[string]any) *httptest.ResponseRecorder {
+		bodyBytes, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", "/api/v1/expenses", bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", uuid.NewString())
+		req.AddCookie(adminCookie)
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, req)
+		return w
+	}
+
+	// 1. Expense on draft trip -> 422 EXPENSE_ON_INACTIVE_TRIP
+	wDraft := postExpense(map[string]any{"trip_id": draftTripID, "type": "Toll", "amount": 25.0})
+	if wDraft.Code != http.StatusUnprocessableEntity || !strings.Contains(wDraft.Body.String(), "EXPENSE_ON_INACTIVE_TRIP") {
+		t.Fatalf("expected 422 EXPENSE_ON_INACTIVE_TRIP on draft trip, got %d: %s", wDraft.Code, wDraft.Body.String())
+	}
+
+	// 2. Expense on cancelled trip -> 422 EXPENSE_ON_INACTIVE_TRIP
+	wCan := postExpense(map[string]any{"trip_id": cancelledTripID, "type": "Toll", "amount": 25.0})
+	if wCan.Code != http.StatusUnprocessableEntity || !strings.Contains(wCan.Body.String(), "EXPENSE_ON_INACTIVE_TRIP") {
+		t.Fatalf("expected 422 EXPENSE_ON_INACTIVE_TRIP on cancelled trip, got %d: %s", wCan.Code, wCan.Body.String())
+	}
+
+	// 3. Expense Fuel without liters -> 422
+	wNoLit := postExpense(map[string]any{"trip_id": dispatchedTripID, "type": "Fuel", "amount": 100.0})
+	if wNoLit.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for fuel without liters, got %d", wNoLit.Code)
+	}
+
+	// 4. Expense Toll with liters -> 422
+	wTollLit := postExpense(map[string]any{"trip_id": dispatchedTripID, "type": "Toll", "amount": 30.0, "liters": 10.0})
+	if wTollLit.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for toll with liters, got %d", wTollLit.Code)
+	}
+
+	// 5. Expense with negative amount -> 422
+	wNeg := postExpense(map[string]any{"trip_id": dispatchedTripID, "type": "Other", "amount": -10.0})
+	if wNeg.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for negative expense amount, got %d", wNeg.Code)
+	}
+
+	// 6. Expense future date (> 1 day in future) -> 422
+	futureDate := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
+	wFuture := postExpense(map[string]any{"trip_id": dispatchedTripID, "type": "Other", "amount": 50.0, "date": futureDate})
+	if wFuture.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for future date, got %d", wFuture.Code)
+	}
+
+	// 7. Expense with mismatched vehicle_reg -> 422
+	wMismatch := postExpense(map[string]any{"trip_id": dispatchedTripID, "vehicle_reg": "NON-EXISTENT", "type": "Other", "amount": 50.0})
+	if wMismatch.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for mismatched vehicle_reg, got %d", wMismatch.Code)
+	}
+
+	// 8. Expense on dispatched trip -> 201 Created
+	wDisp := postExpense(map[string]any{"trip_id": dispatchedTripID, "type": "Toll", "amount": 40.0})
+	if wDisp.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for toll on dispatched trip, got %d: %s", wDisp.Code, wDisp.Body.String())
+	}
+
+	// 9. Expense on completed trip with Fuel & liters -> 201 Created
+	wComp := postExpense(map[string]any{"trip_id": completedTripID, "type": "Fuel", "amount": 120.0, "liters": 45.0})
+	if wComp.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for fuel on completed trip, got %d: %s", wComp.Code, wComp.Body.String())
+	}
+
+	// 10. Standalone expense by vehicle_reg without trip -> 201 Created
+	wStandalone := postExpense(map[string]any{"vehicle_reg": vReg, "type": "Maintenance", "amount": 250.0})
+	if wStandalone.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for standalone expense on vehicle, got %d: %s", wStandalone.Code, wStandalone.Body.String())
+	}
+}
+
+func TestCompulsory_Finance_SummaryMath(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	app := setupTestApp(t, db, true)
+	ctx := context.Background()
+
+	adminCookie := createTestUserAndLogin(t, app, "admin.fin.math@transitops.com", rbac.RoleAdmin)
+
+	vReg := fmt.Sprintf("FIN-MTH-V-%s", uuid.NewString()[:6])
+	dLic := fmt.Sprintf("FIN-MTH-D-%s", uuid.NewString()[:6])
+	createP4Vehicle(t, db, vReg, "Available", "Semi", 20000, 1000, 80000, true)
+	createP4Driver(t, db, dLic, "Available", "Heavy", time.Now().AddDate(1, 0, 0))
+
+	// Trip 1: Completed, odo 1000 -> 1300 = 300 km
+	var t1ID int64
+	err := db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, completed_at, created_at, updated_at)
+		VALUES ('New York Central Hub', 'Chicago Logistics Hub', $1, $2, 5000, 300, 1500, 'Completed', 1000, 1300, now(), now(), now()) RETURNING id`,
+		vReg, dLic).Scan(&t1ID)
+	if err != nil {
+		t.Fatalf("failed to insert trip 1: %v", err)
+	}
+
+	// Trip 2: Completed, odo 1300 -> 1500 = 200 km (total distance = 500 km)
+	var t2ID int64
+	err = db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, completed_at, created_at, updated_at)
+		VALUES ('Chicago Logistics Hub', 'Dallas Gateway Hub', $1, $2, 6000, 200, 1200, 'Completed', 1300, 1500, now(), now(), now()) RETURNING id`,
+		vReg, dLic).Scan(&t2ID)
+	if err != nil {
+		t.Fatalf("failed to insert trip 2: %v", err)
+	}
+
+	// Expense 1: Fuel = 150.00
+	_, _ = db.Exec(ctx, `INSERT INTO expenses (trip_id, vehicle_reg, type, liters, cost, date, created_at, updated_at)
+		VALUES ($1, $2, 'Fuel', 50.0, 150.00, CURRENT_DATE, now(), now())`, t1ID, vReg)
+
+	// Expense 2: Toll (Other) = 50.00
+	_, _ = db.Exec(ctx, `INSERT INTO expenses (trip_id, vehicle_reg, type, cost, date, created_at, updated_at)
+		VALUES ($1, $2, 'Toll', 50.00, CURRENT_DATE, now(), now())`, t1ID, vReg)
+
+	// Expense 3: Maintenance Expense = 100.00
+	_, _ = db.Exec(ctx, `INSERT INTO expenses (vehicle_reg, type, cost, date, created_at, updated_at)
+		VALUES ($1, 'Maintenance', 100.00, CURRENT_DATE, now(), now())`, vReg)
+
+	// Maintenance Log: Closed = 200.00
+	_, _ = db.Exec(ctx, `INSERT INTO maintenance_logs (vehicle_reg, description, cost, start_date, end_date, status, created_at, updated_at)
+		VALUES ($1, 'Brake overhaul', 200.00, CURRENT_DATE, CURRENT_DATE, 'Closed', now(), now())`, vReg)
+
+	// Query GET /api/v1/finance/summary?vehicle_reg=vReg
+	req := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/finance/summary?vehicle_reg=%s", vReg), nil)
+	req.AddCookie(adminCookie)
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for finance summary, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp FinanceSummaryResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.Vehicles) != 1 {
+		t.Fatalf("expected 1 vehicle in summary, got %d", len(resp.Vehicles))
+	}
+
+	v := resp.Vehicles[0]
+	// Fuel: 150.00
+	if v.FuelExpenses != 150.00 {
+		t.Errorf("expected FuelExpenses 150.00, got %f", v.FuelExpenses)
+	}
+	// Maintenance expenses: 100.00
+	if v.MaintenanceExpenses != 100.00 {
+		t.Errorf("expected MaintenanceExpenses 100.00, got %f", v.MaintenanceExpenses)
+	}
+	// Other expenses: 50.00
+	if v.OtherExpenses != 50.00 {
+		t.Errorf("expected OtherExpenses 50.00, got %f", v.OtherExpenses)
+	}
+	// Closed maintenance logs: 200.00
+	if v.ClosedMaintenanceCost != 200.00 {
+		t.Errorf("expected ClosedMaintenanceCost 200.00, got %f", v.ClosedMaintenanceCost)
+	}
+	// Total distance: 500.00
+	if v.TotalDistance != 500.00 {
+		t.Errorf("expected TotalDistance 500.00, got %f", v.TotalDistance)
+	}
+	// Total cost = 150 + 100 + 50 + 200 = 500.00
+	// Cost per km = 500 / 500 = 1.00
+	if v.CostPerKm == nil || *v.CostPerKm != 1.00 {
+		t.Errorf("expected CostPerKm 1.00, got %v", v.CostPerKm)
+	}
+}
+
+func TestCompulsory_Finance_RoleMatrix(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	app := setupTestApp(t, db, true)
+
+	adminCookie := createTestUserAndLogin(t, app, "admin.fin.rm@transitops.com", rbac.RoleAdmin)
+	fleetCookie := createTestUserAndLogin(t, app, "fleet.fin.rm@transitops.com", rbac.RoleFleetManager)
+	finCookie := createTestUserAndLogin(t, app, "fin.fin.rm@transitops.com", rbac.RoleFinancialAnalyst)
+	safetyCookie := createTestUserAndLogin(t, app, "safety.fin.rm@transitops.com", rbac.RoleSafetyOfficer)
+	driverCookie := createTestUserAndLogin(t, app, "driver.fin.rm@transitops.com", rbac.RoleDriver)
+
+	// GET /api/v1/expenses: Admin=200, Fleet=200, Fin=200, Safety=403, Driver=403
+	checkExpensesGet := func(cookie *http.Cookie, expectedCode int) {
+		req := httptest.NewRequest("GET", "/api/v1/expenses", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, req)
+		if w.Code != expectedCode {
+			t.Errorf("GET /expenses expected %d, got %d", expectedCode, w.Code)
+		}
+	}
+
+	checkExpensesGet(adminCookie, http.StatusOK)
+	checkExpensesGet(fleetCookie, http.StatusOK)
+	checkExpensesGet(finCookie, http.StatusOK)
+	checkExpensesGet(safetyCookie, http.StatusForbidden)
+	checkExpensesGet(driverCookie, http.StatusForbidden)
+
+	// GET /api/v1/finance/summary: Admin=200, Fleet=200, Fin=200, Safety=403, Driver=403
+	checkSummaryGet := func(cookie *http.Cookie, expectedCode int) {
+		req := httptest.NewRequest("GET", "/api/v1/finance/summary", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, req)
+		if w.Code != expectedCode {
+			t.Errorf("GET /finance/summary expected %d, got %d", expectedCode, w.Code)
+		}
+	}
+
+	checkSummaryGet(adminCookie, http.StatusOK)
+	checkSummaryGet(fleetCookie, http.StatusOK)
+	checkSummaryGet(finCookie, http.StatusOK)
+	checkSummaryGet(safetyCookie, http.StatusForbidden)
+	checkSummaryGet(driverCookie, http.StatusForbidden)
+}
+
+func TestCompulsory_Finance_FuelMigration(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	// Verify columns fuel_liters and fuel_cost are absent from trips table
+	var colCount int
+	err := db.QueryRow(ctx, `SELECT COUNT(*) FROM information_schema.columns 
+		WHERE table_name = 'trips' AND column_name IN ('fuel_liters', 'fuel_cost')`).Scan(&colCount)
+	if err != nil {
+		t.Fatalf("failed to query columns: %v", err)
+	}
+	if colCount != 0 {
+		t.Fatalf("expected trips.fuel_liters and trips.fuel_cost to be dropped in migration 000004, found %d", colCount)
+	}
+
+	// Verify completed_at exists on trips
+	var completedAtExists bool
+	err = db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns 
+		WHERE table_name = 'trips' AND column_name = 'completed_at')`).Scan(&completedAtExists)
+	if err != nil || !completedAtExists {
+		t.Fatalf("expected completed_at column to exist on trips table")
+	}
+
+	// Verify expenses table has vehicle_reg
+	var vehicleRegExists bool
+	err = db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns 
+		WHERE table_name = 'expenses' AND column_name = 'vehicle_reg')`).Scan(&vehicleRegExists)
+	if err != nil || !vehicleRegExists {
+		t.Fatalf("expected vehicle_reg column to exist on expenses table")
+	}
+}

@@ -112,12 +112,24 @@ func (a *App) handleCompleteTrip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update Trip to Completed
-	_, err = tx.Exec(ctx, `UPDATE trips SET status = 'Completed', final_odometer = $1, fuel_liters = $2, fuel_cost = $3, updated_at = now()
-		WHERE id = $4`, req.FinalOdometer, req.FuelLiters, req.FuelCost, tripID)
+	_, err = tx.Exec(ctx, `UPDATE trips SET status = 'Completed', final_odometer = $1, completed_at = now(), updated_at = now()
+		WHERE id = $2`, req.FinalOdometer, tripID)
 	if err != nil {
 		status, code, msg := httpx.MapDBError(err, nil)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
+	}
+
+	// Phase 4: Fuel parameters are stored in expenses table
+	if hasFuelLiters && hasFuelCost {
+		_, err = tx.Exec(ctx, `INSERT INTO expenses (trip_id, vehicle_reg, type, liters, cost, date, created_at, updated_at)
+			VALUES ($1, $2, 'Fuel', $3, $4, CURRENT_DATE, now(), now())`,
+			tripID, res.Trip.VehicleReg, *req.FuelLiters, *req.FuelCost)
+		if err != nil {
+			status, code, msg := httpx.MapDBError(err, nil)
+			httpx.WriteError(w, r, status, code, msg, nil)
+			return
+		}
 	}
 
 	// Update Vehicle master odometer and restore status to Available

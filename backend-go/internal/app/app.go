@@ -207,9 +207,16 @@ func (a *App) routes() {
 	a.registerRoute("POST", "/api/v1/maintenance/{id}/close", maintWriteRoles, false, a.handleCloseMaintenance)
 	a.registerRoute("PUT", "/api/v1/maintenance/{id}/close", maintWriteRoles, false, a.handleCloseMaintenance)
 
-	// Finance
-	a.registerRoute("POST", "/api/v1/finance/expenses", []string{rbac.RoleFinancialAnalyst, rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.expense)
-	a.registerRoute("GET", "/api/v1/finance/expenses/{id}", rbac.AnyAuthenticated, false, a.expenses)
+	// Finance & Expenses
+	financeRoles := []string{rbac.RoleFinancialAnalyst, rbac.RoleFleetManager, rbac.RoleAdmin}
+	for _, prefix := range []string{"/api/v1/expenses", "/api/v1/expenses/", "/api/v1/finance/expenses", "/api/v1/finance/expenses/"} {
+		a.registerRoute("POST", prefix, financeRoles, false, a.handleCreateExpense)
+	}
+	for _, prefix := range []string{"/api/v1/expenses", "/api/v1/expenses/"} {
+		a.registerRoute("GET", prefix, financeRoles, false, a.handleListExpenses)
+	}
+	a.registerRoute("GET", "/api/v1/finance/expenses/{id}", financeRoles, false, a.handleGetTripExpenses)
+	a.registerRoute("GET", "/api/v1/finance/summary", financeRoles, false, a.handleFinanceSummary)
 
 	// Dashboard
 	a.registerRoute("GET", "/api/v1/dashboard/kpis", rbac.AnyAuthenticated, false, a.kpis)
@@ -1328,8 +1335,14 @@ func (a *App) deleteDestination(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) trips(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	rowsTrips, err := a.db.Query(ctx, `SELECT id, source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, fuel_liters, fuel_cost, created_at, updated_at
-		FROM trips ORDER BY id ASC`)
+	rowsTrips, err := a.db.Query(ctx, `SELECT t.id, t.source_name, t.destination_name, t.vehicle_reg, t.driver_license, t.cargo_weight, t.planned_distance, t.revenue, t.status, t.start_odometer, t.final_odometer, t.created_at, t.updated_at, t.completed_at, e.liters, e.cost
+		FROM trips t
+		LEFT JOIN (
+			SELECT trip_id, liters, cost,
+				ROW_NUMBER() OVER (PARTITION BY trip_id ORDER BY id DESC) as rn
+			FROM expenses WHERE type = 'Fuel'
+		) e ON e.trip_id = t.id AND e.rn = 1
+		ORDER BY t.id ASC`)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch trips", nil)
 		return
@@ -1341,7 +1354,8 @@ func (a *App) trips(w http.ResponseWriter, r *http.Request) {
 		var t trip
 		var startOdo, finalOdo, fuelLiters, fuelCost *float64
 		var createdAt, updatedAt time.Time
-		if err := rowsTrips.Scan(&t.ID, &t.SourceName, &t.DestinationName, &t.VehicleReg, &t.DriverLicense, &t.CargoWeight, &t.PlannedDistance, &t.Revenue, &t.Status, &startOdo, &finalOdo, &fuelLiters, &fuelCost, &createdAt, &updatedAt); err != nil {
+		var completedAt *time.Time
+		if err := rowsTrips.Scan(&t.ID, &t.SourceName, &t.DestinationName, &t.VehicleReg, &t.DriverLicense, &t.CargoWeight, &t.PlannedDistance, &t.Revenue, &t.Status, &startOdo, &finalOdo, &createdAt, &updatedAt, &completedAt, &fuelLiters, &fuelCost); err != nil {
 			continue
 		}
 		t.StartOdometer = startOdo
@@ -1350,6 +1364,10 @@ func (a *App) trips(w http.ResponseWriter, r *http.Request) {
 		t.FuelCost = fuelCost
 		t.CreatedAt = createdAt.Format(time.RFC3339)
 		t.UpdatedAt = updatedAt.Format(time.RFC3339)
+		if completedAt != nil {
+			cAt := completedAt.Format(time.RFC3339)
+			t.CompletedAt = &cAt
+		}
 		items = append(items, t)
 	}
 
@@ -1360,50 +1378,7 @@ func (a *App) trips(w http.ResponseWriter, r *http.Request) {
 
 
 
-func (a *App) expense(w http.ResponseWriter, r *http.Request) {
-	var x expenseRow
-	if err := httpx.DecodeJSON(w, r, &x); err != nil {
-		return
-	}
-	ok := map[string]bool{"Fuel": true, "Toll": true, "Maintenance-Surge": true, "Other": true}
-	if !ok[x.Type] {
-		httpx.WriteError(w, r, http.StatusBadRequest, "VALIDATION_FAILED", "Invalid expense type. Must be one of: [Fuel Maintenance-Surge Other Toll]", nil)
-		return
-	}
-	var n int
-	a.db.QueryRow(r.Context(), "SELECT count(*) FROM trips WHERE id=$1", x.TripID).Scan(&n)
-	if n == 0 {
-		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Trip not found for expense logging.", nil)
-		return
-	}
-	if x.Type == "Fuel" && (x.Liters == nil || *x.Liters <= 0) {
-		httpx.WriteError(w, r, http.StatusBadRequest, "VALIDATION_FAILED", "Fuel expenses require liters > 0.", nil)
-		return
-	}
-	e := a.db.QueryRow(r.Context(), "INSERT INTO expenses(trip_id,type,liters,cost,date) VALUES($1,$2,$3,$4,$5) RETURNING id", x.TripID, x.Type, x.Liters, x.Cost, x.Date).Scan(&x.ID)
-	if e != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal Server Error", nil)
-		return
-	}
-	a.broadcast("expense.created", map[string]any{"expense_id": x.ID, "trip_id": x.TripID, "type": x.Type, "cost": x.Cost})
-	httpx.WriteJSON(w, http.StatusCreated, x)
-}
 
-func (a *App) expenses(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("id"))
-	var n int
-	a.db.QueryRow(r.Context(), "SELECT count(*) FROM trips WHERE id=$1", id).Scan(&n)
-	if n == 0 {
-		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Trip not found.", nil)
-		return
-	}
-	x, e := rows[expenseRow](r.Context(), a.db, "SELECT * FROM expenses WHERE trip_id=$1", id)
-	if e != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal Server Error", nil)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, x)
-}
 
 func (a *App) kpis(w http.ResponseWriter, r *http.Request) {
 	vs, _ := rows[vehicle](r.Context(), a.db, "SELECT * FROM vehicles")

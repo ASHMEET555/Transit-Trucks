@@ -101,11 +101,11 @@ func lockTripWithResources(ctx context.Context, tx pgx.Tx, tripID int64) (*locke
 	}
 
 	// 3. Lock trip third
-	err = tx.QueryRow(ctx, `SELECT id, source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, fuel_liters, fuel_cost
+	err = tx.QueryRow(ctx, `SELECT id, source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer
 		FROM trips WHERE id = $1 FOR UPDATE`, tripID).
 		Scan(&res.Trip.ID, &res.Trip.SourceName, &res.Trip.DestinationName, &res.Trip.VehicleReg, &res.Trip.DriverLicense,
 			&res.Trip.CargoWeight, &res.Trip.PlannedDistance, &res.Trip.Revenue, &res.Trip.Status,
-			&res.Trip.StartOdometer, &res.Trip.FinalOdometer, &res.Trip.FuelLiters, &res.Trip.FuelCost)
+			&res.Trip.StartOdometer, &res.Trip.FinalOdometer)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("trip_not_found")
@@ -452,9 +452,16 @@ func (a *App) handleGetTrip(w http.ResponseWriter, r *http.Request) {
 	var t trip
 	var startOdo, finalOdo, fuelLiters, fuelCost *float64
 	var createdAt, updatedAt time.Time
-	err = a.db.QueryRow(ctx, `SELECT id, source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, fuel_liters, fuel_cost, created_at, updated_at
-		FROM trips WHERE id = $1`, tripID).
-		Scan(&t.ID, &t.SourceName, &t.DestinationName, &t.VehicleReg, &t.DriverLicense, &t.CargoWeight, &t.PlannedDistance, &t.Revenue, &t.Status, &startOdo, &finalOdo, &fuelLiters, &fuelCost, &createdAt, &updatedAt)
+	var completedAt *time.Time
+	err = a.db.QueryRow(ctx, `SELECT t.id, t.source_name, t.destination_name, t.vehicle_reg, t.driver_license, t.cargo_weight, t.planned_distance, t.revenue, t.status, t.start_odometer, t.final_odometer, t.created_at, t.updated_at, t.completed_at, e.liters, e.cost
+		FROM trips t
+		LEFT JOIN (
+			SELECT trip_id, liters, cost,
+				ROW_NUMBER() OVER (PARTITION BY trip_id ORDER BY id DESC) as rn
+			FROM expenses WHERE type = 'Fuel'
+		) e ON e.trip_id = t.id AND e.rn = 1
+		WHERE t.id = $1`, tripID).
+		Scan(&t.ID, &t.SourceName, &t.DestinationName, &t.VehicleReg, &t.DriverLicense, &t.CargoWeight, &t.PlannedDistance, &t.Revenue, &t.Status, &startOdo, &finalOdo, &createdAt, &updatedAt, &completedAt, &fuelLiters, &fuelCost)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Trip record not found.", nil)
@@ -479,6 +486,10 @@ func (a *App) handleGetTrip(w http.ResponseWriter, r *http.Request) {
 	t.FuelCost = fuelCost
 	t.CreatedAt = createdAt.Format(time.RFC3339)
 	t.UpdatedAt = updatedAt.Format(time.RFC3339)
+	if completedAt != nil {
+		cAt := completedAt.Format(time.RFC3339)
+		t.CompletedAt = &cAt
+	}
 
 	httpx.WriteJSON(w, http.StatusOK, t)
 }
