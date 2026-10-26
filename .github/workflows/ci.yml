@@ -2,41 +2,124 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, phase-1-foundation]
   pull_request:
+    branches: [main, phase-1-foundation]
 
 jobs:
   backend:
+    name: Backend (Go)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: transitops
+          POSTGRES_PASSWORD: transitops
+          POSTGRES_DB: transitops
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     defaults:
       run:
-        working-directory: backend
+        working-directory: backend-go
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          python-version: "3.11"
-      - name: Install backend deps
-        run: uv sync
-      - name: Run backend tests
-        run: uv run pytest
+          go-version: "1.23"
+          cache-dependency-path: backend-go/go.sum
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.62.2
+          working-directory: backend-go
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Test migrations (up -> down -> up)
+        env:
+          DATABASE_URL: postgresql://transitops:transitops@localhost:5432/transitops?sslmode=disable
+        run: |
+          go run ./cmd/migrate up
+          go run ./cmd/migrate down
+          go run ./cmd/migrate up
+
+      - name: Run backend tests with race detector
+        env:
+          DATABASE_URL: postgresql://transitops:transitops@localhost:5432/transitops?sslmode=disable
+          SESSION_SECRET: test-session-secret-at-least-32-bytes-long-secure!
+          ENV: local
+          COOKIE_DOMAIN: localhost
+          ALLOWED_ORIGINS: http://localhost:3000
+        run: go test -race -count=1 ./...
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+      - name: OpenAPI Drift Check
+        run: go test -v -run TestOpenAPITypesDrift ./internal/api
 
   frontend:
+    name: Frontend (Next.js)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "20.18.0"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
-      - name: Install frontend deps
+
+      - name: Install dependencies
         run: npm ci
+
       - name: Lint frontend
         run: npm run lint
+
+      - name: Typecheck frontend
+        run: npm run typecheck
+
+      - name: Unit test frontend RBAC
+        run: npm test
+
       - name: Build frontend
         run: npm run build
+
+      - name: Audit frontend production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  secrets:
+    name: Secrets Detection (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

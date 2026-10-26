@@ -1,36 +1,5 @@
 import { BACKEND_URL } from "@/data/data"
 
-const TOKEN_KEY = "transitops_token"
-const ROLE_KEY = "transitops_role"
-const EMAIL_KEY = "transitops_email"
-
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null
-  return localStorage.getItem(TOKEN_KEY)
-}
-
-export function getStoredRole(): string | null {
-  if (typeof window === "undefined") return null
-  return localStorage.getItem(ROLE_KEY)
-}
-
-export function getStoredEmail(): string | null {
-  if (typeof window === "undefined") return null
-  return localStorage.getItem(EMAIL_KEY)
-}
-
-export function setAuthSession(token: string, role: string, email: string) {
-  localStorage.setItem(TOKEN_KEY, token)
-  localStorage.setItem(ROLE_KEY, role)
-  localStorage.setItem(EMAIL_KEY, email)
-}
-
-export function clearAuthSession() {
-  localStorage.removeItem(TOKEN_KEY)
-  localStorage.removeItem(ROLE_KEY)
-  localStorage.removeItem(EMAIL_KEY)
-}
-
 export class ApiError extends Error {
   status: number
   detail: string
@@ -55,11 +24,6 @@ export async function apiRequest<T = unknown>(
   const { method = "GET", body, form = false, auth = true } = options
   const headers: Record<string, string> = {}
 
-  if (auth) {
-    const token = getToken()
-    if (token) headers.Authorization = `Bearer ${token}`
-  }
-
   let payload: BodyInit | undefined
   if (body !== undefined) {
     if (form) {
@@ -71,13 +35,18 @@ export async function apiRequest<T = unknown>(
     }
   }
 
-  // path should start with /fleet/... etc; BACKEND_URL already ends with /api
-  const url = path.startsWith("http") ? path : `${BACKEND_URL}${path.startsWith("/") ? "" : "/"}${path}`
+  const url = path.startsWith("http")
+    ? path
+    : `${BACKEND_URL}${path.startsWith("/") ? "" : "/"}${path}`
 
-  const response = await fetch(url, { method, headers, body: payload })
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: payload,
+    credentials: "include",
+  })
 
   if (response.status === 401 && auth) {
-    clearAuthSession()
     if (typeof window !== "undefined" && !window.location.pathname.includes("/login")) {
       window.location.href = "/login"
     }
@@ -88,10 +57,13 @@ export async function apiRequest<T = unknown>(
     let detail = `Request failed (${response.status})`
     try {
       const data = await response.json()
-      detail =
-        typeof data.detail === "string"
-          ? data.detail
-          : JSON.stringify(data.detail)
+      if (data.error && typeof data.error.message === "string") {
+        detail = data.error.message
+      } else if (typeof data.detail === "string") {
+        detail = data.detail
+      } else if (data.detail) {
+        detail = JSON.stringify(data.detail)
+      }
     } catch {
       // ignore
     }
@@ -105,33 +77,31 @@ export async function apiRequest<T = unknown>(
 }
 
 export async function loginRequest(email: string, password: string) {
-  const form = new URLSearchParams()
-  form.set("username", email)
-  form.set("password", password)
   return apiRequest<{
-    access_token: string
-    token_type: string
+    token: string
+    email: string
     role: string
   }>("/auth/login", {
     method: "POST",
-    body: form.toString(),
-    form: true,
+    body: { email, password },
     auth: false,
   })
 }
 
-export async function registerRequest(
-  email: string,
-  password: string,
-  role: string,
-) {
-  return apiRequest<{
-    message: string
-    email: string
-    role: string
-  }>("/auth/register", {
+export async function logoutRequest(): Promise<void> {
+  return apiRequest("/auth/logout", {
     method: "POST",
-    body: { email, password, role },
-    auth: false,
+  })
+}
+
+export async function getMeRequest(): Promise<{
+  id: string
+  email: string
+  role: string
+  is_active: boolean
+  driver_license?: string
+}> {
+  return apiRequest("/auth/me", {
+    method: "GET",
   })
 }

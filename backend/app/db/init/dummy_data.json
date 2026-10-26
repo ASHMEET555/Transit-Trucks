@@ -2,182 +2,182 @@
   "users": [
     {
       "email": "manager@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Fleet Manager"
     },
     {
       "email": "safety@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Safety Officer"
     },
     {
       "email": "finance@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Financial Analyst"
     },
     {
       "email": "admin@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Admin"
     },
     {
       "email": "user01@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Driver"
     },
     {
       "email": "user02@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Safety Officer"
     },
     {
       "email": "user03@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Financial Analyst"
     },
     {
       "email": "user04@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Admin"
     },
     {
       "email": "user05@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Fleet Manager"
     },
     {
       "email": "user06@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Driver"
     },
     {
       "email": "user07@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Safety Officer"
     },
     {
       "email": "user08@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Financial Analyst"
     },
     {
       "email": "user09@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Admin"
     },
     {
       "email": "user10@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Fleet Manager"
     },
     {
       "email": "user11@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Driver"
     },
     {
       "email": "user12@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Safety Officer"
     },
     {
       "email": "user13@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Financial Analyst"
     },
     {
       "email": "user14@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Admin"
     },
     {
       "email": "user15@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Fleet Manager"
     },
     {
       "email": "user16@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Driver"
     },
     {
       "email": "user17@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Safety Officer"
     },
     {
       "email": "user18@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Financial Analyst"
     },
     {
       "email": "user19@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Admin"
     },
     {
       "email": "user20@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Fleet Manager"
     },
     {
       "email": "user21@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Driver"
     },
     {
       "email": "user22@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Safety Officer"
     },
     {
       "email": "user23@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Financial Analyst"
     },
     {
       "email": "user24@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Admin"
     },
     {
       "email": "user25@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Fleet Manager"
     },
     {
       "email": "user26@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Driver"
     },
     {
       "email": "user27@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Safety Officer"
     },
     {
       "email": "user28@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Financial Analyst"
     },
     {
       "email": "user29@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Admin"
     },
     {
       "email": "user30@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Fleet Manager"
     },
     {
       "email": "user31@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Driver"
     },
     {
       "email": "user32@transitops.com",
-      "password_hash": "password123",
+      "password_hash": "",
       "role": "Safety Officer"
     }
   ],

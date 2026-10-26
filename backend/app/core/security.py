@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import bcrypt
 
 load_dotenv()
-SECRET_KEY = os.getenv("SECRET_KEY", "default_secret_key")  # Load from environment variable or use a default for development
+SECRET_KEY = os.environ["SECRET_KEY"]  # Load from environment variable or use a default for development
 # Security Configuration Defaults
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
