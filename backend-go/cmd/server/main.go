@@ -51,9 +51,10 @@ func main() {
 		AllowedOrigins: cfg.AllowedOrigins,
 		Env:            cfg.Env,
 		CookieDomain:   cfg.CookieDomain,
-		DatabaseURL:    cfg.DatabaseURL,
-		MetricsToken:   cfg.MetricsToken,
-		JobSecret:      cfg.JobSecret,
+		DatabaseURL:       cfg.DatabaseURL,
+		MetricsToken:      cfg.MetricsToken,
+		JobSecret:         cfg.JobSecret,
+		TrustedProxyCIDRs: cfg.TrustedProxyCIDRs,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

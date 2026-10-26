@@ -28,13 +28,15 @@ function uuidv4() {
   });
 }
 
-const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:8000';
 
 export function setup() {
-  // Login as admin to get auth session
+  const email = __ENV.ADMIN_EMAIL || 'admin@transitops.com';
+  const password = __ENV.ADMIN_PASSWORD || '';
+
   const loginRes = http.post(`${BASE_URL}/api/v1/auth/login`, JSON.stringify({
-    email: 'admin@transitops.com',
-    password: 'Password123!',
+    email: email,
+    password: password,
   }), {
     headers: { 'Content-Type': 'application/json' },
   });

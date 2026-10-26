@@ -222,10 +222,35 @@ var globalLimiter = &ipRateLimiter{
 	counts: make(map[string][]time.Time),
 }
 
-func getClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
+func isTrustedPeer(remoteAddr string, trustedCIDRs []*net.IPNet) bool {
+	if len(trustedCIDRs) == 0 {
+		return false
+	}
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, cidr := range trustedCIDRs {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func GetClientIP(r *http.Request, trustedCIDRs []*net.IPNet) string {
+	if isTrustedPeer(r.RemoteAddr, trustedCIDRs) {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			clientIP := strings.TrimSpace(parts[0])
+			if net.ParseIP(clientIP) != nil {
+				return clientIP
+			}
+		}
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil {
@@ -234,7 +259,15 @@ func getClientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-func RateLimit(limit int, window time.Duration) func(http.Handler) http.Handler {
+func getClientIP(r *http.Request) string {
+	return GetClientIP(r, nil)
+}
+
+func RateLimit(limit int, window time.Duration, trustedCIDRs ...[]*net.IPNet) func(http.Handler) http.Handler {
+	var cidrs []*net.IPNet
+	if len(trustedCIDRs) > 0 {
+		cidrs = trustedCIDRs[0]
+	}
 	limiter := &ipRateLimiter{
 		counts: make(map[string][]time.Time),
 	}
@@ -246,7 +279,7 @@ func RateLimit(limit int, window time.Duration) func(http.Handler) http.Handler 
 				return
 			}
 
-			ip := getClientIP(r)
+			ip := GetClientIP(r, cidrs)
 			now := time.Now()
 
 			limiter.mu.Lock()
@@ -257,6 +290,12 @@ func RateLimit(limit int, window time.Duration) func(http.Handler) http.Handler 
 				if t.After(cutoff) {
 					valid = append(valid, t)
 				}
+			}
+
+			if len(valid) == 0 {
+				delete(limiter.counts, ip)
+			} else {
+				limiter.counts[ip] = valid
 			}
 
 			if len(valid) >= limit {

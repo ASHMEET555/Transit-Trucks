@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 )
@@ -25,9 +26,10 @@ type Config struct {
 	Env            string
 	AllowedOrigins []string
 	CookieDomain   string
-	Port           string
-	MetricsToken   string
-	JobSecret      string
+	Port              string
+	MetricsToken      string
+	JobSecret         string
+	TrustedProxyCIDRs []*net.IPNet
 }
 
 func (c *Config) IsLocal() bool {
@@ -90,24 +92,46 @@ func Load() (*Config, error) {
 	}
 
 	metricsToken := os.Getenv("METRICS_TOKEN")
-	if envVal == "production" && strings.TrimSpace(metricsToken) == "" {
-		return nil, errors.New("METRICS_TOKEN is required in production")
+	jobSecret := os.Getenv("JOB_SECRET")
+
+	if envVal == "production" {
+		if strings.TrimSpace(metricsToken) == "" || metricsToken == "transitops-metrics-dev" {
+			return nil, errors.New("METRICS_TOKEN is required in production and must not use dev default")
+		}
+		if strings.TrimSpace(jobSecret) == "" || jobSecret == "transitops-job-secret-dev" {
+			return nil, errors.New("JOB_SECRET is required in production and must not use dev default")
+		}
 	}
 
-	jobSecret := os.Getenv("JOB_SECRET")
-	if envVal == "production" && strings.TrimSpace(jobSecret) == "" {
-		return nil, errors.New("JOB_SECRET is required in production")
+	trustedProxiesRaw := os.Getenv("TRUSTED_PROXY_CIDRS")
+	var trustedCIDRs []*net.IPNet
+	if strings.TrimSpace(trustedProxiesRaw) != "" {
+		for _, part := range strings.Split(trustedProxiesRaw, ",") {
+			trimmed := strings.TrimSpace(part)
+			if trimmed == "" {
+				continue
+			}
+			if !strings.Contains(trimmed, "/") {
+				trimmed += "/32"
+			}
+			_, ipNet, err := net.ParseCIDR(trimmed)
+			if err != nil {
+				return nil, fmt.Errorf("invalid TRUSTED_PROXY_CIDRS entry %q: %w", trimmed, err)
+			}
+			trustedCIDRs = append(trustedCIDRs, ipNet)
+		}
 	}
 
 	return &Config{
-		DatabaseURL:    dbURL,
-		SessionSecret:  secret,
-		Env:            envVal,
-		AllowedOrigins: origins,
-		CookieDomain:   cookieDomain,
-		Port:           port,
-		MetricsToken:   metricsToken,
-		JobSecret:      jobSecret,
+		DatabaseURL:       dbURL,
+		SessionSecret:     secret,
+		Env:               envVal,
+		AllowedOrigins:    origins,
+		CookieDomain:      cookieDomain,
+		Port:              port,
+		MetricsToken:      metricsToken,
+		JobSecret:         jobSecret,
+		TrustedProxyCIDRs: trustedCIDRs,
 	}, nil
 }
 

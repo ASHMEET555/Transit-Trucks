@@ -52,6 +52,13 @@ func TestLoad_ConfigValidation(t *testing.T) {
         {"missing ALLOWED_ORIGINS", map[string]string{"ALLOWED_ORIGINS": ""}, true},
         {"empty ALLOWED_ORIGINS list", map[string]string{"ALLOWED_ORIGINS": "  ,   ,"}, true},
         {"missing COOKIE_DOMAIN", map[string]string{"COOKIE_DOMAIN": ""}, true},
+        {"production missing METRICS_TOKEN", map[string]string{"ENV": "production", "JOB_SECRET": "custom-job-secret-32-chars-long!"}, true},
+        {"production dev default METRICS_TOKEN", map[string]string{"ENV": "production", "METRICS_TOKEN": "transitops-metrics-dev", "JOB_SECRET": "custom-job-secret-32-chars-long!"}, true},
+        {"production missing JOB_SECRET", map[string]string{"ENV": "production", "METRICS_TOKEN": "custom-metrics-token-32-chars!"}, true},
+        {"production dev default JOB_SECRET", map[string]string{"ENV": "production", "METRICS_TOKEN": "custom-metrics-token-32-chars!", "JOB_SECRET": "transitops-job-secret-dev"}, true},
+        {"production valid custom secrets", map[string]string{"ENV": "production", "METRICS_TOKEN": "custom-metrics-token-32-chars!", "JOB_SECRET": "custom-job-secret-32-chars-long!"}, false},
+        {"invalid TRUSTED_PROXY_CIDRS", map[string]string{"TRUSTED_PROXY_CIDRS": "invalid-cidr"}, true},
+        {"valid TRUSTED_PROXY_CIDRS", map[string]string{"TRUSTED_PROXY_CIDRS": "127.0.0.1/32, 10.0.0.0/8"}, false},
     }
 
     for _, tt := range tests {

@@ -32,9 +32,10 @@ type Config struct {
 	AllowedOrigins []string
 	Env            string
 	CookieDomain   string
-	DatabaseURL    string
-	MetricsToken   string
-	JobSecret      string
+	DatabaseURL       string
+	MetricsToken      string
+	JobSecret         string
+	TrustedProxyCIDRs []*net.IPNet
 }
 
 func (c *Config) IsLocal() bool {
@@ -172,7 +173,7 @@ func (a *App) buildHandler() {
 	// 8. Auth
 	h = middleware.Auth(a.db)(h)
 	// 7. Rate Limit (120 req/min per IP)
-	h = middleware.RateLimit(120, time.Minute)(h)
+	h = middleware.RateLimit(120, time.Minute, a.cfg.TrustedProxyCIDRs)(h)
 	// 6. Body Size Limit (1 MB)
 	h = middleware.BodySizeLimit(middleware.MaxBodyBytes)(h)
 	// 5. CORS
@@ -355,16 +356,8 @@ func (a *App) readyz(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
-func getRemoteIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil {
-		return host
-	}
-	return r.RemoteAddr
+func (a *App) getRemoteIP(r *http.Request) string {
+	return middleware.GetClientIP(r, a.cfg.TrustedProxyCIDRs)
 }
 
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
@@ -399,7 +392,7 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	email = strings.TrimSpace(email)
-	ip := getRemoteIP(r)
+	ip := a.getRemoteIP(r)
 
 	// Check lockout before DB query
 	locked, retrySecs, err := auth.CheckLockout(r.Context(), a.db, email, ip)
