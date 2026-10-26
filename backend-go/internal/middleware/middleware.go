@@ -32,6 +32,22 @@ func WithUser(ctx context.Context, u *auth.SessionUser) context.Context {
 	return context.WithValue(ctx, UserKey, u)
 }
 
+// RequestTimeout applies a context deadline to standard HTTP requests.
+// WebSocket endpoints are excluded.
+func RequestTimeout(timeout time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/v1/ws" || r.URL.Path == "/ws/fleet" {
+				next.ServeHTTP(w, r)
+				return
+			}
+			ctx, cancel := context.WithTimeout(r.Context(), timeout)
+			defer cancel()
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 // 1. Recover middleware
 func Recover(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

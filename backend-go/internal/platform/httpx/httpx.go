@@ -122,8 +122,14 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
 
 // MapDBError converts PostgreSQL errors to appropriate HTTP status and error codes.
 func MapDBError(err error, logger *slog.Logger) (int, string, string) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return http.StatusServiceUnavailable, "REQUEST_TIMEOUT", "Request timed out."
+	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
+		if pgErr.Code == "57014" { // query_canceled / statement_timeout
+			return http.StatusGatewayTimeout, "DB_TIMEOUT", "Database query execution exceeded statement timeout."
+		}
 		switch pgErr.Code {
 		case "23505": // unique_violation
 			switch pgErr.ConstraintName {

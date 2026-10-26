@@ -185,7 +185,9 @@ func (a *App) buildHandler() {
 	h = middleware.RequestID()(h)
 	// 1. Recover
 	h = middleware.Recover(a.log)(h)
-	// 0. Metrics
+	// 0b. Request timeout (default 15s)
+	h = middleware.RequestTimeout(15 * time.Second)(h)
+	// 0a. Metrics
 	h = a.metricsMiddleware(h)
 
 	a.handler = h
