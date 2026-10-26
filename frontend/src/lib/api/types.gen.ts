@@ -1126,14 +1126,151 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/finance/expenses": {
+    "/api/v1/maintenance/{id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get maintenance log by ID */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MaintenanceLog"];
+                    };
+                };
+                404: components["responses"]["ErrorResponse"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/expenses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List expenses */
+        get: {
+            parameters: {
+                query?: {
+                    trip_id?: number;
+                    vehicle_reg?: string;
+                    type?: string;
+                    from?: string;
+                    to?: string;
+                    cursor?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExpenseList"];
+                    };
+                };
+                401: components["responses"]["ErrorResponse"];
+                403: components["responses"]["ErrorResponse"];
+            };
+        };
+        put?: never;
+        /** Log expense (with idempotency) */
+        post: {
+            parameters: {
+                query?: never;
+                header: {
+                    "Idempotency-Key": string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["Expense"];
+                };
+            };
+            responses: {
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Expense"];
+                    };
+                };
+                400: components["responses"]["ErrorResponse"];
+                401: components["responses"]["ErrorResponse"];
+                403: components["responses"]["ErrorResponse"];
+                422: components["responses"]["ErrorResponse"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/finance/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get per-vehicle financial summary */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                    vehicle_reg?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FinanceSummary"];
+                    };
+                };
+                401: components["responses"]["ErrorResponse"];
+                403: components["responses"]["ErrorResponse"];
+            };
+        };
         put?: never;
         /** Log expense */
         post: {
@@ -1230,6 +1367,130 @@ export interface paths {
                         "application/json": components["schemas"]["DashboardKPIs"];
                     };
                 };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dashboard/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get authenticated driver personal dashboard */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DriverDashboard"];
+                    };
+                };
+                401: components["responses"]["ErrorResponse"];
+                403: components["responses"]["ErrorResponse"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dashboard/export.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export dashboard analytics as CSV */
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                    vehicle_reg?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description CSV file export */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/csv": string;
+                    };
+                };
+                401: components["responses"]["ErrorResponse"];
+                403: components["responses"]["ErrorResponse"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Query system audit logs */
+        get: {
+            parameters: {
+                query?: {
+                    entity?: string;
+                    entity_id?: string;
+                    actor?: string;
+                    from?: string;
+                    to?: string;
+                    cursor?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AuditLogList"];
+                    };
+                };
+                401: components["responses"]["ErrorResponse"];
+                403: components["responses"]["ErrorResponse"];
             };
         };
         put?: never;
@@ -1606,6 +1867,59 @@ export interface components {
         NotificationList: {
             items?: components["schemas"]["Notification"][];
             count?: number;
+        };
+        VehicleFinanceSummary: {
+            vehicle_reg?: string;
+            fuel_expenses?: number;
+            maintenance_expenses?: number;
+            other_expenses?: number;
+            closed_maintenance_cost?: number;
+            total_distance?: number;
+            cost_per_km?: number | null;
+        };
+        FinanceSummary: {
+            from?: string | null;
+            to?: string | null;
+            vehicles?: components["schemas"]["VehicleFinanceSummary"][];
+            totals?: components["schemas"]["VehicleFinanceSummary"];
+        };
+        DriverTripEntry: {
+            id?: number;
+            source_name?: string;
+            destination_name?: string;
+            cargo_weight?: number;
+            planned_distance?: number;
+            distance?: number;
+            completed_at?: string;
+        };
+        DriverDashboard: {
+            driver_license?: string;
+            trips_by_status?: {
+                [key: string]: number;
+            };
+            total_completed_trips?: number;
+            total_distance?: number;
+            recent_trips?: components["schemas"]["DriverTripEntry"][];
+        };
+        AuditLog: {
+            id?: number;
+            entity?: string;
+            entity_id?: string;
+            action?: string;
+            actor_email?: string | null;
+            actor?: string | null;
+            details?: {
+                [key: string]: unknown;
+            };
+            at?: string;
+        };
+        AuditLogList: {
+            items?: components["schemas"]["AuditLog"][];
+            next_cursor?: string | null;
+        };
+        ExpenseList: {
+            items?: components["schemas"]["Expense"][];
+            next_cursor?: string | null;
         };
     };
     responses: {

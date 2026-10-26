@@ -21,6 +21,24 @@ const (
 	PostApiV1UsersJSONBodyRoleSafetyOfficer    PostApiV1UsersJSONBodyRole = "Safety Officer"
 )
 
+// AuditLog defines model for AuditLog.
+type AuditLog struct {
+	Action     *string                 `json:"action,omitempty"`
+	Actor      *string                 `json:"actor"`
+	ActorEmail *string                 `json:"actor_email"`
+	At         *string                 `json:"at,omitempty"`
+	Details    *map[string]interface{} `json:"details,omitempty"`
+	Entity     *string                 `json:"entity,omitempty"`
+	EntityId   *string                 `json:"entity_id,omitempty"`
+	Id         *int                    `json:"id,omitempty"`
+}
+
+// AuditLogList defines model for AuditLogList.
+type AuditLogList struct {
+	Items      *[]AuditLog `json:"items,omitempty"`
+	NextCursor *string     `json:"next_cursor"`
+}
+
 // DashboardKPIs defines model for DashboardKPIs.
 type DashboardKPIs struct {
 	ActiveTrips           *int                      `json:"active_trips,omitempty"`
@@ -56,6 +74,26 @@ type Driver struct {
 	Status            string  `json:"status"`
 }
 
+// DriverDashboard defines model for DriverDashboard.
+type DriverDashboard struct {
+	DriverLicense       *string            `json:"driver_license,omitempty"`
+	RecentTrips         *[]DriverTripEntry `json:"recent_trips,omitempty"`
+	TotalCompletedTrips *int               `json:"total_completed_trips,omitempty"`
+	TotalDistance       *float32           `json:"total_distance,omitempty"`
+	TripsByStatus       *map[string]int    `json:"trips_by_status,omitempty"`
+}
+
+// DriverTripEntry defines model for DriverTripEntry.
+type DriverTripEntry struct {
+	CargoWeight     *float32 `json:"cargo_weight,omitempty"`
+	CompletedAt     *string  `json:"completed_at,omitempty"`
+	DestinationName *string  `json:"destination_name,omitempty"`
+	Distance        *float32 `json:"distance,omitempty"`
+	Id              *int     `json:"id,omitempty"`
+	PlannedDistance *float32 `json:"planned_distance,omitempty"`
+	SourceName      *string  `json:"source_name,omitempty"`
+}
+
 // ErrorDetail defines model for ErrorDetail.
 type ErrorDetail struct {
 	Code      string                  `json:"code"`
@@ -77,6 +115,20 @@ type Expense struct {
 	Liters *float32 `json:"liters"`
 	TripId *int     `json:"trip_id,omitempty"`
 	Type   *string  `json:"type,omitempty"`
+}
+
+// ExpenseList defines model for ExpenseList.
+type ExpenseList struct {
+	Items      *[]Expense `json:"items,omitempty"`
+	NextCursor *string    `json:"next_cursor"`
+}
+
+// FinanceSummary defines model for FinanceSummary.
+type FinanceSummary struct {
+	From     *string                  `json:"from"`
+	To       *string                  `json:"to"`
+	Totals   *VehicleFinanceSummary   `json:"totals,omitempty"`
+	Vehicles *[]VehicleFinanceSummary `json:"vehicles,omitempty"`
 }
 
 // JobResult defines model for JobResult.
@@ -168,8 +220,30 @@ type Vehicle struct {
 	Type               string  `json:"type"`
 }
 
+// VehicleFinanceSummary defines model for VehicleFinanceSummary.
+type VehicleFinanceSummary struct {
+	ClosedMaintenanceCost *float32 `json:"closed_maintenance_cost,omitempty"`
+	CostPerKm             *float32 `json:"cost_per_km"`
+	FuelExpenses          *float32 `json:"fuel_expenses,omitempty"`
+	MaintenanceExpenses   *float32 `json:"maintenance_expenses,omitempty"`
+	OtherExpenses         *float32 `json:"other_expenses,omitempty"`
+	TotalDistance         *float32 `json:"total_distance,omitempty"`
+	VehicleReg            *string  `json:"vehicle_reg,omitempty"`
+}
+
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse = ErrorEnvelope
+
+// GetApiV1AuditParams defines parameters for GetApiV1Audit.
+type GetApiV1AuditParams struct {
+	Entity   *string `form:"entity,omitempty" json:"entity,omitempty"`
+	EntityId *string `form:"entity_id,omitempty" json:"entity_id,omitempty"`
+	Actor    *string `form:"actor,omitempty" json:"actor,omitempty"`
+	From     *string `form:"from,omitempty" json:"from,omitempty"`
+	To       *string `form:"to,omitempty" json:"to,omitempty"`
+	Cursor   *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit    *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
 
 // PostApiV1AuthChangePasswordJSONBody defines parameters for PostApiV1AuthChangePassword.
 type PostApiV1AuthChangePasswordJSONBody struct {
@@ -182,6 +256,36 @@ type PostApiV1AuthLoginJSONBody struct {
 	Email    *string `json:"email,omitempty"`
 	Password string  `json:"password"`
 	Username *string `json:"username,omitempty"`
+}
+
+// GetApiV1DashboardExportCsvParams defines parameters for GetApiV1DashboardExportCsv.
+type GetApiV1DashboardExportCsvParams struct {
+	From       *string `form:"from,omitempty" json:"from,omitempty"`
+	To         *string `form:"to,omitempty" json:"to,omitempty"`
+	VehicleReg *string `form:"vehicle_reg,omitempty" json:"vehicle_reg,omitempty"`
+}
+
+// GetApiV1ExpensesParams defines parameters for GetApiV1Expenses.
+type GetApiV1ExpensesParams struct {
+	TripId     *int    `form:"trip_id,omitempty" json:"trip_id,omitempty"`
+	VehicleReg *string `form:"vehicle_reg,omitempty" json:"vehicle_reg,omitempty"`
+	Type       *string `form:"type,omitempty" json:"type,omitempty"`
+	From       *string `form:"from,omitempty" json:"from,omitempty"`
+	To         *string `form:"to,omitempty" json:"to,omitempty"`
+	Cursor     *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit      *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// PostApiV1ExpensesParams defines parameters for PostApiV1Expenses.
+type PostApiV1ExpensesParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// GetApiV1FinanceSummaryParams defines parameters for GetApiV1FinanceSummary.
+type GetApiV1FinanceSummaryParams struct {
+	From       *string `form:"from,omitempty" json:"from,omitempty"`
+	To         *string `form:"to,omitempty" json:"to,omitempty"`
+	VehicleReg *string `form:"vehicle_reg,omitempty" json:"vehicle_reg,omitempty"`
 }
 
 // PostApiV1InternalJobsLicenseCheckParams defines parameters for PostApiV1InternalJobsLicenseCheck.
@@ -249,8 +353,11 @@ type PostApiV1AuthLoginJSONRequestBody PostApiV1AuthLoginJSONBody
 // PostApiV1DestinationsJSONRequestBody defines body for PostApiV1Destinations for application/json ContentType.
 type PostApiV1DestinationsJSONRequestBody = Destination
 
-// PostApiV1FinanceExpensesJSONRequestBody defines body for PostApiV1FinanceExpenses for application/json ContentType.
-type PostApiV1FinanceExpensesJSONRequestBody = Expense
+// PostApiV1ExpensesJSONRequestBody defines body for PostApiV1Expenses for application/json ContentType.
+type PostApiV1ExpensesJSONRequestBody = Expense
+
+// PostApiV1FinanceSummaryJSONRequestBody defines body for PostApiV1FinanceSummary for application/json ContentType.
+type PostApiV1FinanceSummaryJSONRequestBody = Expense
 
 // PostApiV1FleetDriversJSONRequestBody defines body for PostApiV1FleetDrivers for application/json ContentType.
 type PostApiV1FleetDriversJSONRequestBody = Driver

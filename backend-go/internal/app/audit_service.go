@@ -52,12 +52,12 @@ func (a *App) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 
 	limit := 20
 	if l := q.Get("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
-			limit = parsed
-			if limit > 100 {
-				limit = 100
-			}
+		parsed, err := strconv.Atoi(l)
+		if err != nil || parsed <= 0 || parsed > 100 {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid limit parameter. Must be between 1 and 100.", nil)
+			return
 		}
+		limit = parsed
 	}
 
 	var conditions []string
@@ -82,8 +82,11 @@ func (a *App) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if fromDate != "" {
 		if _, err := time.Parse("2006-01-02", fromDate); err == nil {
 			conditions = append(conditions, fmt.Sprintf("at >= $%d::DATE", argIdx))
-		} else {
+		} else if _, err2 := time.Parse(time.RFC3339, fromDate); err2 == nil {
 			conditions = append(conditions, fmt.Sprintf("at >= $%d::TIMESTAMPTZ", argIdx))
+		} else {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid from date/time format.", nil)
+			return
 		}
 		args = append(args, fromDate)
 		argIdx++
@@ -91,17 +94,48 @@ func (a *App) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if toDate != "" {
 		if _, err := time.Parse("2006-01-02", toDate); err == nil {
 			conditions = append(conditions, fmt.Sprintf("at <= ($%d::DATE + INTERVAL '1 day' - INTERVAL '1 microsecond')", argIdx))
-		} else {
+		} else if _, err2 := time.Parse(time.RFC3339, toDate); err2 == nil {
 			conditions = append(conditions, fmt.Sprintf("at <= $%d::TIMESTAMPTZ", argIdx))
+		} else {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid to date/time format.", nil)
+			return
 		}
 		args = append(args, toDate)
 		argIdx++
 	}
+
+	ctx := r.Context()
+
 	if cursorStr != "" {
-		if cursorID, err := strconv.ParseInt(cursorStr, 10, 64); err == nil {
-			conditions = append(conditions, fmt.Sprintf("id < $%d", argIdx))
-			args = append(args, cursorID)
-			argIdx++
+		if strings.Contains(cursorStr, "_") {
+			parts := strings.SplitN(cursorStr, "_", 2)
+			parsedAt, err1 := time.Parse(time.RFC3339Nano, parts[0])
+			if err1 != nil {
+				parsedAt, err1 = time.Parse(time.RFC3339, parts[0])
+			}
+			parsedID, err2 := strconv.ParseInt(parts[1], 10, 64)
+			if err1 != nil || err2 != nil {
+				httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid cursor format.", nil)
+				return
+			}
+			conditions = append(conditions, fmt.Sprintf("(at, id) < ($%d, $%d)", argIdx, argIdx+1))
+			args = append(args, parsedAt, parsedID)
+			argIdx += 2
+		} else {
+			parsedID, err := strconv.ParseInt(cursorStr, 10, 64)
+			if err != nil {
+				httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid cursor format.", nil)
+				return
+			}
+			var atVal time.Time
+			err = a.db.QueryRow(ctx, `SELECT at FROM audit_log WHERE id = $1`, parsedID).Scan(&atVal)
+			if err != nil {
+				httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Cursor entry not found.", nil)
+				return
+			}
+			conditions = append(conditions, fmt.Sprintf("(at, id) < ($%d, $%d)", argIdx, argIdx+1))
+			args = append(args, atVal, parsedID)
+			argIdx += 2
 		}
 	}
 
@@ -118,7 +152,6 @@ func (a *App) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		LIMIT $%d`, whereClause, argIdx)
 	args = append(args, limit+1)
 
-	ctx := r.Context()
 	rows, err := a.db.Query(ctx, query, args...)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to query audit logs.", nil)
@@ -127,17 +160,20 @@ func (a *App) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	var items []AuditEntry
+	var lastRawAt time.Time
 	for rows.Next() {
 		var entry AuditEntry
 		var actorEmail *string
 		var detailsBytes []byte
 		var at time.Time
 		if err := rows.Scan(&entry.ID, &entry.Entity, &entry.EntityID, &entry.Action, &actorEmail, &detailsBytes, &at); err != nil {
-			continue
+			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to scan audit log row.", nil)
+			return
 		}
 		entry.ActorEmail = actorEmail
 		entry.Actor = actorEmail
 		entry.At = at.Format(time.RFC3339)
+		lastRawAt = at
 		if len(detailsBytes) > 0 {
 			var d map[string]any
 			if err := json.Unmarshal(detailsBytes, &d); err == nil {
@@ -146,11 +182,15 @@ func (a *App) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, entry)
 	}
+	if err := rows.Err(); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to iterate audit log rows.", nil)
+		return
+	}
 
 	var nextCursor *string
 	if len(items) > limit {
 		lastItem := items[limit-1]
-		c := fmt.Sprintf("%d", lastItem.ID)
+		c := fmt.Sprintf("%s_%d", lastRawAt.Format(time.RFC3339Nano), lastItem.ID)
 		nextCursor = &c
 		items = items[:limit]
 	}

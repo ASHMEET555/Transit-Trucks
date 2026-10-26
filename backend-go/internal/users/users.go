@@ -1,6 +1,8 @@
 package users
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/auth"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/rbac"
 	"github.com/google/uuid"
@@ -76,6 +79,16 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, result)
 }
 
+func recordAuditLog(ctx context.Context, tx pgx.Tx, entity, entityID, action, actorEmail string, details any) {
+	var detailsBytes []byte
+	if details != nil {
+		detailsBytes, _ = json.Marshal(details)
+	}
+	_, _ = tx.Exec(ctx, `INSERT INTO audit_log (entity, entity_id, action, actor_email, details, at)
+		VALUES ($1, $2, $3, $4, $5, now())`,
+		entity, entityID, action, actorEmail, detailsBytes)
+}
+
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	var req CreateUserRequest
 	if err := httpx.DecodeJSON(w, r, &req); err != nil {
@@ -107,8 +120,16 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	id := uuid.NewString()
 	now := time.Now().UTC()
 
+	ctx := r.Context()
+	tx, err := h.db.Begin(ctx)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Transaction failed", nil)
+		return
+	}
+	defer tx.Rollback(ctx)
+
 	var created User
-	err = h.db.QueryRow(r.Context(),
+	err = tx.QueryRow(ctx,
 		`INSERT INTO users (id, email, password_hash, role, is_active, driver_license, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, true, $5, $6, $6)
 		 RETURNING id, email, role, is_active, driver_license, created_at, updated_at`,
@@ -118,6 +139,20 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		status, code, msg := httpx.MapDBError(err, nil)
 		httpx.WriteError(w, r, status, code, msg, nil)
+		return
+	}
+
+	actorEmail := "system"
+	if user := middleware.GetUser(r); user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLog(ctx, tx, "users", created.ID, "create", actorEmail, map[string]any{
+		"email": req.Email,
+		"role":  req.Role,
+	})
+
+	if err := tx.Commit(ctx); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Commit failed", nil)
 		return
 	}
 
@@ -216,6 +251,17 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		_, _ = tx.Exec(ctx, `DELETE FROM sessions WHERE user_email = $1`, current.Email)
 	}
 
+	actorEmail := "system"
+	if user := middleware.GetUser(r); user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLog(ctx, tx, "users", updated.ID, "update", actorEmail, map[string]any{
+		"old_role":      current.Role,
+		"new_role":      newRole,
+		"old_is_active": current.IsActive,
+		"new_is_active": newIsActive,
+	})
+
 	if err := tx.Commit(ctx); err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Commit failed", nil)
 		return
@@ -248,10 +294,17 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	var email string
-	err = h.db.QueryRow(ctx,
-		`UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3 OR email = $3 RETURNING email`,
-		hash, time.Now().UTC(), id).Scan(&email)
+	tx, err := h.db.Begin(ctx)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Transaction failed", nil)
+		return
+	}
+	defer tx.Rollback(ctx)
+
+	var email, userID string
+	err = tx.QueryRow(ctx,
+		`UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3 OR email = $3 RETURNING id, email`,
+		hash, time.Now().UTC(), id).Scan(&userID, &email)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -264,7 +317,20 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Invalidate all sessions on password reset
-	_, _ = h.db.Exec(ctx, `DELETE FROM sessions WHERE user_email = $1`, email)
+	_, _ = tx.Exec(ctx, `DELETE FROM sessions WHERE user_email = $1`, email)
+
+	actorEmail := "system"
+	if user := middleware.GetUser(r); user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLog(ctx, tx, "users", userID, "reset-password", actorEmail, map[string]any{
+		"email": email,
+	})
+
+	if err := tx.Commit(ctx); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Commit failed", nil)
+		return
+	}
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{
 		"message": "Password reset successfully. All sessions revoked.",

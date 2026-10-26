@@ -11,7 +11,7 @@ BEGIN
     END IF;
 END $$;
 
--- 2. Populate fuel columns on trips from expenses WHERE type = 'Fuel'
+-- 2. Populate fuel columns on trips from expenses WHERE migrated_from_trip = true
 UPDATE trips t
 SET fuel_liters = e.liters,
     fuel_cost = e.cost
@@ -19,12 +19,12 @@ FROM (
     SELECT trip_id, liters, cost,
            ROW_NUMBER() OVER (PARTITION BY trip_id ORDER BY id DESC) as rn
     FROM expenses
-    WHERE type = 'Fuel' AND trip_id IS NOT NULL
+    WHERE type = 'Fuel' AND trip_id IS NOT NULL AND (migrated_from_trip = true OR migrated_from_trip IS NULL)
 ) e
 WHERE e.trip_id = t.id AND e.rn = 1;
 
--- 3. Delete expenses created from trips migration
-DELETE FROM expenses WHERE type = 'Fuel' AND trip_id IS NOT NULL;
+-- 3. Delete only expenses created from trips migration
+DELETE FROM expenses WHERE type = 'Fuel' AND trip_id IS NOT NULL AND migrated_from_trip = true;
 
 -- 4. Drop indexes
 DROP INDEX IF EXISTS idx_expenses_type;
@@ -33,6 +33,7 @@ DROP INDEX IF EXISTS idx_expenses_vehicle_reg;
 DROP INDEX IF EXISTS idx_trips_completed_at;
 
 -- 5. Clean up expenses table
+ALTER TABLE expenses DROP COLUMN IF EXISTS migrated_from_trip;
 ALTER TABLE expenses DROP COLUMN IF EXISTS vehicle_reg;
 DELETE FROM expenses WHERE trip_id IS NULL;
 ALTER TABLE expenses ALTER COLUMN trip_id SET NOT NULL;

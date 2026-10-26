@@ -717,7 +717,139 @@ paths:
         '404':
           $ref: '#/components/responses/ErrorResponse'
 
-  /api/v1/finance/expenses:
+  /api/v1/maintenance/{id}:
+    get:
+      summary: Get maintenance log by ID
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MaintenanceLog'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/expenses:
+    get:
+      summary: List expenses
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: trip_id
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: vehicle_reg
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExpenseList'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+    post:
+      summary: Log expense (with idempotency)
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Expense'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/finance/summary:
+    get:
+      summary: Get per-vehicle financial summary
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: vehicle_reg
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinanceSummary'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
     post:
       summary: Log expense
       security:
@@ -772,6 +904,107 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DashboardKPIs'
+
+  /api/v1/dashboard/me:
+    get:
+      summary: Get authenticated driver personal dashboard
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverDashboard'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/dashboard/export.csv:
+    get:
+      summary: Export dashboard analytics as CSV
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: vehicle_reg
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: CSV file export
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/audit:
+    get:
+      summary: Query system audit logs
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: entity
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: entity_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: actor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogList'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
 
   /api/v1/realtime/ticket:
     post:
@@ -1176,3 +1409,119 @@ components:
             $ref: '#/components/schemas/Notification'
         count:
           type: integer
+
+    VehicleFinanceSummary:
+      type: object
+      properties:
+        vehicle_reg:
+          type: string
+        fuel_expenses:
+          type: number
+        maintenance_expenses:
+          type: number
+        other_expenses:
+          type: number
+        closed_maintenance_cost:
+          type: number
+        total_distance:
+          type: number
+        cost_per_km:
+          type: number
+          nullable: true
+
+    FinanceSummary:
+      type: object
+      properties:
+        from:
+          type: string
+          nullable: true
+        to:
+          type: string
+          nullable: true
+        vehicles:
+          type: array
+          items:
+            $ref: '#/components/schemas/VehicleFinanceSummary'
+        totals:
+          $ref: '#/components/schemas/VehicleFinanceSummary'
+
+    DriverTripEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        source_name:
+          type: string
+        destination_name:
+          type: string
+        cargo_weight:
+          type: number
+        planned_distance:
+          type: number
+        distance:
+          type: number
+        completed_at:
+          type: string
+
+    DriverDashboard:
+      type: object
+      properties:
+        driver_license:
+          type: string
+        trips_by_status:
+          type: object
+          additionalProperties:
+            type: integer
+        total_completed_trips:
+          type: integer
+        total_distance:
+          type: number
+        recent_trips:
+          type: array
+          items:
+            $ref: '#/components/schemas/DriverTripEntry'
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        entity:
+          type: string
+        entity_id:
+          type: string
+        action:
+          type: string
+        actor_email:
+          type: string
+          nullable: true
+        actor:
+          type: string
+          nullable: true
+        details:
+          type: object
+          additionalProperties: true
+        at:
+          type: string
+
+    AuditLogList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        next_cursor:
+          type: string
+          nullable: true
+
+    ExpenseList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Expense'
+        next_cursor:
+          type: string
+          nullable: true

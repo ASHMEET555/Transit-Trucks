@@ -670,19 +670,41 @@ func (a *App) createVehicle(w http.ResponseWriter, r *http.Request) {
 	}
 	v.IsActive = true
 
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to start transaction", nil)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
 	var n int
-	a.db.QueryRow(r.Context(), "SELECT count(*) FROM vehicles WHERE registration_number=$1", v.RegistrationNumber).Scan(&n)
+	tx.QueryRow(r.Context(), "SELECT count(*) FROM vehicles WHERE registration_number=$1", v.RegistrationNumber).Scan(&n)
 	if n > 0 {
 		httpx.WriteError(w, r, http.StatusConflict, "VEHICLE_EXISTS", "Vehicle Registration Number must be unique.", nil)
 		return
 	}
-	_, e := a.db.Exec(r.Context(), "INSERT INTO vehicles (registration_number, model, type, max_load_capacity, odometer, acquisition_cost, status, is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+	_, e := tx.Exec(r.Context(), "INSERT INTO vehicles (registration_number, model, type, max_load_capacity, odometer, acquisition_cost, status, is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
 		v.RegistrationNumber, v.Model, v.Type, v.MaxLoadCapacity, v.Odometer, v.AcquisitionCost, v.Status, v.IsActive)
 	if e != nil {
 		status, code, msg := httpx.MapDBError(e, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
+
+	actorEmail := "system"
+	if user := middleware.GetUser(r); user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLogTx(r.Context(), tx, "vehicles", v.RegistrationNumber, "create", actorEmail, map[string]any{
+		"model": v.Model,
+		"type":  v.Type,
+	})
+
+	if err := tx.Commit(r.Context()); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
+		return
+	}
+
 	httpx.WriteJSON(w, http.StatusCreated, v)
 }
 
@@ -758,6 +780,15 @@ func (a *App) updateVehicle(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
+
+	actorEmail := "system"
+	if user := middleware.GetUser(r); user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLogTx(r.Context(), tx, "vehicles", reg, "update", actorEmail, map[string]any{
+		"model": v.Model,
+		"type":  v.Type,
+	})
 
 	if err := tx.Commit(r.Context()); err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
@@ -885,6 +916,12 @@ func (a *App) deleteVehicle(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, status, code, msg, nil)
 			return
 		}
+		actorEmail := "system"
+		if user := middleware.GetUser(r); user != nil {
+			actorEmail = user.Email
+		}
+		recordAuditLogTx(r.Context(), tx, "vehicles", reg, "soft_delete", actorEmail, map[string]any{"is_active": false})
+
 		if err := tx.Commit(r.Context()); err != nil {
 			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
 			return
@@ -903,6 +940,12 @@ func (a *App) deleteVehicle(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
+	actorEmail := "system"
+	if user := middleware.GetUser(r); user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLogTx(r.Context(), tx, "vehicles", reg, "hard_delete", actorEmail, map[string]any{"purged": true})
+
 	if err := tx.Commit(r.Context()); err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
 		return
@@ -1052,19 +1095,41 @@ func (a *App) createDriver(w http.ResponseWriter, r *http.Request) {
 	}
 	v.IsActive = true
 
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to start transaction", nil)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
 	var n int
-	a.db.QueryRow(r.Context(), "SELECT count(*) FROM drivers WHERE license_number=$1", v.LicenseNumber).Scan(&n)
+	tx.QueryRow(r.Context(), "SELECT count(*) FROM drivers WHERE license_number=$1", v.LicenseNumber).Scan(&n)
 	if n > 0 {
 		httpx.WriteError(w, r, http.StatusConflict, "DRIVER_EXISTS", "Driver License Number already registered.", nil)
 		return
 	}
-	_, e := a.db.Exec(r.Context(), "INSERT INTO drivers (license_number, name, license_category, license_expiry_date, contact_number, safety_score, status, is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+	_, e := tx.Exec(r.Context(), "INSERT INTO drivers (license_number, name, license_category, license_expiry_date, contact_number, safety_score, status, is_active) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
 		v.LicenseNumber, v.Name, v.LicenseCategory, v.LicenseExpiryDate, v.ContactNumber, v.SafetyScore, v.Status, v.IsActive)
 	if e != nil {
 		status, code, msg := httpx.MapDBError(e, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
+
+	actorEmail := "system"
+	if user := middleware.GetUser(r); user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLogTx(r.Context(), tx, "drivers", v.LicenseNumber, "create", actorEmail, map[string]any{
+		"name":             v.Name,
+		"license_category": v.LicenseCategory,
+	})
+
+	if err := tx.Commit(r.Context()); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
+		return
+	}
+
 	httpx.WriteJSON(w, http.StatusCreated, v)
 }
 
@@ -1134,6 +1199,15 @@ func (a *App) updateDriver(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
+
+	actorEmail := "system"
+	if user := middleware.GetUser(r); user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLogTx(r.Context(), tx, "drivers", license, "update", actorEmail, map[string]any{
+		"name":             v.Name,
+		"license_category": v.LicenseCategory,
+	})
 
 	if err := tx.Commit(r.Context()); err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
@@ -1394,6 +1468,12 @@ func (a *App) deleteDriver(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, status, code, msg, nil)
 			return
 		}
+		actorEmail := "system"
+		if user := middleware.GetUser(r); user != nil {
+			actorEmail = user.Email
+		}
+		recordAuditLogTx(r.Context(), tx, "drivers", license, "soft_delete", actorEmail, map[string]any{"is_active": false})
+
 		if err := tx.Commit(r.Context()); err != nil {
 			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
 			return
@@ -1412,6 +1492,12 @@ func (a *App) deleteDriver(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
+	actorEmail := "system"
+	if user := middleware.GetUser(r); user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLogTx(r.Context(), tx, "drivers", license, "hard_delete", actorEmail, map[string]any{"purged": true})
+
 	if err := tx.Commit(r.Context()); err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
 		return

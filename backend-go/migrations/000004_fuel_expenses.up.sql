@@ -8,6 +8,7 @@ CREATE INDEX IF NOT EXISTS idx_trips_completed_at ON trips(completed_at);
 -- 2. Modify expenses table to support vehicle_reg and optional trip_id
 ALTER TABLE expenses ALTER COLUMN trip_id DROP NOT NULL;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS vehicle_reg TEXT REFERENCES vehicles(registration_number) ON DELETE RESTRICT;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS migrated_from_trip BOOLEAN DEFAULT false;
 
 -- Backfill vehicle_reg for existing expenses from trips
 UPDATE expenses e
@@ -22,7 +23,7 @@ BEGIN
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'trips' AND column_name = 'fuel_liters'
     ) THEN
-        INSERT INTO expenses (trip_id, vehicle_reg, type, liters, cost, date, created_at, updated_at)
+        INSERT INTO expenses (trip_id, vehicle_reg, type, liters, cost, date, created_at, updated_at, migrated_from_trip)
         SELECT
             t.id,
             t.vehicle_reg,
@@ -31,10 +32,14 @@ BEGIN
             t.fuel_cost,
             (t.updated_at AT TIME ZONE 'UTC')::date,
             t.updated_at,
-            t.updated_at
+            t.updated_at,
+            true
         FROM trips t
         WHERE t.status = 'Completed'
-          AND (COALESCE(t.fuel_cost, 0) > 0 OR COALESCE(t.fuel_liters, 0) > 0);
+          AND (COALESCE(t.fuel_cost, 0) > 0 OR COALESCE(t.fuel_liters, 0) > 0)
+          AND NOT EXISTS (
+              SELECT 1 FROM expenses e WHERE e.trip_id = t.id AND e.migrated_from_trip = true
+          );
     END IF;
 END $$;
 

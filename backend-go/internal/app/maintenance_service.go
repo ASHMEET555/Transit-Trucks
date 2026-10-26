@@ -34,6 +34,20 @@ func (a *App) handleListMaintenance(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vReg := r.URL.Query().Get("vehicle_reg")
 	status := r.URL.Query().Get("status")
+	if status != "" && status != "Open" && status != "Closed" {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid status filter. Must be Open or Closed.", nil)
+		return
+	}
+
+	limit := 100
+	if l := r.URL.Query().Get("limit"); l != "" {
+		parsedL, err := strconv.Atoi(l)
+		if err != nil || parsedL <= 0 || parsedL > 100 {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid limit. Must be between 1 and 100.", nil)
+			return
+		}
+		limit = parsedL
+	}
 
 	query := `SELECT id, vehicle_reg, description, cost, TO_CHAR(start_date, 'YYYY-MM-DD'), TO_CHAR(end_date, 'YYYY-MM-DD'), status, created_at, updated_at
 		FROM maintenance_logs WHERE 1=1`
@@ -51,15 +65,20 @@ func (a *App) handleListMaintenance(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 
-	query += " ORDER BY id DESC"
-
 	cursorStr := r.URL.Query().Get("cursor")
-	limit := 100
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if parsedL, err := strconv.Atoi(l); err == nil && parsedL > 0 && parsedL <= 100 {
-			limit = parsedL
+	if cursorStr != "" {
+		cID, err := strconv.ParseInt(cursorStr, 10, 64)
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid cursor format.", nil)
+			return
 		}
+		query += fmt.Sprintf(" AND id < $%d", argIdx)
+		args = append(args, cID)
+		argIdx++
 	}
+
+	query += fmt.Sprintf(" ORDER BY id DESC LIMIT $%d", argIdx)
+	args = append(args, limit+1)
 
 	rows, err := a.db.Query(ctx, query, args...)
 	if err != nil {
@@ -74,7 +93,8 @@ func (a *App) handleListMaintenance(w http.ResponseWriter, r *http.Request) {
 		var startDate, endDate *string
 		var createdAt, updatedAt *time.Time
 		if err := rows.Scan(&m.ID, &m.VehicleReg, &m.Description, &m.Cost, &startDate, &endDate, &m.Status, &createdAt, &updatedAt); err != nil {
-			continue
+			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to scan maintenance log", nil)
+			return
 		}
 		if startDate != nil {
 			m.StartDate = *startDate
@@ -90,30 +110,16 @@ func (a *App) handleListMaintenance(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, m)
 	}
-
-	// Apply cursor pagination in memory if cursor provided
-	startIdx := 0
-	if cursorStr != "" {
-		if cID, err := strconv.Atoi(cursorStr); err == nil {
-			for idx, item := range items {
-				if item.ID < cID {
-					startIdx = idx
-					break
-				}
-			}
-		}
+	if err := rows.Err(); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to iterate maintenance logs", nil)
+		return
 	}
 
-	endIdx := startIdx + limit
 	var nextCursor *string
-	if endIdx < len(items) {
-		c := strconv.Itoa(items[endIdx-1].ID)
+	if len(items) > limit {
+		c := strconv.Itoa(items[limit-1].ID)
 		nextCursor = &c
-		items = items[startIdx:endIdx]
-	} else if startIdx < len(items) {
-		items = items[startIdx:]
-	} else if startIdx >= len(items) && len(items) > 0 {
-		items = []maintenance{}
+		items = items[:limit]
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, PaginatedResponse[maintenance]{
