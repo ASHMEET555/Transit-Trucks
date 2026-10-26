@@ -20,7 +20,8 @@ import {
   TableRow,
 } from "@/components/Table"
 import { ApiError, apiRequest, extractItems } from "@/lib/api"
-import { BACKEND_URL } from "@/data/data"
+import { useFleetEvents } from "@/lib/realtime/useFleetEvents"
+import { RealtimeIndicator } from "@/components/RealtimeIndicator"
 import type { Destination, Trip } from "@/lib/tripTypes"
 
 type DashboardKPIs = {
@@ -87,22 +88,17 @@ export default function DashboardPage() {
     loadMapData()
   }, [])
 
-  useEffect(() => {
-    const wsUrl = BACKEND_URL.replace("/api", "/ws/fleet").replace("http", "ws")
-    const socket = new WebSocket(wsUrl)
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data) as { event?: string }
-        if (!msg.event) return
-        setLastRealtimeEvent(msg.event)
-        loadKpis()
-        loadMapData()
-      } catch {
-        // Ignore malformed messages.
-      }
-    }
-    return () => socket.close()
-  }, [])
+  const { status } = useFleetEvents({
+    onEvent: (event) => {
+      setLastRealtimeEvent(event.type)
+      loadKpis()
+      loadMapData()
+    },
+    onReconnect: () => {
+      loadKpis()
+      loadMapData()
+    },
+  })
 
   if (error) return <div className="p-6 text-red-500">{error}</div>
   if (!data) return <div className="p-6 text-gray-500">Loading dashboard...</div>
@@ -124,7 +120,10 @@ export default function DashboardPage() {
     <div className="page-shell space-y-6">
       <div className="page-header">
         <div>
-          <p className="page-eyebrow">Command center</p>
+          <div className="flex items-center gap-3">
+            <p className="page-eyebrow">Command center</p>
+            <RealtimeIndicator status={status} />
+          </div>
           <h1 className="page-title">Dashboard</h1>
           <p className="page-subtitle">
             Fleet overview with live map, KPIs, and vehicle performance.

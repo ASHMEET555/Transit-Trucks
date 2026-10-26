@@ -4,7 +4,8 @@ import { useEffect, useState } from "react"
 import { LiveFleetMap } from "@/components/map/LiveFleetMap"
 import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import type { Destination, Trip } from "@/lib/tripTypes"
-import { BACKEND_URL } from "@/data/data"
+import { useFleetEvents } from "@/lib/realtime/useFleetEvents"
+import { RealtimeIndicator } from "@/components/RealtimeIndicator"
 
 export default function LiveMapPage() {
   const [trips, setTrips] = useState<Trip[]>([])
@@ -30,21 +31,15 @@ export default function LiveMapPage() {
     load()
   }, [])
 
-  useEffect(() => {
-    const wsUrl = BACKEND_URL.replace("/api", "/ws/fleet").replace("http", "ws")
-    const socket = new WebSocket(wsUrl)
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data) as { event?: string }
-        if (!msg.event) return
-        setLiveEvent(msg.event)
-        load()
-      } catch {
-        // ignore
-      }
-    }
-    return () => socket.close()
-  }, [])
+  const { status } = useFleetEvents({
+    onEvent: (event) => {
+      setLiveEvent(event.type)
+      load()
+    },
+    onReconnect: () => {
+      load()
+    },
+  })
 
   const dispatched = trips.filter((t) => t.status === "Dispatched").length
 
@@ -52,7 +47,10 @@ export default function LiveMapPage() {
     <div className="page-shell live-map-page">
       <div className="page-header">
         <div>
-          <p className="page-eyebrow">Operations</p>
+          <div className="flex items-center gap-3">
+            <p className="page-eyebrow">Operations</p>
+            <RealtimeIndicator status={status} />
+          </div>
           <h1 className="page-title">Live fleet map</h1>
           <p className="page-subtitle">
             Real-world road routing with live truck movement. Trips appear as

@@ -21,7 +21,8 @@ import {
 import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
 import { canWrite } from "@/lib/rbacConfig"
-import { BACKEND_URL } from "@/data/data"
+import { useFleetEvents } from "@/lib/realtime/useFleetEvents"
+import { RealtimeIndicator } from "@/components/RealtimeIndicator"
 
 function generateUUID(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -145,21 +146,15 @@ export default function TripsPage() {
     load()
   }, [])
 
-  useEffect(() => {
-    const wsUrl = BACKEND_URL.replace("/api", "/ws/fleet").replace("http", "ws")
-    const socket = new WebSocket(wsUrl)
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data) as { event?: string }
-        if (!msg.event) return
-        setLiveEvent(msg.event)
-        load()
-      } catch {
-        // Ignore malformed messages.
-      }
-    }
-    return () => socket.close()
-  }, [])
+  const { status } = useFleetEvents({
+    onEvent: (event) => {
+      setLiveEvent(event.type)
+      load()
+    },
+    onReconnect: () => {
+      load()
+    },
+  })
 
   const availableVehicles = useMemo(
     () => vehicles.filter((v) => v.status === "Available"),
@@ -405,7 +400,10 @@ export default function TripsPage() {
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Trips</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">Trips</h1>
+            <RealtimeIndicator status={status} />
+          </div>
           <p className="mt-2 text-gray-600 dark:text-gray-400">
             Dispatch and trip lifecycle
           </p>
