@@ -73,7 +73,7 @@ func (m *MetricsCollector) RecordJobResult(success bool) {
 // Bounded route mapping: maps arbitrary un-patterned paths to "unmatched"
 func boundRoute(pattern string) string {
 	pattern = strings.TrimSpace(pattern)
-	if pattern == "" || pattern == "/" {
+	if pattern == "" || pattern == "/" || pattern == "root" {
 		return "root"
 	}
 	parts := strings.SplitN(pattern, " ", 2)
@@ -81,9 +81,15 @@ func boundRoute(pattern string) string {
 		pattern = parts[1]
 	}
 
-	// If route starts with /api/v1/ or standard system endpoints, it's bounded
-	if strings.HasPrefix(pattern, "/api/v1/") ||
-		pattern == "/healthz" || pattern == "/readyz" || pattern == "/metrics" {
+	if pattern == "unmatched" {
+		return "unmatched"
+	}
+
+	if pattern == "/healthz" || pattern == "/readyz" || pattern == "/metrics" {
+		return pattern
+	}
+
+	if strings.HasPrefix(pattern, "/api/v1/") {
 		return pattern
 	}
 
@@ -190,10 +196,24 @@ func (a *App) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	b.WriteString("# TYPE http_in_flight_requests gauge\n")
 	b.WriteString(fmt.Sprintf("http_in_flight_requests %d\n\n", a.metrics.inFlight.Load()))
 
-	// 2. Events published total
+	// 2. Events published, delivered, and dropped
 	b.WriteString("# HELP events_published_total Total realtime events emitted via pg_notify.\n")
 	b.WriteString("# TYPE events_published_total counter\n")
 	b.WriteString(fmt.Sprintf("events_published_total %d\n\n", a.metrics.eventsPublished.Load()))
+
+	var delivered uint64
+	var dropped uint64
+	if a.hub != nil {
+		delivered = a.hub.EventsDelivered()
+		dropped = a.hub.EventsDropped()
+	}
+	b.WriteString("# HELP events_delivered_total Total realtime events delivered to connected WebSocket clients.\n")
+	b.WriteString("# TYPE events_delivered_total counter\n")
+	b.WriteString(fmt.Sprintf("events_delivered_total %d\n\n", delivered))
+
+	b.WriteString("# HELP events_dropped_total Total realtime events dropped due to slow consumer.\n")
+	b.WriteString("# TYPE events_dropped_total counter\n")
+	b.WriteString(fmt.Sprintf("events_dropped_total %d\n\n", dropped))
 
 	// 3. Job executions
 	b.WriteString("# HELP job_executions_total Background license check and maintenance job executions.\n")
@@ -204,6 +224,12 @@ func (a *App) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	// 4. DB Pool statistics
 	if a.db != nil {
 		stat := a.db.Stat()
+		b.WriteString("# HELP db_pool_connections Total connections in pgx pool by state.\n")
+		b.WriteString("# TYPE db_pool_connections gauge\n")
+		b.WriteString(fmt.Sprintf("db_pool_connections{state=\"total\"} %d\n", stat.TotalConns()))
+		b.WriteString(fmt.Sprintf("db_pool_connections{state=\"idle\"} %d\n", stat.IdleConns()))
+		b.WriteString(fmt.Sprintf("db_pool_connections{state=\"acquired\"} %d\n\n", stat.AcquiredConns()))
+
 		b.WriteString("# HELP db_pool_total_connections Total connections in pgx pool.\n")
 		b.WriteString("# TYPE db_pool_total_connections gauge\n")
 		b.WriteString(fmt.Sprintf("db_pool_total_connections %d\n\n", stat.TotalConns()))
@@ -252,7 +278,7 @@ func (a *App) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	for key, count := range a.metrics.httpRequestsTotal {
 		parts := strings.Split(key, "|")
 		if len(parts) == 3 {
-			b.WriteString(fmt.Sprintf("http_requests_total{method=%q,route=%q,status=%q} %d\n", parts[0], parts[1], parts[2], count))
+			b.WriteString(fmt.Sprintf("http_requests_total{method=%q,route=%q,status_code=%q,status=%q} %d\n", parts[0], parts[1], parts[2], parts[2], count))
 		}
 	}
 	b.WriteString("\n")

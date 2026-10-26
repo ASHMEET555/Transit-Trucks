@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
@@ -57,6 +58,9 @@ type Hub struct {
 	// Test hooks to customize timers if needed
 	pingInterval time.Duration
 	pongWait     time.Duration
+
+	eventsDelivered atomic.Uint64
+	eventsDropped   atomic.Uint64
 }
 
 func NewHub(dbURL string, pool *pgxpool.Pool, allowedOrigins []string, logger *slog.Logger) *Hub {
@@ -80,6 +84,14 @@ func NewHub(dbURL string, pool *pgxpool.Pool, allowedOrigins []string, logger *s
 	}
 
 	return h
+}
+
+func (h *Hub) EventsDelivered() uint64 {
+	return h.eventsDelivered.Load()
+}
+
+func (h *Hub) EventsDropped() uint64 {
+	return h.eventsDropped.Load()
 }
 
 // Start begins the dedicated PostgreSQL LISTEN loop and broadcast fan-out.
@@ -346,8 +358,10 @@ func (h *Hub) fanOutEvent(ev Event) {
 		select {
 		case c.send <- msgBytes:
 			c.mu.Unlock()
+			h.eventsDelivered.Add(1)
 		default:
 			c.mu.Unlock()
+			h.eventsDropped.Add(1)
 			// Bounded send channel is full (slow consumer) -> drop socket with close code 1013
 			go func(slowClient *Client) {
 				msg := websocket.FormatCloseMessage(CloseSlowConsumer, "Slow consumer dropped")

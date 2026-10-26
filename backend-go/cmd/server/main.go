@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -29,7 +30,18 @@ func main() {
 		logger.Error("invalid database url", "error", err)
 		os.Exit(1)
 	}
+	poolCfg.MinConns = 2
 	poolCfg.MaxConns = 10
+	if maxConnsEnv := os.Getenv("DB_MAX_CONNS"); maxConnsEnv != "" {
+		if mc, err := strconv.Atoi(maxConnsEnv); err == nil && mc > 0 {
+			poolCfg.MaxConns = int32(mc)
+		}
+	}
+	if minConnsEnv := os.Getenv("DB_MIN_CONNS"); minConnsEnv != "" {
+		if mc, err := strconv.Atoi(minConnsEnv); err == nil && mc >= 0 {
+			poolCfg.MinConns = int32(mc)
+		}
+	}
 	poolCfg.MaxConnLifetime = 30 * time.Minute
 	poolCfg.MaxConnIdleTime = 5 * time.Minute
 	poolCfg.ConnConfig.ConnectTimeout = 3 * time.Second
@@ -62,8 +74,10 @@ func main() {
 	defer a.Close()
 
 	srv := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: a,
+		Addr:              ":" + cfg.Port,
+		Handler:           a,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	go func() {
@@ -79,7 +93,7 @@ func main() {
 	<-quit
 
 	logger.Info("server shutting down gracefully...")
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {

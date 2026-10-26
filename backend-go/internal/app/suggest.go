@@ -81,7 +81,7 @@ func (a *App) handleSuggest(w http.ResponseWriter, r *http.Request) {
 	// 1. Fetch vehicles (read-only)
 	rowsV, err := a.db.Query(ctx, `SELECT registration_number, model, type, max_load_capacity, odometer, status, is_active FROM vehicles`)
 	if err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -136,7 +136,7 @@ func (a *App) handleSuggest(w http.ResponseWriter, r *http.Request) {
 	// 2. Fetch drivers (read-only)
 	rowsD, err := a.db.Query(ctx, `SELECT license_number, name, license_category, license_expiry_date::text, safety_score, status, is_active FROM drivers`)
 	if err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}

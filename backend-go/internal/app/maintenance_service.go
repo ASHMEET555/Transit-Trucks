@@ -247,7 +247,7 @@ func (a *App) handleOpenMaintenance(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Vehicle not found.", nil)
 			return
 		}
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -276,7 +276,7 @@ func (a *App) handleOpenMaintenance(w http.ResponseWriter, r *http.Request) {
 		VALUES ($1, $2, $3, $4, 'Open', now(), now()) RETURNING id`,
 		req.VehicleReg, req.Description, req.Cost, startDateStr).Scan(&logID)
 	if err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -284,7 +284,7 @@ func (a *App) handleOpenMaintenance(w http.ResponseWriter, r *http.Request) {
 	// Set vehicle status to In Shop
 	_, err = tx.Exec(ctx, `UPDATE vehicles SET status = 'In Shop', updated_at = now() WHERE registration_number = $1`, req.VehicleReg)
 	if err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -308,7 +308,7 @@ func (a *App) handleOpenMaintenance(w http.ResponseWriter, r *http.Request) {
 
 	respBytes, _ := json.Marshal(resLog)
 	if err := saveIdempotency(ctx, tx, key, user.ID, r.URL.Path, bodyHash, http.StatusCreated, string(respBytes)); err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -324,7 +324,7 @@ func (a *App) handleOpenMaintenance(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err := tx.Commit(ctx); err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -384,7 +384,7 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Maintenance log not found.", nil)
 			return
 		}
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -394,7 +394,7 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 	err = tx.QueryRow(ctx, `SELECT status FROM vehicles WHERE registration_number = $1 FOR UPDATE`, vReg).
 		Scan(&vStatus)
 	if err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -406,7 +406,7 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 		FROM maintenance_logs WHERE id = $1 FOR UPDATE`, logID).
 		Scan(&logRecord.ID, &logRecord.VehicleReg, &logRecord.Description, &logRecord.Cost, &sDate, &eDate, &logRecord.Status)
 	if err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -442,7 +442,7 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 	// Step 5: Update maintenance log to Closed
 	_, err = tx.Exec(ctx, `UPDATE maintenance_logs SET status = 'Closed', end_date = $1, updated_at = now() WHERE id = $2`, endDateStr, logID)
 	if err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -453,7 +453,7 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 	err = tx.QueryRow(ctx, `SELECT COUNT(*) FROM maintenance_logs WHERE vehicle_reg = $1 AND status = 'Open' AND id != $2`, vReg, logID).
 		Scan(&otherOpenLogs)
 	if err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -463,7 +463,7 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 	if otherOpenLogs == 0 && vStatus != "Retired" {
 		_, err = tx.Exec(ctx, `UPDATE vehicles SET status = 'Available', updated_at = now() WHERE registration_number = $1`, vReg)
 		if err != nil {
-			status, code, msg := httpx.MapDBError(err, nil)
+			status, code, msg := httpx.MapDBError(err, a.log)
 			httpx.WriteError(w, r, status, code, msg, nil)
 			return
 		}
@@ -488,7 +488,7 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 
 	respBytes, _ := json.Marshal(respPayload)
 	if err := saveIdempotency(ctx, tx, key, user.ID, r.URL.Path, bodyHash, http.StatusOK, string(respBytes)); err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -506,7 +506,7 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}

@@ -2,11 +2,13 @@ package app
 
 import (
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
@@ -80,6 +82,8 @@ func (a *App) handleLicenseCheckJob(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	notificationsCreated := 0
+	expiredCount := 0
+	warningCount := 0
 
 	for _, d := range drivers {
 		daysRemaining := int(d.expiry.Sub(today).Hours() / 24)
@@ -88,14 +92,17 @@ func (a *App) handleLicenseCheckJob(w http.ResponseWriter, r *http.Request) {
 		var notifType, dedupeKey string
 		var threshold int
 		if daysRemaining <= 0 {
+			expiredCount++
 			notifType = "license_expired"
 			dedupeKey = fmt.Sprintf("%s:%s:expired", d.lic, expiryStr)
 			threshold = 0
 		} else if daysRemaining <= 7 {
+			warningCount++
 			notifType = "license_expiring_7d"
 			dedupeKey = fmt.Sprintf("%s:%s:7d", d.lic, expiryStr)
 			threshold = 7
 		} else if daysRemaining <= 30 {
+			warningCount++
 			notifType = "license_expiring_30d"
 			dedupeKey = fmt.Sprintf("%s:%s:30d", d.lic, expiryStr)
 			threshold = 30
@@ -135,6 +142,9 @@ func (a *App) handleLicenseCheckJob(w http.ResponseWriter, r *http.Request) {
 	a.metrics.RecordJobResult(true)
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"status":                "ok",
+		"processed":             len(drivers),
+		"expired":               expiredCount,
+		"warning":               warningCount,
 		"drivers_checked":       len(drivers),
 		"notifications_created": notificationsCreated,
 	})
@@ -151,16 +161,48 @@ func (a *App) handleListNotifications(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var cursorID *int64
+	if cStr := r.URL.Query().Get("cursor"); cStr != "" {
+		decodedBytes, err := base64.URLEncoding.DecodeString(cStr)
+		if err == nil {
+			cStr = string(decodedBytes)
+		}
+		if parsed, err := strconv.ParseInt(cStr, 10, 64); err == nil && parsed > 0 {
+			cursorID = &parsed
+		} else {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid cursor format.", map[string]any{"field": "cursor"})
+			return
+		}
+	}
+
+	var conditions []string
+	var args []any
+	argIdx := 1
+
+	isReadParam := r.URL.Query().Get("is_read")
 	unreadOnly := r.URL.Query().Get("unread_only") == "true"
+	if isReadParam == "true" {
+		conditions = append(conditions, "read_at IS NOT NULL")
+	} else if isReadParam == "false" || unreadOnly {
+		conditions = append(conditions, "read_at IS NULL")
+	}
+
+	if cursorID != nil {
+		conditions = append(conditions, fmt.Sprintf("id < $%d", argIdx))
+		args = append(args, *cursorID)
+		argIdx++
+	}
+
 	query := `
 		SELECT id, user_id, role_target, type, dedupe_key, payload, created_at, read_at
 		FROM notifications`
-	if unreadOnly {
-		query += ` WHERE read_at IS NULL`
+	if len(conditions) > 0 {
+		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
-	query += ` ORDER BY read_at NULLS FIRST, created_at DESC, id DESC LIMIT $1`
+	query += fmt.Sprintf(" ORDER BY id DESC LIMIT $%d", argIdx)
+	args = append(args, limit+1)
 
-	rows, err := a.db.Query(ctx, query, limit)
+	rows, err := a.db.Query(ctx, query, args...)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to query notifications.", nil)
 		return
@@ -190,9 +232,17 @@ func (a *App) handleListNotifications(w http.ResponseWriter, r *http.Request) {
 		items = []Notification{}
 	}
 
+	var nextCursor *string
+	if len(items) > limit {
+		lastItem := items[limit-1]
+		encoded := base64.URLEncoding.EncodeToString([]byte(strconv.FormatInt(lastItem.ID, 10)))
+		nextCursor = &encoded
+		items = items[:limit]
+	}
+
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"items":       items,
-		"next_cursor": nil,
+		"next_cursor": nextCursor,
 	})
 }
 

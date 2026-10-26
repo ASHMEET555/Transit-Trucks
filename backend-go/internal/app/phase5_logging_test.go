@@ -109,3 +109,44 @@ func TestCompulsory_LogScrubSecretNeverLogged(t *testing.T) {
 		t.Errorf("route pattern missing from access log: %s", logOutput)
 	}
 }
+
+func TestCompulsory_AccessLog_ErrorCodeAndNoLicenseLeak(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
+
+	cfg := Config{
+		Secret:         "a-very-long-and-secure-session-secret-key-32-bytes",
+		AllowedOrigins: []string{"http://localhost:3000"},
+		Env:            "local",
+		CookieDomain:   "transitops.com",
+		Logger:         logger,
+	}
+	app := New(db, cfg)
+
+	sensitiveLic := "DL-SECRET-LOG-999"
+	req := httptest.NewRequest("GET", "/api/v1/drivers/"+sensitiveLic, nil)
+	req.Header.Set("X-Request-ID", "req-log-err-222")
+	w := httptest.NewRecorder()
+
+	app.ServeHTTP(w, req)
+
+	logOutput := logBuf.String()
+
+	// 1. License must NOT leak into the route attribute
+	if strings.Contains(logOutput, sensitiveLic) {
+		t.Fatalf("driver license leaked into access log route! Log: %s", logOutput)
+	}
+
+	// 2. Route must be parameterized
+	if !strings.Contains(logOutput, `"/api/v1/drivers/{license}"`) {
+		t.Errorf("expected parameterized route in access log, got: %s", logOutput)
+	}
+
+	// 3. Unauthenticated request should log error_code UNAUTHORIZED
+	if !strings.Contains(logOutput, `"error_code":"UNAUTHORIZED"`) {
+		t.Errorf("expected error_code in access log for error response, got: %s", logOutput)
+	}
+}

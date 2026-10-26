@@ -2,11 +2,13 @@ package middleware
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -21,6 +23,28 @@ type userContextKey string
 
 const UserKey userContextKey = "authenticated_user"
 
+type routeContextKey string
+
+const RoutePatternKey routeContextKey = "route_pattern"
+
+func SetRoutePattern(r *http.Request, pattern string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), RoutePatternKey, pattern))
+}
+
+func GetRoutePattern(r *http.Request) string {
+	if p, ok := r.Context().Value(RoutePatternKey).(string); ok && p != "" {
+		return p
+	}
+	if r.Pattern != "" {
+		parts := strings.SplitN(r.Pattern, " ", 2)
+		if len(parts) == 2 {
+			return parts[1]
+		}
+		return r.Pattern
+	}
+	return "unmatched"
+}
+
 func GetUser(r *http.Request) *auth.SessionUser {
 	if u, ok := r.Context().Value(UserKey).(*auth.SessionUser); ok {
 		return u
@@ -33,7 +57,8 @@ func WithUser(ctx context.Context, u *auth.SessionUser) context.Context {
 }
 
 // RequestTimeout applies a context deadline to standard HTTP requests.
-// WebSocket endpoints are excluded.
+// WebSocket endpoints are excluded. If the deadline expires before completion,
+// it ensures a 503 REQUEST_TIMEOUT response is written.
 func RequestTimeout(timeout time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -43,8 +68,117 @@ func RequestTimeout(timeout time.Duration) func(http.Handler) http.Handler {
 			}
 			ctx, cancel := context.WithTimeout(r.Context(), timeout)
 			defer cancel()
-			next.ServeHTTP(w, r.WithContext(ctx))
+
+			rWithTimeout := r.WithContext(ctx)
+			done := make(chan struct{})
+			panicVal := make(chan any, 1)
+
+			tw := &timeoutWriter{w: w}
+
+			go func() {
+				defer func() {
+					if rec := recover(); rec != nil {
+						panicVal <- rec
+					}
+					close(done)
+				}()
+				next.ServeHTTP(tw, rWithTimeout)
+			}()
+
+			select {
+			case p := <-panicVal:
+				panic(p)
+			case <-done:
+				tw.mu.Lock()
+				defer tw.mu.Unlock()
+				tw.copyToRealLocked()
+			case <-ctx.Done():
+				tw.mu.Lock()
+				defer tw.mu.Unlock()
+				tw.timedOut = true
+				httpx.WriteError(w, rWithTimeout, http.StatusServiceUnavailable, "REQUEST_TIMEOUT", "Request execution timed out.", nil)
+			}
 		})
+	}
+}
+
+type timeoutWriter struct {
+	w           http.ResponseWriter
+	mu          sync.Mutex
+	timedOut    bool
+	wroteHeader bool
+	code        int
+	buf         bytes.Buffer
+	header      http.Header
+}
+
+func (tw *timeoutWriter) Header() http.Header {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	if tw.header == nil {
+		tw.header = make(http.Header)
+		for k, v := range tw.w.Header() {
+			tw.header[k] = slices.Clone(v)
+		}
+	}
+	return tw.header
+}
+
+func (tw *timeoutWriter) WriteHeader(code int) {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	if tw.timedOut || tw.wroteHeader {
+		return
+	}
+	tw.wroteHeader = true
+	tw.code = code
+}
+
+func (tw *timeoutWriter) Write(b []byte) (int, error) {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	if tw.timedOut {
+		return len(b), nil
+	}
+	if !tw.wroteHeader {
+		tw.wroteHeader = true
+		tw.code = http.StatusOK
+	}
+	return tw.buf.Write(b)
+}
+
+func (tw *timeoutWriter) Flush() {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	if tw.timedOut {
+		return
+	}
+	tw.copyToRealLocked()
+	if f, ok := tw.w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (tw *timeoutWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := tw.w.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
+}
+
+func (tw *timeoutWriter) copyToRealLocked() {
+	if tw.timedOut {
+		return
+	}
+	for k, v := range tw.header {
+		tw.w.Header()[k] = v
+	}
+	if tw.wroteHeader && tw.code != 0 {
+		tw.w.WriteHeader(tw.code)
+	}
+	if tw.buf.Len() > 0 {
+		_, _ = tw.w.Write(tw.buf.Bytes())
+		tw.buf.Reset()
 	}
 }
 
@@ -59,6 +193,7 @@ func Recover(logger *slog.Logger) func(http.Handler) http.Handler {
 						logger.Error("panic recovered",
 							"request_id", reqID,
 							"panic", fmt.Sprintf("%v", rec),
+							"stack", string(debug.Stack()),
 							"path", r.URL.Path,
 						)
 					}
@@ -130,17 +265,12 @@ func AccessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 			duration := time.Since(start)
 
 			if logger != nil {
-				routePattern := r.Pattern
+				routePattern := GetRoutePattern(r)
 				if routePattern == "" {
-					routePattern = r.URL.Path
-				} else {
-					parts := strings.SplitN(routePattern, " ", 2)
-					if len(parts) == 2 {
-						routePattern = parts[1]
-					}
+					routePattern = "unmatched"
 				}
 
-				logger.Info("http request",
+				attrs := []any{
 					"request_id", httpx.RequestID(r),
 					"method", r.Method,
 					"route", routePattern,
@@ -148,7 +278,13 @@ func AccessLog(logger *slog.Logger) func(http.Handler) http.Handler {
 					"latency_ms", duration.Milliseconds(),
 					"user_id", rec.userID,
 					"role", rec.role,
-				)
+				}
+
+				if errCode := rec.Header().Get("X-Error-Code"); errCode != "" {
+					attrs = append(attrs, "error_code", errCode)
+				}
+
+				logger.Info("http request", attrs...)
 			}
 		})
 	}

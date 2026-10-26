@@ -79,7 +79,7 @@ func (a *App) checkIdempotency(w http.ResponseWriter, r *http.Request, bodyBytes
 	}
 
 	if !errors.Is(err, pgx.ErrNoRows) {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return nil, "", "", false
 	}

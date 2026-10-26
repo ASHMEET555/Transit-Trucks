@@ -49,7 +49,7 @@ func (a *App) handleCancelTrip(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Trip record not found.", nil)
 			return
 		}
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -75,7 +75,7 @@ func (a *App) handleCancelTrip(w http.ResponseWriter, r *http.Request) {
 	// Update Trip to Cancelled
 	_, err = tx.Exec(ctx, `UPDATE trips SET status = 'Cancelled', updated_at = now() WHERE id = $1`, tripID)
 	if err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -84,14 +84,14 @@ func (a *App) handleCancelTrip(w http.ResponseWriter, r *http.Request) {
 	if wasDispatched {
 		_, err = tx.Exec(ctx, `UPDATE vehicles SET status = 'Available', updated_at = now() WHERE registration_number = $1`, res.Trip.VehicleReg)
 		if err != nil {
-			status, code, msg := httpx.MapDBError(err, nil)
+			status, code, msg := httpx.MapDBError(err, a.log)
 			httpx.WriteError(w, r, status, code, msg, nil)
 			return
 		}
 
 		_, err = tx.Exec(ctx, `UPDATE drivers SET status = 'Available', updated_at = now() WHERE license_number = $1`, res.Trip.DriverLicense)
 		if err != nil {
-			status, code, msg := httpx.MapDBError(err, nil)
+			status, code, msg := httpx.MapDBError(err, a.log)
 			httpx.WriteError(w, r, status, code, msg, nil)
 			return
 		}
@@ -120,7 +120,7 @@ func (a *App) handleCancelTrip(w http.ResponseWriter, r *http.Request) {
 
 	respBytes, _ := json.Marshal(responseTrip)
 	if err := saveIdempotency(ctx, tx, key, user.ID, r.URL.Path, bodyHash, http.StatusOK, string(respBytes)); err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -143,7 +143,7 @@ func (a *App) handleCancelTrip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}

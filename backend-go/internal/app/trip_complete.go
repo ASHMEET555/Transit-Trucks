@@ -79,7 +79,7 @@ func (a *App) handleCompleteTrip(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Trip record not found.", nil)
 			return
 		}
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -116,7 +116,7 @@ func (a *App) handleCompleteTrip(w http.ResponseWriter, r *http.Request) {
 	_, err = tx.Exec(ctx, `UPDATE trips SET status = 'Completed', final_odometer = $1, completed_at = now(), updated_at = now()
 		WHERE id = $2`, req.FinalOdometer, tripID)
 	if err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -127,7 +127,7 @@ func (a *App) handleCompleteTrip(w http.ResponseWriter, r *http.Request) {
 			VALUES ($1, $2, 'Fuel', $3, $4, CURRENT_DATE, now(), now())`,
 			tripID, res.Trip.VehicleReg, *req.FuelLiters, *req.FuelCost)
 		if err != nil {
-			status, code, msg := httpx.MapDBError(err, nil)
+			status, code, msg := httpx.MapDBError(err, a.log)
 			httpx.WriteError(w, r, status, code, msg, nil)
 			return
 		}
@@ -136,7 +136,7 @@ func (a *App) handleCompleteTrip(w http.ResponseWriter, r *http.Request) {
 	// Update Vehicle master odometer and restore status to Available
 	_, err = tx.Exec(ctx, `UPDATE vehicles SET odometer = $1, status = 'Available', updated_at = now() WHERE registration_number = $2`, req.FinalOdometer, res.Trip.VehicleReg)
 	if err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -144,7 +144,7 @@ func (a *App) handleCompleteTrip(w http.ResponseWriter, r *http.Request) {
 	// Restore Driver status to Available
 	_, err = tx.Exec(ctx, `UPDATE drivers SET status = 'Available', updated_at = now() WHERE license_number = $1`, res.Trip.DriverLicense)
 	if err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -176,7 +176,7 @@ func (a *App) handleCompleteTrip(w http.ResponseWriter, r *http.Request) {
 
 	respBytes, _ := json.Marshal(responseTrip)
 	if err := saveIdempotency(ctx, tx, key, user.ID, r.URL.Path, bodyHash, http.StatusOK, string(respBytes)); err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
@@ -197,7 +197,7 @@ func (a *App) handleCompleteTrip(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err := tx.Commit(ctx); err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}

@@ -12,19 +12,18 @@ BEGIN
 END $$;
 
 -- 2. Populate fuel columns on trips from expenses WHERE migrated_from_trip = true
-UPDATE trips t
-SET fuel_liters = e.liters,
-    fuel_cost = e.cost
-FROM (
-    SELECT trip_id, liters, cost,
-           ROW_NUMBER() OVER (PARTITION BY trip_id ORDER BY id DESC) as rn
-    FROM expenses
-    WHERE type = 'Fuel' AND trip_id IS NOT NULL AND (migrated_from_trip = true OR migrated_from_trip IS NULL)
-) e
-WHERE e.trip_id = t.id AND e.rn = 1;
-
--- 3. Delete only expenses created from trips migration
-DELETE FROM expenses WHERE type = 'Fuel' AND trip_id IS NOT NULL AND migrated_from_trip = true;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'expenses' AND column_name = 'migrated_from_trip'
+    ) THEN
+        EXECUTE 'UPDATE trips t SET fuel_liters = e.liters, fuel_cost = e.cost FROM (SELECT trip_id, liters, cost, ROW_NUMBER() OVER (PARTITION BY trip_id ORDER BY id DESC) as rn FROM expenses WHERE type = ''Fuel'' AND trip_id IS NOT NULL AND (migrated_from_trip = true OR migrated_from_trip IS NULL)) e WHERE e.trip_id = t.id AND e.rn = 1';
+        EXECUTE 'DELETE FROM expenses WHERE type = ''Fuel'' AND trip_id IS NOT NULL AND migrated_from_trip = true';
+    ELSE
+        EXECUTE 'UPDATE trips t SET fuel_liters = e.liters, fuel_cost = e.cost FROM (SELECT trip_id, liters, cost, ROW_NUMBER() OVER (PARTITION BY trip_id ORDER BY id DESC) as rn FROM expenses WHERE type = ''Fuel'' AND trip_id IS NOT NULL) e WHERE e.trip_id = t.id AND e.rn = 1';
+    END IF;
+END $$;
 
 -- 4. Drop indexes
 DROP INDEX IF EXISTS idx_expenses_type;

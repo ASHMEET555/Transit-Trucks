@@ -76,6 +76,7 @@ func WriteError(w http.ResponseWriter, r *http.Request, status int, code, messag
 		},
 	}
 
+	w.Header().Set("X-Error-Code", code)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(envelope)

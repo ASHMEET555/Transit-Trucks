@@ -211,7 +211,7 @@ func (a *App) handleCreateExpense(w http.ResponseWriter, r *http.Request) {
 
 	respBytes, _ := json.Marshal(res)
 	if err := saveIdempotency(ctx, tx, key, user.ID, r.URL.Path, bodyHash, http.StatusCreated, string(respBytes)); err != nil {
-		status, code, msg := httpx.MapDBError(err, nil)
+		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}

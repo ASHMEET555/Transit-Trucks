@@ -123,18 +123,42 @@ func (a *App) Metrics() *MetricsCollector {
 	return a.metrics
 }
 
+func (a *App) getRoutePattern(r *http.Request) string {
+	if r.URL.Path == "/" {
+		return "root"
+	}
+	_, pattern := a.mux.Handler(r)
+	parts := strings.SplitN(pattern, " ", 2)
+	var pathPattern string
+	if len(parts) == 2 {
+		pathPattern = parts[1]
+	} else {
+		pathPattern = parts[0]
+	}
+	if pathPattern == "" || pathPattern == "/" {
+		return "unmatched"
+	}
+	if pathPattern == "/healthz" || pathPattern == "/readyz" || pathPattern == "/metrics" {
+		return pathPattern
+	}
+	for _, route := range a.registry.Routes() {
+		if route.Path == pathPattern && route.Method == r.Method {
+			return route.Path
+		}
+	}
+	return "unmatched"
+}
+
 func (a *App) metricsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		routePattern := a.getRoutePattern(r)
+		r = middleware.SetRoutePattern(r, routePattern)
 		a.metrics.IncrementInFlight()
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 		defer func() {
 			a.metrics.DecrementInFlight()
 			duration := time.Since(start)
-			routePattern := r.Pattern
-			if routePattern == "" {
-				routePattern = r.URL.Path
-			}
 			a.metrics.RecordHTTPRequest(r.Method, routePattern, rec.statusCode, duration)
 		}()
 		next.ServeHTTP(rec, r)
@@ -353,7 +377,7 @@ func (a *App) readyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (a *App) getRemoteIP(r *http.Request) string {

@@ -67,7 +67,11 @@ func TestCompulsory_ProtectedMetricsEndpoint(t *testing.T) {
 		"http_request_duration_seconds",
 		"http_in_flight_requests",
 		"db_pool_total_connections",
+		"db_pool_connections",
 		"ws_connections",
+		"events_published_total",
+		"events_delivered_total",
+		"events_dropped_total",
 	}
 	for _, m := range requiredMetrics {
 		if !strings.Contains(body, m) {
@@ -89,6 +93,10 @@ func TestCompulsory_BoundedRouteLabelsInMetrics(t *testing.T) {
 	}
 	app := New(db, cfg)
 
+	// Hit a parameterized route with sensitive path parameter
+	reqDriver := httptest.NewRequest("GET", "/api/v1/drivers/DL-LEAK-TEST-999", nil)
+	app.ServeHTTP(httptest.NewRecorder(), reqDriver)
+
 	// Hit 50 random unmatched routes with high cardinality random paths
 	for i := 0; i < 50; i++ {
 		randomPath := fmt.Sprintf("/random-non-existent-path-%d", i)
@@ -104,12 +112,20 @@ func TestCompulsory_BoundedRouteLabelsInMetrics(t *testing.T) {
 
 	body := w.Body.String()
 
-	// High cardinality random paths must NOT appear as route label values
+	// High cardinality random paths and dynamic IDs must NOT appear as route label values
 	if strings.Contains(body, "random-non-existent-path") {
 		t.Fatalf("high-cardinality path leaked into route labels! Body: %s", body)
 	}
+	if strings.Contains(body, "DL-LEAK-TEST-999") {
+		t.Fatalf("sensitive path parameter leaked into route labels! Body: %s", body)
+	}
 
-	// Instead, they must be collapsed to route="unmatched"
+	// Dynamic path must be parameterized
+	if !strings.Contains(body, `route="/api/v1/drivers/{license}"`) {
+		t.Fatalf("expected parameterized route pattern /api/v1/drivers/{license}, got: %s", body)
+	}
+
+	// Unmatched routes must be collapsed to route="unmatched"
 	if !strings.Contains(body, `route="unmatched"`) {
 		t.Fatalf("expected unmatched requests to be bounded to route=\"unmatched\", got: %s", body)
 	}
