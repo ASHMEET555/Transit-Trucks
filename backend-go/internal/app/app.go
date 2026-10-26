@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -51,6 +52,7 @@ type App struct {
 	cmu      sync.Mutex
 	usersH   *users.Handler
 	hub      *realtime.Hub
+	metrics  *MetricsCollector
 }
 
 func New(db *pgxpool.Pool, c Config) *App {
@@ -72,6 +74,7 @@ func New(db *pgxpool.Pool, c Config) *App {
 		clients:  make(map[*websocket.Conn]bool),
 		usersH:   users.NewHandler(db),
 		hub:      hub,
+		metrics:  newMetricsCollector(),
 	}
 	a.routes()
 	a.buildHandler()
@@ -115,9 +118,54 @@ func (a *App) ListenAndServe(addr string) error {
 	return http.ListenAndServe(addr, a.handler)
 }
 
+func (a *App) Metrics() *MetricsCollector {
+	return a.metrics
+}
+
+func (a *App) metricsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a.metrics.IncrementInFlight()
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
+		defer func() {
+			a.metrics.DecrementInFlight()
+			duration := time.Since(start)
+			routePattern := r.Pattern
+			if routePattern == "" {
+				routePattern = r.URL.Path
+			}
+			a.metrics.RecordHTTPRequest(r.Method, routePattern, rec.statusCode, duration)
+		}()
+		next.ServeHTTP(rec, r)
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *statusRecorder) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := rw.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
+}
+
+func (rw *statusRecorder) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func (a *App) buildHandler() {
 	// Middleware pipeline in exact required order:
-	// recover -> request-id -> access log -> secure headers -> CORS -> body size limit -> rate limit -> auth -> router
+	// metrics -> recover -> request-id -> access log -> secure headers -> CORS -> body size limit -> rate limit -> auth -> router
 	chain := a.mux
 
 	var h http.Handler = chain
@@ -137,6 +185,8 @@ func (a *App) buildHandler() {
 	h = middleware.RequestID()(h)
 	// 1. Recover
 	h = middleware.Recover(a.log)(h)
+	// 0. Metrics
+	h = a.metricsMiddleware(h)
 
 	a.handler = h
 }
