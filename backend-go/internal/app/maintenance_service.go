@@ -12,6 +12,7 @@ import (
 
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -305,13 +306,22 @@ func (a *App) handleOpenMaintenance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Transactional event publishing via pg_notify
+	_ = realtime.PublishTx(ctx, tx, realtime.EventMaintenanceOpened, map[string]any{
+		"maintenance_id": logID,
+		"vehicle_reg":    req.VehicleReg,
+	})
+	_ = realtime.PublishTx(ctx, tx, realtime.EventVehicleStatusChange, map[string]any{
+		"vehicle_reg": req.VehicleReg,
+		"status":      "In Shop",
+	})
+
 	if err := tx.Commit(ctx); err != nil {
 		status, code, msg := httpx.MapDBError(err, nil)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
 
-	// PHASE5: publish fleet event after commit
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write(respBytes)
@@ -468,13 +478,24 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Transactional event publishing via pg_notify
+	_ = realtime.PublishTx(ctx, tx, realtime.EventMaintenanceClosed, map[string]any{
+		"maintenance_id": logID,
+		"vehicle_reg":    vReg,
+	})
+	if vStatus == "Available" {
+		_ = realtime.PublishTx(ctx, tx, realtime.EventVehicleStatusChange, map[string]any{
+			"vehicle_reg": vReg,
+			"status":      "Available",
+		})
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		status, code, msg := httpx.MapDBError(err, nil)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
 
-	// PHASE5: publish fleet event after commit
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(respBytes)

@@ -13,6 +13,7 @@ import (
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/rbac"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime"
 )
 
 type createExpenseRequest struct {
@@ -215,19 +216,18 @@ func (a *App) handleCreateExpense(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Transaction commit failed.", nil)
-		return
-	}
-
-	// PHASE5: Broadcast expense.created event to websocket clients
-	a.broadcast("expense.created", map[string]any{
+	// Transactional event publishing via pg_notify
+	_ = realtime.PublishTx(ctx, tx, realtime.EventExpenseCreated, map[string]any{
 		"expense_id":  insertedID,
 		"trip_id":     req.TripID,
 		"vehicle_reg": finalVehicleReg,
 		"type":        req.Type,
-		"cost":        amount,
 	})
+
+	if err := tx.Commit(ctx); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Transaction commit failed.", nil)
+		return
+	}
 
 	httpx.WriteJSON(w, http.StatusCreated, res)
 }

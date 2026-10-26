@@ -14,6 +14,7 @@ import (
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/rbac"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -299,13 +300,34 @@ func (a *App) handleCreateTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Transactional event publishing via pg_notify
+	_ = realtime.PublishTx(ctx, tx, realtime.EventTripCreated, map[string]any{
+		"trip_id":        tripID,
+		"vehicle_reg":    req.VehicleReg,
+		"driver_license": req.DriverLicense,
+	})
+	if shouldDispatch {
+		_ = realtime.PublishTx(ctx, tx, realtime.EventTripDispatched, map[string]any{
+			"trip_id":        tripID,
+			"vehicle_reg":    req.VehicleReg,
+			"driver_license": req.DriverLicense,
+		})
+		_ = realtime.PublishTx(ctx, tx, realtime.EventVehicleStatusChange, map[string]any{
+			"vehicle_reg": req.VehicleReg,
+			"status":      "On Trip",
+		})
+		_ = realtime.PublishTx(ctx, tx, realtime.EventDriverStatusChange, map[string]any{
+			"driver_license": req.DriverLicense,
+			"status":         "On Trip",
+		})
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		status, code, msg := httpx.MapDBError(err, nil)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
 
-	// PHASE5: publish fleet event after commit
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write(respBytes)
@@ -421,13 +443,27 @@ func (a *App) handleDispatchTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Transactional event publishing via pg_notify
+	_ = realtime.PublishTx(ctx, tx, realtime.EventTripDispatched, map[string]any{
+		"trip_id":        tripID,
+		"vehicle_reg":    res.Trip.VehicleReg,
+		"driver_license": res.Trip.DriverLicense,
+	})
+	_ = realtime.PublishTx(ctx, tx, realtime.EventVehicleStatusChange, map[string]any{
+		"vehicle_reg": res.Trip.VehicleReg,
+		"status":      "On Trip",
+	})
+	_ = realtime.PublishTx(ctx, tx, realtime.EventDriverStatusChange, map[string]any{
+		"driver_license": res.Trip.DriverLicense,
+		"status":         "On Trip",
+	})
+
 	if err := tx.Commit(ctx); err != nil {
 		status, code, msg := httpx.MapDBError(err, nil)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
 
-	// PHASE5: publish fleet event after commit
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(respBytes)

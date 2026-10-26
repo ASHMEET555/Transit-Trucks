@@ -11,6 +11,7 @@ import (
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/rbac"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime"
 )
 
 // handleCompleteTrip moves Dispatched -> Completed
@@ -180,13 +181,27 @@ func (a *App) handleCompleteTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Transactional event publishing via pg_notify
+	_ = realtime.PublishTx(ctx, tx, realtime.EventTripCompleted, map[string]any{
+		"trip_id":        tripID,
+		"vehicle_reg":    res.Trip.VehicleReg,
+		"driver_license": res.Trip.DriverLicense,
+	})
+	_ = realtime.PublishTx(ctx, tx, realtime.EventVehicleStatusChange, map[string]any{
+		"vehicle_reg": res.Trip.VehicleReg,
+		"status":      "Available",
+	})
+	_ = realtime.PublishTx(ctx, tx, realtime.EventDriverStatusChange, map[string]any{
+		"driver_license": res.Trip.DriverLicense,
+		"status":         "Available",
+	})
+
 	if err := tx.Commit(ctx); err != nil {
 		status, code, msg := httpx.MapDBError(err, nil)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
 
-	// PHASE5: publish fleet event after commit
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(respBytes)
