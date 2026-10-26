@@ -11,7 +11,7 @@ export const totalRequests = new Counter('total_requests');
 export const options = {
   stages: [
     { duration: '1m', target: 20 },   // Warm up ramp
-    { duration: '8m', target: 20 },   // Steady state
+    { duration: '10m', target: 20 },  // Steady state 10 minutes per plan 5.9
     { duration: '1m', target: 0 },    // Ramp down
   ],
   thresholds: {
@@ -94,9 +94,11 @@ export default function (data) {
   group('Write Operations (Draft Trip & Cancellation)', () => {
     // Unique UUID idempotency keys
     const idemKeyDraft = uuidv4();
+    const vehId = 1001 + Math.floor(Math.random() * 5);
+    const drvId = 1001 + Math.floor(Math.random() * 5);
     const draftPayload = JSON.stringify({
-      vehicle_reg: 'VH-1001',
-      driver_license: 'DL-1001',
+      vehicle_reg: `VH-${vehId}`,
+      driver_license: `DL-${drvId}`,
       source_name: 'New York Central Hub',
       destination_name: 'Chicago Logistics Hub',
       cargo_weight: 1200,

@@ -9,14 +9,14 @@ export const totalRequests = new Counter('total_requests');
 
 export const options = {
   stages: [
-    { duration: '30s', target: 15 },  // baseline normal traffic
-    { duration: '15s', target: 60 },  // 4x sudden spike
-    { duration: '1m',  target: 60 },  // hold spike
-    { duration: '30s', target: 15 },  // ramp down to baseline
+    { duration: '30s', target: 20 },  // baseline normal traffic
+    { duration: '15s', target: 60 },  // 3x sudden spike
+    { duration: '2m',  target: 60 },  // hold spike for 2 minutes per plan 5.9
+    { duration: '30s', target: 20 },  // ramp down to baseline
     { duration: '15s', target: 0 },   // cool off
   ],
   thresholds: {
-    // Under 4x spike, 5xx server crash errors must be bounded < 1%
+    // Under 3x spike, 5xx server crash errors must be bounded < 1%
     'server_errors_rate': ['rate<0.01'],
   },
 };
