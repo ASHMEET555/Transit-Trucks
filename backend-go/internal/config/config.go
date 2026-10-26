@@ -26,6 +26,8 @@ type Config struct {
 	AllowedOrigins []string
 	CookieDomain   string
 	Port           string
+	MetricsToken   string
+	JobSecret      string
 }
 
 func (c *Config) IsLocal() bool {
@@ -87,6 +89,16 @@ func Load() (*Config, error) {
 		port = "8000"
 	}
 
+	metricsToken := os.Getenv("METRICS_TOKEN")
+	if envVal == "production" && strings.TrimSpace(metricsToken) == "" {
+		return nil, errors.New("METRICS_TOKEN is required in production")
+	}
+
+	jobSecret := os.Getenv("JOB_SECRET")
+	if envVal == "production" && strings.TrimSpace(jobSecret) == "" {
+		return nil, errors.New("JOB_SECRET is required in production")
+	}
+
 	return &Config{
 		DatabaseURL:    dbURL,
 		SessionSecret:  secret,
@@ -94,6 +106,8 @@ func Load() (*Config, error) {
 		AllowedOrigins: origins,
 		CookieDomain:   cookieDomain,
 		Port:           port,
+		MetricsToken:   metricsToken,
+		JobSecret:      jobSecret,
 	}, nil
 }
 

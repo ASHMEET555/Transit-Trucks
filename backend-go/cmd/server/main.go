@@ -31,7 +31,14 @@ func main() {
 		AllowedOrigins: cfg.AllowedOrigins,
 		Env:            cfg.Env,
 		CookieDomain:   cfg.CookieDomain,
+		DatabaseURL:    cfg.DatabaseURL,
+		MetricsToken:   cfg.MetricsToken,
+		JobSecret:      cfg.JobSecret,
 	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a.Start(ctx)
+	defer a.Close()
 	logger.Info("listening", "address", cfg.Port)
 	if err := a.ListenAndServe(":" + cfg.Port); err != nil {
 		logger.Error("server stopped", "error", err)

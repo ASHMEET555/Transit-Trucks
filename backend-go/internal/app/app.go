@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/rbac"
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/users"
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,6 +31,9 @@ type Config struct {
 	AllowedOrigins []string
 	Env            string
 	CookieDomain   string
+	DatabaseURL    string
+	MetricsToken   string
+	JobSecret      string
 }
 
 func (c *Config) IsLocal() bool {
@@ -45,9 +50,19 @@ type App struct {
 	clients  map[*websocket.Conn]bool
 	cmu      sync.Mutex
 	usersH   *users.Handler
+	hub      *realtime.Hub
 }
 
 func New(db *pgxpool.Pool, c Config) *App {
+	dbURL := c.DatabaseURL
+	if dbURL == "" {
+		dbURL = os.Getenv("DATABASE_URL")
+		if dbURL == "" {
+			dbURL = os.Getenv("POSTGRES_DSN")
+		}
+	}
+	hub := realtime.NewHub(dbURL, db, c.AllowedOrigins, c.Logger)
+
 	a := &App{
 		db:       db,
 		cfg:      c,
@@ -56,10 +71,36 @@ func New(db *pgxpool.Pool, c Config) *App {
 		registry: rbac.NewRegistry(),
 		clients:  make(map[*websocket.Conn]bool),
 		usersH:   users.NewHandler(db),
+		hub:      hub,
 	}
 	a.routes()
 	a.buildHandler()
 	return a
+}
+
+func (a *App) Start(ctx context.Context) {
+	if a.hub != nil {
+		a.hub.Start(ctx)
+	}
+}
+
+func (a *App) Ready() <-chan struct{} {
+	if a.hub != nil {
+		return a.hub.Ready()
+	}
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
+
+func (a *App) Close() {
+	if a.hub != nil {
+		a.hub.Close()
+	}
+}
+
+func (a *App) Hub() *realtime.Hub {
+	return a.hub
 }
 
 func (a *App) Registry() *rbac.Registry {
@@ -114,6 +155,9 @@ func (a *App) registerRoute(method, path string, roles []string, isPublic bool, 
 	pattern := fmt.Sprintf("%s %s", method, path)
 
 	if isPublic {
+		a.mux.HandleFunc(pattern, h)
+	} else if path == "/api/v1/ws" || path == "/ws/fleet" || path == "/metrics" || path == "/api/v1/internal/jobs/license-check" {
+		// Endpoints with custom authorization models (tickets, Bearer tokens, or shared job secret)
 		a.mux.HandleFunc(pattern, h)
 	} else {
 		guarded := middleware.RequireRoles(roles)(h)
@@ -227,8 +271,19 @@ func (a *App) routes() {
 	// Audit Log
 	a.registerRoute("GET", "/api/v1/audit", []string{rbac.RoleAdmin}, false, a.handleListAuditLogs)
 
-	// WebSocket Hub
-	a.registerRoute("GET", "/ws/fleet", rbac.AnyAuthenticated, false, a.ws)
+	// Realtime Hub (Phase 5)
+	a.registerRoute("POST", "/api/v1/realtime/ticket", rbac.AnyAuthenticated, false, a.handleIssueRealtimeTicket)
+	a.registerRoute("GET", "/api/v1/ws", rbac.AnyAuthenticated, false, a.handleWebSocketUpgrade)
+	a.registerRoute("GET", "/ws/fleet", rbac.AnyAuthenticated, false, a.handleWebSocketUpgrade)
+
+	// Metrics endpoint (Phase 5)
+	a.registerRoute("GET", "/metrics", []string{rbac.RoleAdmin}, false, a.handleMetrics)
+
+	// Notifications & Background Jobs (Phase 5)
+	a.registerRoute("POST", "/api/v1/internal/jobs/license-check", []string{rbac.RoleAdmin}, false, a.handleLicenseCheckJob)
+	notifRoles := []string{rbac.RoleAdmin, rbac.RoleFleetManager, rbac.RoleSafetyOfficer}
+	a.registerRoute("GET", "/api/v1/notifications", notifRoles, false, a.handleListNotifications)
+	a.registerRoute("POST", "/api/v1/notifications/{id}/read", notifRoles, false, a.handleMarkNotificationRead)
 }
 
 func (a *App) healthz(w http.ResponseWriter, r *http.Request) {
@@ -1388,28 +1443,49 @@ func (a *App) trips(w http.ResponseWriter, r *http.Request) {
 
 
 
-func (a *App) ws(w http.ResponseWriter, r *http.Request) {
-	c, e := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}).Upgrade(w, r, nil)
-	if e != nil {
+func (a *App) handleIssueRealtimeTicket(w http.ResponseWriter, r *http.Request) {
+	user := middleware.GetUser(r)
+	if user == nil {
+		httpx.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required.", nil)
 		return
 	}
-	a.cmu.Lock()
-	a.clients[c] = true
-	a.cmu.Unlock()
-	defer func() {
-		a.cmu.Lock()
-		delete(a.clients, c)
-		a.cmu.Unlock()
-		c.Close()
-	}()
-	for {
-		if _, _, e := c.ReadMessage(); e != nil {
-			return
-		}
+	ticket, expiresIn, err := realtime.IssueTicket(r.Context(), a.db, user.ID, user.Role)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to issue ticket.", nil)
+		return
 	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"ticket":     ticket,
+		"expires_in": expiresIn,
+	})
+}
+
+func (a *App) getDriverLicense(ctx context.Context, userID string) string {
+	if a.db == nil {
+		return ""
+	}
+	var lic *string
+	_ = a.db.QueryRow(ctx, "SELECT driver_license FROM users WHERE id = $1", userID).Scan(&lic)
+	if lic != nil {
+		return *lic
+	}
+	return ""
+}
+
+func (a *App) handleWebSocketUpgrade(w http.ResponseWriter, r *http.Request) {
+	if a.hub == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "SERVICE_UNAVAILABLE", "Realtime hub is not initialized.", nil)
+		return
+	}
+	_ = a.hub.Upgrade(w, r, a.getDriverLicense)
+}
+
+func (a *App) ws(w http.ResponseWriter, r *http.Request) {
+	a.handleWebSocketUpgrade(w, r)
 }
 
 func (a *App) broadcast(event string, payload any) {
+	// Maintained for backward compatibility with existing tests
 	b, _ := json.Marshal(map[string]any{"event": event, "payload": payload})
 	a.cmu.Lock()
 	defer a.cmu.Unlock()
