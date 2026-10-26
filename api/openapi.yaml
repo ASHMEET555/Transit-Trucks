@@ -775,10 +775,136 @@ paths:
 
   /ws/fleet:
     get:
-      summary: Realtime WebSocket event stream
+      summary: Realtime WebSocket event stream (legacy)
       responses:
         '101':
           description: Switching Protocols to WebSocket
+
+  /api/v1/realtime/ticket:
+    post:
+      summary: Request single-use ticket for WebSocket connection
+      security:
+        - CookieAuth: []
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Ticket generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealtimeTicket'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/ws:
+    get:
+      summary: Upgrade to authenticated WebSocket connection using single-use ticket
+      parameters:
+        - name: ticket
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '101':
+          description: Switching Protocols to WebSocket
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /metrics:
+    get:
+      summary: Prometheus metrics endpoint
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Prometheus metrics text
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/internal/jobs/license-check:
+    post:
+      summary: Automated driver license expiry scan job
+      parameters:
+        - name: X-Job-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 30
+      responses:
+        '200':
+          description: Job result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobResult'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/notifications:
+    get:
+      summary: List notifications for authenticated user
+      security:
+        - CookieAuth: []
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationList'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/notifications/{id}/read:
+    post:
+      summary: Mark notification as read
+      security:
+        - CookieAuth: []
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
 
 components:
   securitySchemes:
@@ -1002,3 +1128,58 @@ components:
           items:
             type: object
             additionalProperties: true
+
+    RealtimeTicket:
+      type: object
+      properties:
+        ticket:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    JobResult:
+      type: object
+      properties:
+        status:
+          type: string
+        processed:
+          type: integer
+        expired:
+          type: integer
+        warning:
+          type: integer
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+          nullable: true
+        role:
+          type: string
+          nullable: true
+        type:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    NotificationList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        count:
+          type: integer

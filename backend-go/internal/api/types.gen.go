@@ -79,6 +79,14 @@ type Expense struct {
 	Type   *string  `json:"type,omitempty"`
 }
 
+// JobResult defines model for JobResult.
+type JobResult struct {
+	Expired   *int    `json:"expired,omitempty"`
+	Processed *int    `json:"processed,omitempty"`
+	Status    *string `json:"status,omitempty"`
+	Warning   *int    `json:"warning,omitempty"`
+}
+
 // MaintenanceLog defines model for MaintenanceLog.
 type MaintenanceLog struct {
 	Cost        *float32 `json:"cost,omitempty"`
@@ -88,6 +96,29 @@ type MaintenanceLog struct {
 	StartDate   *string  `json:"start_date,omitempty"`
 	Status      *string  `json:"status,omitempty"`
 	VehicleReg  *string  `json:"vehicle_reg,omitempty"`
+}
+
+// Notification defines model for Notification.
+type Notification struct {
+	CreatedAt *time.Time              `json:"created_at,omitempty"`
+	Id        *int                    `json:"id,omitempty"`
+	Payload   *map[string]interface{} `json:"payload,omitempty"`
+	ReadAt    *time.Time              `json:"read_at"`
+	Role      *string                 `json:"role"`
+	Type      *string                 `json:"type,omitempty"`
+	UserId    *int                    `json:"user_id"`
+}
+
+// NotificationList defines model for NotificationList.
+type NotificationList struct {
+	Count *int            `json:"count,omitempty"`
+	Items *[]Notification `json:"items,omitempty"`
+}
+
+// RealtimeTicket defines model for RealtimeTicket.
+type RealtimeTicket struct {
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	Ticket    *string    `json:"ticket,omitempty"`
 }
 
 // Trip defines model for Trip.
@@ -153,9 +184,20 @@ type PostApiV1AuthLoginJSONBody struct {
 	Username *string `json:"username,omitempty"`
 }
 
+// PostApiV1InternalJobsLicenseCheckParams defines parameters for PostApiV1InternalJobsLicenseCheck.
+type PostApiV1InternalJobsLicenseCheckParams struct {
+	Days       *int   `form:"days,omitempty" json:"days,omitempty"`
+	XJobSecret string `json:"X-Job-Secret"`
+}
+
 // PutApiV1MaintenanceIdCloseJSONBody defines parameters for PutApiV1MaintenanceIdClose.
 type PutApiV1MaintenanceIdCloseJSONBody struct {
 	EndDate string `json:"end_date"`
+}
+
+// GetApiV1NotificationsParams defines parameters for GetApiV1Notifications.
+type GetApiV1NotificationsParams struct {
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // PostApiV1TripsSuggestJSONBody defines parameters for PostApiV1TripsSuggest.
@@ -191,6 +233,11 @@ type PatchApiV1UsersIdJSONBody struct {
 // PostApiV1UsersIdResetPasswordJSONBody defines parameters for PostApiV1UsersIdResetPassword.
 type PostApiV1UsersIdResetPasswordJSONBody struct {
 	NewPassword string `json:"new_password"`
+}
+
+// GetApiV1WsParams defines parameters for GetApiV1Ws.
+type GetApiV1WsParams struct {
+	Ticket string `form:"ticket" json:"ticket"`
 }
 
 // PostApiV1AuthChangePasswordJSONRequestBody defines body for PostApiV1AuthChangePassword for application/json ContentType.
