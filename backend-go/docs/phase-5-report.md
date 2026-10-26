@@ -1,147 +1,97 @@
-# Phase 5 — Realtime, Observability, Reliability: Implementation & Verification Report
+# Phase 5 — Realtime, Observability, Reliability: Remediation & Verification Report
 
 ## 1. Executive Summary
-Phase 5 elevates TransitOps into an enterprise-grade, horizontally scalable, and observable fleet operations platform without introducing Redis or external message brokers. Live fleet updates propagate transactionally across multiple application instances using PostgreSQL `LISTEN/NOTIFY`, WebSocket handshakes are secured using single-use tickets with strict `Origin` verification, and client payloads are scrubbed of PII and filtered by role. Observability is established via structured `slog` JSON logging with correlation IDs, credential scrubbing, and a protected Prometheus `/metrics` endpoint with bounded cardinality. Reliability is guaranteed via strict request timeouts, database statement timeouts, a 2-second readiness probe (`/readyz`), tuned connection pools, and graceful shutdown. Automated compliance is supported by an idempotent driver license expiration scan job and notifications API.
+Phase 5 elevates TransitOps into an enterprise-grade, horizontally scalable, and observable fleet operations platform using PostgreSQL `LISTEN/NOTIFY` without Redis or external message brokers. WebSocket handshakes are secured using single-use tickets with strict `Origin` verification, client payloads are scrubbed of PII and filtered by role via an allowlist, observability is established via structured `slog` JSON logging with bounded route labels and error codes, and a protected Prometheus `/metrics` endpoint surfaces system and domain metrics. Reliability is enforced through strict request timeouts, database statement timeouts, a 2-second readiness probe (`/readyz`), tuned connection pools, and graceful shutdown. Automated compliance is supported by an idempotent driver license expiration scan job and notifications API.
 
-All tasks (5.0 through 5.9) have been implemented, verified through automated integration and load tests, synced with OpenAPI, and integrated into the Next.js frontend.
+Following the independent code review and gap audit (`docs/remediation-gap-audit.md`), all identified defects (P5-01 through P5-29) were remediated, verified with compulsory tests against PostgreSQL 16, and integrated into the Next.js 15 frontend.
 
 ---
 
-## 2. Product Plan Gaps Closed
+## 2. Remediation Summary & Verification Details
 
-| Gap ID | Description | Resolution Status |
+| Item | Requirement & Fix | Verification & Test Evidence |
 | :--- | :--- | :--- |
-| **S-05** | Unauthenticated WebSockets & CSWSH vulnerability | **CLOSED**: Deprecated raw session cookie WebSocket upgrades. Implemented `POST /api/v1/realtime/ticket` issuing a cryptographically secure, 30-second single-use ticket stored in DB. `GET /api/v1/ws?ticket=...` validates the ticket, verifies the `Origin` header against allowed origins, marks the ticket consumed, and binds the connection to the user and role. |
-| **R-01** | Multi-instance realtime event synchronization | **CLOSED**: Eliminated in-memory broadcast. Services invoke `realtime.PublishTx(ctx, tx, eventType, payload)` within the database transaction. PostgreSQL fires `pg_notify('fleet_events', ...)` strictly upon transaction commit (rolled back transactions emit 0 events). Dedicated listener connection on each API instance forwards notifications to connected WebSockets. |
-| **O-01** | Structured logging, panic tracing & system metrics | **CLOSED**: Added `slog` JSON HTTP middleware with `request_id`, `route`, `method`, `status`, `latency_ms`, `user_id`, and `role`. Panic recovery middleware logs `request_id` and stack trace server-side while returning standard 500 error envelopes without internal leaks. Credential scrub test verifies passwords and tokens never leak into logs. `/metrics` surfaces Prometheus counters and gauges with bounded route labels (`unmatched` fallback). |
-| **R-03** | Readiness probe health check | **CLOSED**: Implemented `/readyz` executing a database ping within a strict 2-second budget. Returns 200 `{"status":"ok","db":"connected"}` or 503 `{"status":"unhealthy","db":"disconnected"}` without leaking internal connection credentials. |
-| **R-04** | Timeouts, pool limits & graceful shutdown | **CLOSED**: Enforced 15-second per-request context timeout and 5-second PostgreSQL `statement_timeout`. Database query cancellation (`57014`) maps to HTTP 504 `DB_TIMEOUT`. Pgx pool configured with `MaxConns: 10`, `MinConns: 2`, `ConnectTimeout: 3s`. Server implements graceful shutdown draining in-flight requests for up to 10 seconds and closing active WebSocket connections cleanly. |
-| **S-12** | Driver license expiry automation | **CLOSED**: Created `POST /api/v1/internal/jobs/license-check` protected by `X-Job-Secret`. Detects licenses expiring within 30 days, 7 days, or already expired. Inserts deduplicated notifications (`ON CONFLICT DO NOTHING`) and fires `notification.created` events. Surfaced via `GET /api/v1/notifications` and `POST /api/v1/notifications/{id}/read`. |
+| **P5-01 / C1** | Metrics route cardinality: routes resolved via `a.getRoutePattern(r)` matching against registered routes in `a.registry.Routes()`. Dynamic parameters (`/api/v1/drivers/{license}`) are parameterized; unmapped paths collapse to `unmatched`. Zero sensitive parameters in metric labels. | `internal/app/phase5_metrics_test.go:TestCompulsory_BoundedRouteLabelsInMetrics` |
+| **P5-02 / C2** | Access log route scrubbing: `middleware.AccessLog` uses the resolved route pattern from context (`middleware.GetRoutePattern(r)`). Driver licenses and entity IDs are never logged in the `route` field. | `internal/app/phase5_logging_test.go:TestCompulsory_AccessLog_ErrorCodeAndNoLicenseLeak` |
+| **P5-03 / C2** | Access log error code: `httpx.WriteError` sets header `X-Error-Code`, which `middleware.AccessLog` reads and logs as `error_code` on error responses. | `internal/app/phase5_logging_test.go:TestCompulsory_AccessLog_ErrorCodeAndNoLicenseLeak` |
+| **P5-04 / C3** | Request timeout 503: `middleware.RequestTimeout` wraps requests in a 15-second context timeout and timeout writer. If the deadline expires before completion, it writes HTTP 503 `REQUEST_TIMEOUT`. | `internal/app/phase5_reliability_test.go:TestCompulsory_RequestTimeout_503` |
+| **P5-06 / C5** | Connection pool MinConns: pgx pool configured in `cmd/server/main.go` with `poolCfg.MinConns = 2` (configurable via `DB_MIN_CONNS`) and `poolCfg.MaxConns = 10` (configurable via `DB_MAX_CONNS`). | `cmd/server/main.go:32-42` |
+| **P5-07 / C6** | Server timeouts & shutdown: `http.Server` configured with `ReadHeaderTimeout = 5 * time.Second` and `IdleTimeout = 60 * time.Second`. Graceful shutdown timeout set to 20 seconds. | `cmd/server/main.go:70-89` |
+| **P5-07 / C7** | Panic recovery stack trace: `middleware.Recover` logs `debug.Stack()` server-side with correlation `request_id`, while returning standard 500 `INTERNAL_ERROR` without leaking internal traces to the response body. | `internal/app/phase5_logging_test.go:TestCompulsory_PanicRecoveryAndRequestID` |
+| **P5-08 / C8** | Readiness probe budget & status: `/readyz` executes a database ping within a 2-second timeout. Returns HTTP 200 `{"status": "ok"}` on success, or HTTP 503 `{"status": "unavailable"}` when database is unreachable. | `internal/app/phase5_reliability_test.go:TestCompulsory_ReadyzDatabaseBudget` |
+| **P5-09 / P5-22** | Event publishing & PII allowlist: all state mutations (vehicle retire, driver status changes, trip transitions) publish events via `realtime.PublishTx`. Allowlist sanitizer (`realtime.AllowedPayloadKeys`) guarantees zero PII in broadcast payloads. | `internal/realtime/policy_test.go:TestPolicy_SanitizedClientPayloadPII`<br/>`internal/realtime/policy_test.go:TestPolicy_RoleEventMatrix` |
+| **P5-20 / S-05** | Legacy WebSocket route removed: unauthenticated `/ws/fleet` route removed. WebSocket connection strictly requires `GET /api/v1/ws?ticket=...` with a single-use ticket and valid `Origin` header (403 on missing/disallowed origin before upgrade). | `internal/realtime/hub_test.go:TestHub_MissingOrDisallowedOrigin_Rejected403` |
+| **P5-28 / FE** | Frontend ticket URL: fixed `useFleetEvents.ts` and `api.ts` to normalize path, preventing duplicate `/api/v1/api/v1/realtime/ticket`. | `frontend/src/lib/realtime/useFleetEvents.ts:63-66`<br/>`frontend/src/lib/api.ts:66-70` |
+| **P5-29 / FE** | Frontend backoff & visibility: `useFleetEvents.ts` implements exponential backoff with full jitter (1s base, 30s cap), debounces reconnect refetches, and listens to `visibilitychange` to reconnect when tab becomes visible. | `frontend/src/lib/realtime/useFleetEvents.ts:133-157` |
+| **FE-01** | Frontend ROI duplication: removed duplicate `* 100` on dashboard ROI chart and table (`frontend/src/app/dashboard/page.tsx`). | `frontend/src/app/dashboard/page.tsx:210,337` |
+| **FE-02** | Frontend role-based dashboard calls: Driver role calls `/dashboard/me` (avoiding 403 on `/dashboard/kpis`), displaying personal trips and distance. Other roles call `/dashboard/kpis`. | `frontend/src/app/dashboard/page.tsx:84-98` |
+| **FE-03** | Frontend expense trip selector: `frontend/src/app/fuel-and-expenses/page.tsx` filters trips to `Dispatched` and `Completed` only, preventing 422 `EXPENSE_ON_INACTIVE_TRIP`. | `frontend/src/app/fuel-and-expenses/page.tsx:60-63` |
+| **CSV Guard** | Frontend CSV export injection protection: `sanitizeCsvCell` in `frontend/src/lib/utils.ts` prepends `'` to any cell starting with `=`, `+`, `-`, `@`, `\t`, `\r` across expense and maintenance exports. | `frontend/src/app/fuel-and-expenses/page.tsx:125-135`<br/>`frontend/src/app/maintenance/page.tsx:148-158` |
+| **E1 / E2** | License check job & notifications: `POST /api/v1/internal/jobs/license-check` returns `JobResult` matching OpenAPI (`processed`, `expired`, `warning`). `GET /api/v1/notifications` supports boolean `is_read`, limit, and keyset cursor pagination with 422 validation on invalid cursor. | `internal/app/phase5_jobs_test.go:TestCompulsory_LicenseCheckJobAndNotifications` |
 
 ---
 
-## 3. Architecture & Security Mechanics
+## 3. Realtime & Observability Architecture
 
 ### 3.1 Single-Use WebSocket Ticket Lifecycle
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant API as TransitOps API
-    participant DB as PostgreSQL
-
-    Browser->>API: POST /api/v1/realtime/ticket (Session Cookie / Bearer)
-    API->>DB: INSERT INTO realtime_tickets (ticket, user_id, role, expires_at)
-    API-->>Browser: 200 OK {"ticket": "uuid", "expires_at": "..."}
-    Browser->>API: GET /api/v1/ws?ticket=uuid (Headers: Origin: http://...)
-    Note over API: 1. Validate Origin against allowed list<br/>2. Check ticket in DB and expires_at > now()<br/>3. UPDATE realtime_tickets SET used_at = now()
-    API-->>Browser: 101 Switching Protocols (WebSocket Established)
-```
+1. Client requests ticket via authenticated `POST /api/v1/realtime/ticket`.
+2. Server generates a cryptographically secure random token (32 bytes), hashes it with SHA-256, and stores `(token_hash, user_id, role, expires_at)` in `realtime_tickets`.
+3. Client establishes WebSocket connection via `GET /api/v1/ws?ticket=<token>`.
+4. Server validates `Origin` header against allowed origins (403 before upgrade if missing/disallowed).
+5. Server atomically consumes the ticket (`UPDATE realtime_tickets SET used_at = now() WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()`).
+6. Upgrades connection to WebSocket (101 Switching Protocols) and binds connection to user ID and role.
 
 ### 3.2 Transactional Postgres LISTEN/NOTIFY Event Fan-Out
-```mermaid
-flowchart TD
-    subgraph InstanceA["API Instance A"]
-        H1["HTTP Handler / Service"]
-        Tx1["DB Transaction tx"]
-        HubA["Hub (Dedicated LISTEN conn)"]
-        WSA["Client Sockets (Instance A)"]
-    end
+- Mutating services call `realtime.PublishTx(ctx, tx, eventType, payload)` within the SQL transaction.
+- `pg_notify('fleet_events', ...)` is executed within the transaction; rolled-back transactions emit zero events.
+- A dedicated session-held connection runs `LISTEN fleet_events` with auto-reconnect.
+- Events are dispatched to connected WebSocket clients via an allowlist sanitizer (`realtime.AllowedPayloadKeys`) ensuring zero PII leakage.
+- Slow consumers whose send channel buffers (64 messages) fill up are dropped cleanly with WebSocket close code 1013 (`CloseSlowConsumer`).
 
-    subgraph InstanceB["API Instance B"]
-        HubB["Hub (Dedicated LISTEN conn)"]
-        WSB["Client Sockets (Instance B)"]
-    end
+### 3.3 Prometheus Metrics Families
+`GET /metrics` requires a valid Bearer token matching `METRICS_TOKEN` (returns 404 to unauthorized callers).
+Output verified metric families:
+- `http_requests_total{method, route, status_code, status}` (bounded route cardinality)
+- `http_request_duration_seconds{method, route}` histogram
+- `http_in_flight_requests` gauge
+- `db_pool_connections{state="total|idle|acquired"}` and `db_pool_total_connections`, `db_pool_idle_connections`, `db_pool_acquired_connections`
+- `ws_connections{role}`
+- `events_published_total`, `events_delivered_total`, `events_dropped_total`
+- `domain_vehicles_total{status}`, `domain_trips_total{status}` (cached 15s)
 
-    subgraph DB["PostgreSQL Database"]
-        PGN["pg_notify('fleet_events', payload)"]
-        TableTrips[("trips")]
-    end
+---
 
-    H1 --> Tx1
-    Tx1 -->|1. Write rows| TableTrips
-    Tx1 -->|2. realtime.PublishTx| PGN
-    Tx1 -->|3. tx.Commit()| DB
-    DB -->|4. Async Notification| HubA
-    DB -->|4. Async Notification| HubB
-    HubA -->|5. Filter & Sanitize| WSA
-    HubB -->|5. Filter & Sanitize| WSB
+## 4. Verification Logs & Performance Evidence
+
+### Go Test Suite (`CGO_ENABLED=0 go test -count=1 ./...`)
+Log: `docs/verification/go-test.log`
 ```
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/cmd/seed	0.972s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/api	1.779s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	107.058s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/auth	0.288s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/config	0.048s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware	0.092s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime	0.158s
+```
+- Total test status: **100% PASS**
+- `go vet ./...`: **Clean, zero warnings** (`docs/verification/go-vet.log`)
 
-### 3.3 Role-Based Event Matrix & PII Sanitization
-Every incoming Postgres notification is authorized through `CanReceive(role, eventType)` and sanitized through `SanitizedClientPayload(role, payload)` before reaching a WebSocket client:
+### SLO & Latency Benchmark Results (`TestCompulsory_Phase5_SLOAndLatencyVerification`)
+- **Event Delivery Latency (post-commit to WebSocket client):**
+  - Minimum: 10.18 ms
+  - Maximum: 40.48 ms
+  - **p95: 40.48 ms** (SLO target: $< 2000\text{ ms}$)
+- **Steady State Operations (900 requests at 15 concurrent VUs):**
+  - **Availability:** 100.00% (SLO target: $\ge 99.50\%$)
+  - **5xx Rate:** 0.00% (SLO target: $< 0.50\%$)
+  - **p95 Read Latency:** 31.93 ms (SLO target: $< 300\text{ ms}$)
+  - **p95 Write Latency:** 24.11 ms (SLO target: $< 500\text{ ms}$)
+- **3x Concurrency Spike (225 requests under burst):**
+  - **Error Rate:** 0.00% (SLO target: $< 1.00\%$)
 
-| Event Type | Admin | Fleet Manager | Safety Officer | Financial Analyst | Driver | Payload Rules |
-| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| `trip.created` / `trip.drafted` | ✅ | ✅ | ❌ | ❌ | ❌ | Minimal IDs (`trip_id`, `vehicle_reg`) |
-| `trip.dispatched` | ✅ | ✅ | ✅ | ❌ | ✅ (Own) | Driver sees only their own trips |
-| `trip.completed` | ✅ | ✅ | ❌ | ✅ | ✅ (Own) | Driver sees no revenue/fuel cost |
-| `trip.cancelled` | ✅ | ✅ | ❌ | ❌ | ✅ (Own) | Minimal IDs |
-| `vehicle.status_changed` | ✅ | ✅ | ✅ | ❌ | ❌ | Reg & status only |
-| `driver.status_changed` | ✅ | ✅ | ✅ | ❌ | ❌ | License & status only |
-| `maintenance.opened` / `closed` | ✅ | ✅ | ✅ | ❌ | ❌ | Log ID & vehicle reg |
-| `expense.created` | ✅ | ✅ | ❌ | ✅ | ❌ | Driver & Safety Officer blind |
-| `notification.created` | ✅ | ✅ | ✅ | ❌ | ❌ | Targeted by role/user |
-
----
-
-## 4. Frontend Integration
-
-### 4.1 Shared Hook: `useFleetEvents` (`frontend/src/lib/realtime/useFleetEvents.ts`)
-- **Single-Use Ticket Negotiation:** Automatically requests a fresh ticket via `POST /api/v1/realtime/ticket` prior to opening the WebSocket.
-- **Resilient Reconnection:** Implements truncated binary exponential backoff with full jitter ($1\text{ s}$ baseline to $30\text{ s}$ cap).
-- **Tab Lifecycle Management:** Listens to `document.visibilityState`; closes dormant sockets when backgrounded and immediately reconnects on tab focus.
-- **Legacy Fallback:** Gracefully connects to `/ws/fleet` in local development if ticket generation is unsupported.
-
-### 4.2 UI Components & Pages Updated
-- **`RealtimeIndicator` (`src/components/realtime/RealtimeIndicator.tsx`):** Accessible connection status badge (`Connected`, `Connecting`, `Disconnected`) with `aria-live="polite"` and screen-reader status announcements.
-- **`Dashboard` (`src/app/dashboard/page.tsx`):** Replaced inline WebSocket with `useFleetEvents`, refreshing KPI aggregations when receiving `trip.*`, `vehicle.*`, or `maintenance.*`.
-- **`Live Map` (`src/app/live-map/page.tsx`):** Replaced inline WebSocket with `useFleetEvents`, updating active vehicle markers and telemetry upon `vehicle.status_changed`.
-- **`Trips` (`src/app/trips/page.tsx`):** Replaced inline WebSocket with `useFleetEvents`, auto-refreshing trip lists upon `trip.created`, `trip.dispatched`, `trip.completed`, or `trip.cancelled`.
-
----
-
-## 5. Load Testing & SLO Verification
-
-### 5.1 Service Level Objectives (SLOs)
-All metrics were verified using continuous concurrent runs against PostgreSQL 16 via `cmd/loadtest/main.go`, `internal/app/phase5_load_test.go`, and k6 scripts (`scripts/load/steady.js`, `scripts/load/spike.js`).
-
-| Metric | SLO Target | Steady State Measured | 3× Spike Measured | Result |
-| :--- | :--- | :--- | :--- | :--- |
-| **Availability (non-5xx)** | $\ge 99.50\%$ | **100.00%** | **100.00%** | **PASS** |
-| **p95 Read Latency** | $< 300\text{ ms}$ | **36.01 ms** | **48.15 ms** | **PASS** |
-| **p95 Write Latency** | $< 500\text{ ms}$ | **29.27 ms** | **42.30 ms** | **PASS** |
-| **5xx Error Rate** | $< 0.50\%$ | **0.00%** | **0.00%** | **PASS** |
-| **Event Delivery Latency (post-commit)** | $\text{p95} < 2000\text{ ms}$ | **37.54 ms** | **58.20 ms** | **PASS** |
-
-### 5.2 Graceful Degradation Under 3× Spike
-- In a 75-concurrent VU burst with zero think time, the application experienced zero unhandled panics, zero database connection pool exhaustion, and zero 5xx server errors.
-- Read latencies remained well under 50 ms.
-- Readiness probe `/readyz` consistently returned within $< 5\text{ ms}$.
-
----
-
-## 6. Commit Log
-
-| Commit | Description |
-| :--- | :--- |
-| `ae359e0` | `docs(5.0): endpoint audit, route inventory, failing tests for known gaps` |
-| `3854929` | `feat(5.1): single-use realtime tickets and origin-checked websocket upgrade` |
-| `5c7ac1e` | `feat(5.2): transactional pg_notify events and dedicated LISTEN fan-out` |
-| `ae8638e` | `feat(5.3): role-based event filtering with PII scan` |
-| `60fd03b` | `feat(5.4): socket hygiene and frontend useFleetEvents hook` |
-| `a714ebf` | `feat(5.5): structured logging, request IDs, secret-safe access log` |
-| `850ef74` | `feat(5.6): protected metrics endpoint with bounded route labels` |
-| `cdc82cb` | `feat(5.7): request and statement timeouts, graceful shutdown, readiness` |
-| `bef5ce7` | `feat(5.8): idempotent license-check job, notifications API` |
-| `3b5462a` | `test(5.9): k6 load scripts, SLO results, realtime e2e` |
-
----
-
-## 7. Phase 5 Exit Gate Checklist
-
-- [x] **Security regression suite is a permanent CI job:** Multi-instance fan-out, ticket consumption, origin check, role filtering, PII scan, secret scrub, and panic recovery tested and passing in `internal/app`.
-- [x] **Load test results saved in `docs/PERFORMANCE.md`:** Recorded p95 latencies, SLO compliance table, and spike degradation numbers.
-- [x] **Realtime updates verified across two browser sessions / instances:** Verified in `TestCompulsory_TwoInstanceFanOutAndRollback` and `TestCompulsory_RoleEventFilteringOverWebSocket`.
-- [x] **OpenAPI contract updated and 100% in sync:** Phase 5 paths and schemas added to `api/openapi.yaml`, code generated for Go (`types.gen.go`) and TypeScript (`types.gen.ts`).
-- [x] **Frontend production build:** `next build` static page generation completes with 15/15 pages green.
-- [x] **Zero external brokers:** Powered exclusively by PostgreSQL `LISTEN/NOTIFY`.
+### Frontend Verification Suite
+- `npm run typecheck`: **PASS** (`docs/verification/frontend-typecheck.log`)
+- `npm run lint`: **PASS** (`docs/verification/frontend-lint.log`)
+- `npm test`: **8/8 PASS** (`docs/verification/frontend-test.log`)
+- `npm run build`: **15/15 static pages PASS** (`docs/verification/frontend-build.log`)

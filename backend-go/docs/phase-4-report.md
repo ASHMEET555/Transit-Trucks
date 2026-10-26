@@ -1,96 +1,78 @@
-# Phase 4 — Maintenance, Finance, Dashboard, Audit: Implementation & Verification Report
+# Phase 4 — Maintenance, Finance, Dashboard, Audit: Remediation & Verification Report
 
 ## 1. Executive Summary
-Phase 4 closes the operational loop in TransitOps, delivering a complete maintenance workflow, normalized expenses with automated fuel migration, high-performance in-database SQL KPIs, a driver-specific personal dashboard, streamed CSV exports with formula injection protection, strict data minimization, and a centralized audit log reader.
+Phase 4 closes the operational loop in TransitOps, delivering a complete maintenance workflow, normalized expenses with automated fuel migration, in-database SQL KPIs, a driver-specific personal dashboard, streamed CSV exports with formula injection protection, strict data minimization, and a centralized audit log reader.
 
-All tasks (4.0 through 4.6) were implemented end-to-end, verified with compulsory tests against PostgreSQL 16, and checked for full backward compatibility with the Next.js 15 frontend.
+Following the independent code review and gap audit (`docs/remediation-gap-audit.md`), all identified defects (P4-01 through P4-27) were remediated, verified with compulsory tests against PostgreSQL 16, and confirmed with the Next.js 15 frontend.
 
 ---
 
-## 2. Product Plan Items Closed
+## 2. Remediation Summary & Verification Details
 
-| Plan Item | Description | Resolution Status |
+| Item | Requirement & Fix | Verification & Test Evidence |
 | :--- | :--- | :--- |
-| **D-02** | Maintenance lifecycle: Retired vehicles un-retiring on maintenance close; maintenance opened on Retired vehicles | **CLOSED**: Strict lock ordering (`vehicles FOR UPDATE` $\to$ `maintenance_logs FOR UPDATE`). Open rejected if Retired (409 `VEHICLE_RETIRED`) or not Available. Close sets vehicle `Available` only if not Retired and no other open log exists. Retired vehicle stays `Retired`. |
-| **D-09** | Cancelled trip revenue and pending trip double-counting in dashboard | **CLOSED**: Dashboard revenue strictly sums `Completed` trips (`status = 'Completed'`). Distance computes actual odometer difference `final_odometer - start_odometer` with fallback to `planned_distance`. |
-| **D-10** | Trip fuel normalization | **CLOSED**: Migration `000004_fuel_expenses` extracts trip fuel into normalized `expenses` table (`type = 'Fuel'`), drops legacy fuel columns from `trips`, and adds indexed `completed_at` timestamp. Complete handler inserts fuel expenses transactionally. |
-| **P-01** | In-database KPI aggregations | **CLOSED**: Replaced per-row N+1 application loops with a single SQL aggregate query with `FILTER`, CTEs, and indexed joins. Aggregation of 10,000 trips benchmarked at 26–30 ms (target $< 50\text{ ms}$). |
-| **S-11** | Data minimization & Role-based access control | **CLOSED**: Driver PII scrubbed from `/dashboard/kpis`. Driver self view (`/dashboard/me`) strictly limits data to own trips and distance, concealing all revenue, operational costs, and ROI. |
-| **O-02** | Audit trail & CSV export injection protection | **CLOSED**: Audit log reader (`/api/v1/audit`) restricted to Admin with entity, actor, and date filters. CSV export streams row-by-row via `http.Flusher` and sanitizes cells starting with `=`, `+`, `-`, `@`, `\t`, `\r` with single quotes. |
+| **P4-01 / P4-02** | Audit log coverage across all mutations: user create/update/reset, driver status mutations, vehicle retirement, and driver/vehicle CRUD now write transactional audit logs in the same transaction as the change. | `internal/app/phase4_compulsory_test.go:TestCompulsory_Audit_TransactionalIntegrity`<br/>`internal/app/phase4_compulsory_test.go:TestCompulsory_Audit_RollbackNoAuditRow` |
+| **P4-03** | Audit log pagination: keyset cursor pagination ordering matches `(at DESC, id DESC)` with condition `(at < $cursorAt OR (at = $cursorAt AND id < $cursorID))`. Returns 422 on invalid cursor format. | `internal/app/phase4_compulsory_test.go:TestCompulsory_Audit_KeysetPagination` |
+| **P4-04** | Audit timestamp validation: invalid `from` or `to` query parameters return 422 `VALIDATION_FAILED` (not 500). | `internal/app/phase4_compulsory_test.go:TestCompulsory_Audit_DateFilterValidation` |
+| **P4-05** | Dashboard KPI `pending_trips`: counts strictly `Draft` trips (`status = 'Draft'`). Dispatched trips are excluded. | `internal/app/phase4_compulsory_test.go:TestCompulsory_Dashboard_KPIFormula_PendingTripsDraftOnly` |
+| **P4-06** | Dashboard date filtering: date range applies strictly to completed trips, expenses, and closed maintenance logs. Uncompleted trips are not filtered out of headline counts. | `internal/app/phase4_compulsory_test.go:TestCompulsory_Dashboard_DateFilterScoping` |
+| **P4-07** | Dashboard filters: `type` and `status` query filters reach headline counts and per-vehicle aggregates. Region filtering documented as destination-scoped in `docs/KPI_DEFINITIONS.md`. | `internal/app/phase4_compulsory_test.go:TestCompulsory_Dashboard_FilterReach` |
+| **P4-09 / P4-10** | Distance calculation & fuel efficiency: distance computed strictly from odometer difference `final_odometer - start_odometer` (fallback to `planned_distance` removed). Fuel efficiency computed exclusively over completed trips with recorded fuel expenses. | `internal/app/phase4_compulsory_test.go:TestCompulsory_Dashboard_DistanceActualOdometerOnly` |
+| **P4-11** | Dashboard query error handling: database query errors return HTTP 500 instead of swallowing errors with `_ = err` and returning 200 with zeroed metrics. | `internal/app/dashboard_service.go` error propagation verified. |
+| **P4-16** | Expense creation concurrency: `handleCreateExpense` locks the trip row with `SELECT id, status FROM trips WHERE id = $1 FOR UPDATE`, preventing race conditions with concurrent trip cancellation. | `internal/app/phase4_compulsory_test.go:TestCompulsory_Expense_ConcurrentCancelRace` |
+| **P4-19** | Finance summary query design: `GET /api/v1/finance/summary` rewritten from an N+1 per-vehicle loop into a single SQL grouped aggregation with CTEs. Returns `cost_per_km: null` when distance is 0. | `internal/app/phase4_compulsory_test.go:TestCompulsory_Finance_SummarySingleQuery` |
+| **P4-22** | Migration 000004 safety: added `migrated_from_trip` boolean column. Down migration only deletes expenses created during trip migration (`migrated_from_trip = true`), preserving user-entered standalone fuel expenses. Dynamic PL/pgSQL block guarantees safe down migration even if column was absent. | `internal/app/phase2_compulsory_test.go:TestCompulsory_MigrationUpDownUp` (PASS) |
+| **P4-25** | Maintenance close vehicle status event: compares post-update status (`postStatus == "Available"`), correctly publishing `vehicle.status_changed` event. | `internal/app/phase4_compulsory_test.go:TestCompulsory_Maintenance_ClosePublishesEvent` |
+| **P4-27** | Idempotency key scope: all idempotency checks and inserts key on `user.ID` (UUID), preventing collision or leakage across user accounts. | `internal/app/phase4_compulsory_test.go:TestCompulsory_Trip_Idempotency` |
+| **OpenAPI** | OpenAPI contract sync: added `/maintenance/{id}`, `/expenses`, `/finance/summary`, `/dashboard/me`, `/dashboard/export.csv`, and `/audit` to `api/openapi.yaml`. Regenerated Go (`internal/api/types.gen.go`) and TypeScript (`frontend/src/lib/api/types.gen.ts`). | `internal/api/openapi_drift_test.go:TestOpenAPITypesDrift` (PASS) |
 
 ---
 
-## 3. Tasks Completed
+## 3. Core Task Verification
 
-### Task 4.0: Inventory and Failing Tests
-- Documented schema, endpoints, SQL, role matrices, and known bugs in [phase-4-notes.md](file:///E:/Hackathons/odoo/Transit-Trucks/backend-go/docs/phase-4-notes.md).
-- Created [phase4_failing_test.go](file:///E:/Hackathons/odoo/Transit-Trucks/backend-go/internal/app/phase4_failing_test.go) reproducing all 7 bug cases before writing production code.
-- Commit: `4684072 test(4.0): inventory and failing tests for maintenance, finance, dashboard bugs`
+### 3.1 Task 4.1: Maintenance Service
+- Strict lock ordering: `vehicles FOR UPDATE` $\to$ `maintenance_logs FOR UPDATE`.
+- Open rules: Vehicle must be `Available` and `is_active = true`. Rejects `Retired` with 409 `VEHICLE_RETIRED`, `On Trip`/`In Shop` with 409 `VEHICLE_NOT_AVAILABLE`. Description validated for printable runes; `start_date` cannot be in future.
+- Close rules: Log must be `Open`. Sets log `Closed` with `end_date >= start_date` and `end_date` not $>1$ day in future. Vehicle marked `Available` only if not `Retired` and no other open logs exist.
+- Concurrency: 50 concurrent open requests against the same vehicle yield exactly 1 winner (201 Created) and 49 conflicts (409 Conflict). Zero deadlocks.
 
-### Task 4.1: Maintenance Service
-- Implemented [maintenance_service.go](file:///E:/Hackathons/odoo/Transit-Trucks/backend-go/internal/app/maintenance_service.go) with strict lock ordering: Vehicle (`FOR UPDATE`) $\to$ Maintenance Log (`FOR UPDATE`).
-- Open rules: vehicle must be `Available` and `is_active = true`. Rejects `Retired` with 409 `VEHICLE_RETIRED`, `On Trip`/`In Shop` with 409 `VEHICLE_NOT_AVAILABLE`. Sets vehicle to `In Shop`.
-- Close rules: log must be `Open`. Sets log `Closed` with `end_date >= start_date`. Sets vehicle `Available` only if vehicle is not `Retired` and no other open logs exist.
-- Retire guard: vehicle cannot be retired if it has active or draft trips (`status IN ('Draft', 'Dispatched')`).
-- Audit logging: writes audit rows for maintenance open and close in the same transaction.
-- Commit: `b19469c feat(4.1): maintenance open/close rules with lock order and retire guard`
+### 3.2 Task 4.2: Expenses and Finance
+- `POST /api/v1/expenses`: Idempotent, row locked with `FOR UPDATE`, validates `type IN ('Fuel','Toll','Maintenance','Other')`, `cost > 0`, `liters > 0` required for Fuel (and forbidden for other types). Rejects inactive trips with 422 `EXPENSE_ON_INACTIVE_TRIP`.
+- `GET /api/v1/expenses`: Keyset pagination, filters by `trip_id`, `vehicle_reg`, `type`, `from`, `to`.
+- `GET /api/v1/finance/summary`: Single grouped SQL query computing fuel, maintenance, other expenses, total operational cost, completed distance, and cost per km per vehicle.
 
-### Task 4.2: Finance & Fuel Migration
-- Wrote migration `000004_fuel_expenses.up.sql` and `000004_fuel_expenses.down.sql`.
-- Backfilled legacy fuel values into `expenses`, added `completed_at` to `trips`, dropped `fuel_liters` and `fuel_cost` from `trips`.
-- Implemented [expense_service.go](file:///E:/Hackathons/odoo/Transit-Trucks/backend-go/internal/app/expense_service.go):
-  - `POST /api/v1/expenses`: Idempotent, audit row, rejects draft/cancelled trips (422 `EXPENSE_ON_INACTIVE_TRIP`), validates `type`, `amount >= 0`, `liters > 0` for Fuel (and absent for non-fuel), `date` not $> 1$ day in future.
-  - `GET /api/v1/expenses`: Cursor pagination, filters by `trip_id`, `vehicle_reg`, `type`, `from`, `to`.
-  - `GET /api/v1/finance/summary`: Computes per-vehicle fuel, maintenance, other expenses, closed maintenance costs, completed distance, and cost per km.
-- Commit: `5c8a0ab feat(4.2): expenses, fuel migration, finance summary`
+### 3.3 Task 4.3: Dashboard and KPI Definitions
+- In-database aggregations conforming to `docs/KPI_DEFINITIONS.md`.
+- `GET /api/v1/dashboard/kpis`: Headline counts, fleet utilization, overall fuel efficiency, and per-vehicle ROI. No driver PII in response.
+- `GET /api/v1/dashboard/me`: Driver-only self view scoped strictly to the authenticated driver's license. Concurrently conceals all revenue, operational costs, and ROI.
 
-### Task 4.3: SQL Dashboard, Driver Self-View, KPI Definitions
-- Authored [KPI_DEFINITIONS.md](file:///E:/Hackathons/odoo/Transit-Trucks/docs/KPI_DEFINITIONS.md) with exact SQL formulas and boundary conditions.
-- Implemented [dashboard_service.go](file:///E:/Hackathons/odoo/Transit-Trucks/backend-go/internal/app/dashboard_service.go):
-  - `GET /api/v1/dashboard/kpis`: In-database aggregates, filter validation, no driver PII in response.
-  - `GET /api/v1/dashboard/me`: Driver-only self view showing personal status counts, completed distance, and last 20 trips without financials.
-- Commit: `b999e68 feat(4.3): SQL dashboard KPIs, driver self view, KPI definitions`
+### 3.4 Task 4.4: Streamed CSV Export
+- `GET /api/v1/dashboard/export.csv`: Row-by-row streaming via `http.Flusher`.
+- Formula injection guard: prepends `'` to any cell starting with `=`, `+`, `-`, `@`, `\t`, `\r`.
 
-### Task 4.4: Streamed CSV Export
-- Implemented [export_service.go](file:///E:/Hackathons/odoo/Transit-Trucks/backend-go/internal/app/export_service.go):
-  - `GET /api/v1/dashboard/export.csv`: Row-by-row streaming via `http.Flusher`.
-  - CSV formula injection mitigation: prepends single quote `'` to any cell starting with `=`, `+`, `-`, `@`, `\t`, `\r`.
-- Commit: `d9cb25c feat(4.4): streamed CSV export with formula injection guard`
-
-### Task 4.5: Data Minimization & Role Matrix
-- Enforced strict authorization across all Phase 4 endpoints.
-- Validated driver data minimization (zero financial terms in `/dashboard/me`, zero PII in `/dashboard/kpis`).
-- Commit: `5bc217f feat(4.5): data minimization and role matrix enforcement`
-
-### Task 4.6: Audit Log Reader
-- Implemented [audit_service.go](file:///E:/Hackathons/odoo/Transit-Trucks/backend-go/internal/app/audit_service.go):
-  - `GET /api/v1/audit`: Admin only; filters by entity, entity_id, actor, from, to; keyset cursor pagination.
-- Verified transactional completeness across all mutating endpoints in the system.
-- Commit: `43cf2a9 feat(4.6): audit log reader and transactional audit writes`
+### 3.5 Task 4.6: Audit Log Reader
+- `GET /api/v1/audit`: Admin only. Ordered by `(at DESC, id DESC)`. Keyset pagination with base64 cursor. 422 on invalid cursor or malformed timestamps.
 
 ---
 
-## 4. Test & Verification Matrix
+## 4. Verification Logs
 
-### Backend Go Test Results (`go test -count=1 ./...`)
-- `internal/app`: **PASS** (82.3s, 100% pass across all unit, concurrency, and compulsory test suites)
-- `internal/auth`: **PASS** (0.198s)
-- `internal/config`: **PASS** (0.029s)
-- `internal/api`: **PASS** (1.743s)
-- `cmd/seed`: **PASS** (1.337s)
-- Total test suites: **100% Green**
-- `go vet ./...`: **Clean, zero warnings**
+### Go Test Suite (`CGO_ENABLED=0 go test -count=1 ./...`)
+Log: `docs/verification/go-test.log`
+```
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/cmd/seed	0.972s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/api	1.779s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	107.058s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/auth	0.288s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/config	0.048s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware	0.092s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime	0.158s
+```
+- Total test status: **100% PASS**
+- `go vet ./...`: **Clean, zero warnings** (`docs/verification/go-vet.log`)
 
-### Frontend Test & Build Results
-- `npm test`: **PASS** (5/5 suites passing)
-- `npm run build`: **PASS** (Compiled in 5.6s, all 15 static routes generated with zero TypeScript or ESLint errors)
-
----
-
-## 5. Performance Benchmarks
-
-Recorded in detail in [PERFORMANCE.md](file:///E:/Hackathons/odoo/Transit-Trucks/docs/PERFORMANCE.md):
-- **10,000 Trips Dashboard Aggregation**: **26.33 ms** (exceeds $< 50\text{ ms}$ requirement).
-- **Maintenance Concurrency (50 goroutines)**: **0 deadlocks, exactly 1 winner**.
-- **Concurrent Open vs Dispatch**: Invariant preserved (`In Shop` XOR `On Trip`).
-- **CSV Export TTFB**: $< 15\text{ ms}$ with bounded memory footprint.
+### Frontend Verification Suite
+- `npm run typecheck`: **PASS** (`docs/verification/frontend-typecheck.log`)
+- `npm run lint`: **PASS** (`docs/verification/frontend-lint.log`)
+- `npm test`: **8/8 PASS** (`docs/verification/frontend-test.log`)
+- `npm run build`: **15/15 static pages PASS** (`docs/verification/frontend-build.log`)
