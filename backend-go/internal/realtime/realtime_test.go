@@ -126,30 +126,30 @@ func TestPolicy_RoleEventMatrix(t *testing.T) {
 }
 
 func TestPolicy_SanitizedClientPayloadPII(t *testing.T) {
-	raw := map[string]any{
-		"trip_id":        int64(42),
-		"vehicle_reg":    "TRK-001",
-		"driver_license": "DL-12345",
-		"driver_name":    "Alice Driver",
-		"name":           "Alice Driver",
-		"email":          "alice@example.com",
-		"phone":          "+15551234567",
-		"contact_number": "+15559876543",
-		"status":         "Dispatched",
-	}
+	for _, eventType := range realtime.AllEventTypes {
+		raw := map[string]any{
+			"trip_id":        int64(42),
+			"vehicle_reg":    "TRK-001",
+			"driver_license": "DL-12345",
+			"driver_name":    "Alice Driver",
+			"name":           "Alice Driver",
+			"email":          "alice@example.com",
+			"phone":          "+15551234567",
+			"contact_number": "+15559876543",
+			"status":         "Dispatched",
+			"maintenance_id": int64(10),
+			"expense_id":     int64(15),
+			"type":           "Fuel",
+		}
 
-	sanitized := realtime.SanitizedClientPayload(raw)
+		sanitized := realtime.SanitizedClientPayload(eventType, raw)
 
-	// Safe fields present
-	if sanitized["trip_id"] != int64(42) || sanitized["vehicle_reg"] != "TRK-001" || sanitized["status"] != "Dispatched" {
-		t.Fatalf("safe fields were stripped: %+v", sanitized)
-	}
-
-	// PII fields stripped
-	forbidden := []string{"driver_name", "name", "email", "phone", "contact_number", "driver_license"}
-	for _, f := range forbidden {
-		if _, exists := sanitized[f]; exists {
-			t.Errorf("forbidden PII field %s still present in sanitized payload: %+v", f, sanitized)
+		// PII fields strictly stripped across all event types
+		forbidden := []string{"driver_name", "name", "email", "phone", "contact_number", "driver_license"}
+		for _, f := range forbidden {
+			if _, exists := sanitized[f]; exists {
+				t.Errorf("[%s] forbidden PII field %s still present in sanitized payload: %+v", eventType, f, sanitized)
+			}
 		}
 	}
 }

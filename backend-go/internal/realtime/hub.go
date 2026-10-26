@@ -320,7 +320,7 @@ func (h *Hub) fanOutEvent(ev Event) {
 		targetDriverLicense = fmt.Sprint(licVal)
 	}
 
-	sanitizedIDs := SanitizedClientPayload(ev.IDs)
+	sanitizedIDs := SanitizedClientPayload(ev.Type, ev.IDs)
 	clientEvent := Event{
 		Type:       ev.Type,
 		IDs:        sanitizedIDs,

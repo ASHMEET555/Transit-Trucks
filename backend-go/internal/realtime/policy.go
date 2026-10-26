@@ -79,24 +79,31 @@ func CanReceive(eventType, role string, ownsTrip bool) bool {
 	}
 }
 
-// SanitizedClientPayload returns a copy of IDs stripped of any potential PII fields.
-// Payloads contain no driver names, license numbers, phones, or email addresses.
-func SanitizedClientPayload(rawIDs map[string]any) map[string]any {
-	out := make(map[string]any, len(rawIDs))
-	forbiddenKeys := map[string]bool{
-		"name":           true,
-		"driver_name":    true,
-		"email":          true,
-		"actor_email":    true,
-		"phone":          true,
-		"contact_number": true,
-		"license_number": true,
-		"driver_license": true,
-	}
+// AllowedPayloadKeys defines the strict allowlist of permitted keys per event type.
+// Absolutely no PII (names, license numbers, emails, phone numbers) is permitted in client payloads.
+var AllowedPayloadKeys = map[string]map[string]bool{
+	EventTripCreated:         {"trip_id": true, "vehicle_reg": true},
+	EventTripDispatched:      {"trip_id": true, "vehicle_reg": true},
+	EventTripCompleted:       {"trip_id": true, "vehicle_reg": true},
+	EventTripCancelled:       {"trip_id": true, "vehicle_reg": true},
+	EventVehicleStatusChange: {"vehicle_reg": true, "status": true},
+	EventDriverStatusChange:  {"status": true},
+	EventMaintenanceOpened:   {"maintenance_id": true, "vehicle_reg": true},
+	EventMaintenanceClosed:   {"maintenance_id": true, "vehicle_reg": true},
+	EventExpenseCreated:      {"expense_id": true, "trip_id": true, "type": true},
+	EventNotificationCreated: {"notification_id": true, "type": true, "threshold": true},
+}
 
+// SanitizedClientPayload returns a copy of IDs filtered strictly against the per-event-type allowlist.
+// Payloads contain only minimal IDs and status/type metadata; no PII can ever reach clients.
+func SanitizedClientPayload(eventType string, rawIDs map[string]any) map[string]any {
+	allowed, ok := AllowedPayloadKeys[eventType]
+	if !ok {
+		return map[string]any{}
+	}
+	out := make(map[string]any)
 	for k, v := range rawIDs {
-		lower := strings.ToLower(k)
-		if !forbiddenKeys[lower] {
+		if allowed[k] {
 			out[k] = v
 		}
 	}

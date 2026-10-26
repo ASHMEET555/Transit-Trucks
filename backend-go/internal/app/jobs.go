@@ -86,21 +86,24 @@ func (a *App) handleLicenseCheckJob(w http.ResponseWriter, r *http.Request) {
 		expiryStr := d.expiry.Format("2006-01-02")
 
 		var notifType, dedupeKey string
+		var threshold int
 		if daysRemaining <= 0 {
 			notifType = "license_expired"
 			dedupeKey = fmt.Sprintf("%s:%s:expired", d.lic, expiryStr)
+			threshold = 0
 		} else if daysRemaining <= 7 {
 			notifType = "license_expiring_7d"
 			dedupeKey = fmt.Sprintf("%s:%s:7d", d.lic, expiryStr)
+			threshold = 7
 		} else if daysRemaining <= 30 {
 			notifType = "license_expiring_30d"
 			dedupeKey = fmt.Sprintf("%s:%s:30d", d.lic, expiryStr)
+			threshold = 30
 		} else {
 			continue
 		}
 
 		payloadBytes, _ := json.Marshal(map[string]any{
-			"license_number": d.lic,
 			"days_remaining": daysRemaining,
 			"expiry_date":    expiryStr,
 		})
@@ -117,8 +120,8 @@ func (a *App) handleLicenseCheckJob(w http.ResponseWriter, r *http.Request) {
 			notificationsCreated++
 			_ = realtime.PublishTx(ctx, tx, realtime.EventNotificationCreated, map[string]any{
 				"notification_id": insertedID,
-				"license_number":  d.lic,
 				"type":            notifType,
+				"threshold":       threshold,
 			})
 		}
 	}
