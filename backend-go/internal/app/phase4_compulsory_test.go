@@ -1156,3 +1156,146 @@ func TestCompulsory_Dashboard_ExportCSV_StreamAndInjection(t *testing.T) {
 		t.Errorf("injection not mitigated for '@ATTACK': %s", csvBody)
 	}
 }
+
+// ---------------- 5. DATA MINIMIZATION & ROLE MATRIX TESTS ----------------
+
+func TestCompulsory_DataMinimization_ComprehensiveMatrix(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	app := setupTestApp(t, db, true)
+	ctx := context.Background()
+
+	adminCookie := createTestUserAndLogin(t, app, "admin.min.matrix@transitops.com", rbac.RoleAdmin)
+	fleetCookie := createTestUserAndLogin(t, app, "fleet.min.matrix@transitops.com", rbac.RoleFleetManager)
+	finCookie := createTestUserAndLogin(t, app, "fin.min.matrix@transitops.com", rbac.RoleFinancialAnalyst)
+	safetyCookie := createTestUserAndLogin(t, app, "safety.min.matrix@transitops.com", rbac.RoleSafetyOfficer)
+
+	driverLic := fmt.Sprintf("MIN-DRV-%s", uuid.NewString()[:6])
+	createP4Driver(t, db, driverLic, "Available", "Heavy", time.Now().AddDate(1, 0, 0))
+	driverEmail := fmt.Sprintf("driver.min.matrix.%s@transitops.com", uuid.NewString()[:6])
+	driverCookie := createTestUserAndLogin(t, app, driverEmail, rbac.RoleDriver)
+	_, _ = db.Exec(ctx, `UPDATE users SET driver_license = $1 WHERE email = $2`, driverLic, driverEmail)
+
+	type endpointCheck struct {
+		method string
+		path   string
+		body   string
+		expect map[string]int // role -> expected HTTP status
+	}
+
+	checks := []endpointCheck{
+		{
+			method: "GET",
+			path:   "/api/v1/maintenance",
+			expect: map[string]int{
+				rbac.RoleAdmin:            http.StatusOK,
+				rbac.RoleFleetManager:     http.StatusOK,
+				rbac.RoleSafetyOfficer:    http.StatusOK,
+				rbac.RoleFinancialAnalyst: http.StatusForbidden,
+				rbac.RoleDriver:           http.StatusForbidden,
+			},
+		},
+		{
+			method: "GET",
+			path:   "/api/v1/expenses",
+			expect: map[string]int{
+				rbac.RoleAdmin:            http.StatusOK,
+				rbac.RoleFleetManager:     http.StatusOK,
+				rbac.RoleFinancialAnalyst: http.StatusOK,
+				rbac.RoleSafetyOfficer:    http.StatusForbidden,
+				rbac.RoleDriver:           http.StatusForbidden,
+			},
+		},
+		{
+			method: "GET",
+			path:   "/api/v1/finance/summary",
+			expect: map[string]int{
+				rbac.RoleAdmin:            http.StatusOK,
+				rbac.RoleFleetManager:     http.StatusOK,
+				rbac.RoleFinancialAnalyst: http.StatusOK,
+				rbac.RoleSafetyOfficer:    http.StatusForbidden,
+				rbac.RoleDriver:           http.StatusForbidden,
+			},
+		},
+		{
+			method: "GET",
+			path:   "/api/v1/dashboard/kpis",
+			expect: map[string]int{
+				rbac.RoleAdmin:            http.StatusOK,
+				rbac.RoleFleetManager:     http.StatusOK,
+				rbac.RoleFinancialAnalyst: http.StatusOK,
+				rbac.RoleSafetyOfficer:    http.StatusOK,
+				rbac.RoleDriver:           http.StatusForbidden,
+			},
+		},
+		{
+			method: "GET",
+			path:   "/api/v1/dashboard/me",
+			expect: map[string]int{
+				rbac.RoleAdmin:            http.StatusForbidden,
+				rbac.RoleFleetManager:     http.StatusForbidden,
+				rbac.RoleFinancialAnalyst: http.StatusForbidden,
+				rbac.RoleSafetyOfficer:    http.StatusForbidden,
+				rbac.RoleDriver:           http.StatusOK,
+			},
+		},
+		{
+			method: "GET",
+			path:   "/api/v1/dashboard/export.csv",
+			expect: map[string]int{
+				rbac.RoleAdmin:            http.StatusOK,
+				rbac.RoleFleetManager:     http.StatusOK,
+				rbac.RoleFinancialAnalyst: http.StatusOK,
+				rbac.RoleSafetyOfficer:    http.StatusForbidden,
+				rbac.RoleDriver:           http.StatusForbidden,
+			},
+		},
+	}
+
+	cookieMap := map[string]*http.Cookie{
+		rbac.RoleAdmin:            adminCookie,
+		rbac.RoleFleetManager:     fleetCookie,
+		rbac.RoleFinancialAnalyst: finCookie,
+		rbac.RoleSafetyOfficer:    safetyCookie,
+		rbac.RoleDriver:           driverCookie,
+	}
+
+	for _, check := range checks {
+		for role, expectedCode := range check.expect {
+			cookie := cookieMap[role]
+			var req *http.Request
+			if check.body != "" {
+				req = httptest.NewRequest(check.method, check.path, strings.NewReader(check.body))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Idempotency-Key", uuid.NewString())
+			} else {
+				req = httptest.NewRequest(check.method, check.path, nil)
+			}
+			req.AddCookie(cookie)
+			w := httptest.NewRecorder()
+			app.ServeHTTP(w, req)
+
+			if w.Code != expectedCode {
+				t.Errorf("%s %s for role %s: expected %d, got %d (%s)", check.method, check.path, role, expectedCode, w.Code, w.Body.String())
+			}
+		}
+	}
+
+	// Verify Data Minimization in Driver Self View
+	reqDriverMe := httptest.NewRequest("GET", "/api/v1/dashboard/me", nil)
+	reqDriverMe.AddCookie(driverCookie)
+	wDriverMe := httptest.NewRecorder()
+	app.ServeHTTP(wDriverMe, reqDriverMe)
+
+	if wDriverMe.Code != http.StatusOK {
+		t.Fatalf("expected 200 for driver on /dashboard/me, got %d", wDriverMe.Code)
+	}
+
+	driverBody := wDriverMe.Body.String()
+	forbiddenFields := []string{"revenue", "operational_cost", "roi", "fuel_cost", "maintenance_cost"}
+	for _, field := range forbiddenFields {
+		if strings.Contains(strings.ToLower(driverBody), `"`+field+`"`) {
+			t.Errorf("driver /dashboard/me leaked fleet financial field: %s", field)
+		}
+	}
+}
