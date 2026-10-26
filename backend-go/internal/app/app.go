@@ -197,9 +197,15 @@ func (a *App) routes() {
 	a.registerRoute("POST", "/api/v1/trips/suggest", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleSuggest)
 
 	// Maintenance
-	a.registerRoute("GET", "/api/v1/maintenance/", rbac.AnyAuthenticated, false, a.maintenance)
-	a.registerRoute("POST", "/api/v1/maintenance/", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.openMaintenance)
-	a.registerRoute("PUT", "/api/v1/maintenance/{id}/close", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.closeMaintenance)
+	maintReadRoles := []string{rbac.RoleAdmin, rbac.RoleFleetManager, rbac.RoleSafetyOfficer}
+	maintWriteRoles := []string{rbac.RoleAdmin, rbac.RoleFleetManager}
+	for _, prefix := range []string{"/api/v1/maintenance", "/api/v1/maintenance/"} {
+		a.registerRoute("GET", prefix, maintReadRoles, false, a.handleListMaintenance)
+		a.registerRoute("POST", prefix, maintWriteRoles, false, a.handleOpenMaintenance)
+	}
+	a.registerRoute("GET", "/api/v1/maintenance/{id}", maintReadRoles, false, a.handleGetMaintenance)
+	a.registerRoute("POST", "/api/v1/maintenance/{id}/close", maintWriteRoles, false, a.handleCloseMaintenance)
+	a.registerRoute("PUT", "/api/v1/maintenance/{id}/close", maintWriteRoles, false, a.handleCloseMaintenance)
 
 	// Finance
 	a.registerRoute("POST", "/api/v1/finance/expenses", []string{rbac.RoleFinancialAnalyst, rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.expense)
@@ -670,12 +676,26 @@ func (a *App) retireVehicle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var activeTrips int
+	err = tx.QueryRow(r.Context(), `SELECT COUNT(*) FROM trips WHERE vehicle_reg = $1 AND status IN ('Draft', 'Dispatched')`, reg).Scan(&activeTrips)
+	if err == nil && activeTrips > 0 {
+		httpx.WriteError(w, r, http.StatusConflict, "CONFLICT", "Cannot retire vehicle with active or draft trips", nil)
+		return
+	}
+
 	_, err = tx.Exec(r.Context(), `UPDATE vehicles SET status = 'Retired', updated_at = now() WHERE registration_number = $1`, reg)
 	if err != nil {
 		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
+
+	user := middleware.GetUser(r)
+	actorEmail := "system"
+	if user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLogTx(r.Context(), tx, "vehicles", reg, "retire", actorEmail, map[string]any{"old_status": status, "new_status": "Retired"})
 
 	if err := tx.Commit(r.Context()); err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
@@ -1338,62 +1358,7 @@ func (a *App) trips(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (a *App) maintenance(w http.ResponseWriter, r *http.Request) {
-	x, e := rows[maintenance](r.Context(), a.db, "SELECT * FROM maintenance_logs")
-	if e != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve maintenance logs", nil)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, x)
-}
 
-func (a *App) openMaintenance(w http.ResponseWriter, r *http.Request) {
-	var x maintenance
-	if err := httpx.DecodeJSON(w, r, &x); err != nil {
-		return
-	}
-	v, e := one[vehicle](r.Context(), a.db, "SELECT * FROM vehicles WHERE registration_number=$1", x.VehicleReg)
-	if e != nil {
-		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Vehicle not found.", nil)
-		return
-	}
-	if v.Status == "On Trip" {
-		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_STATE", "Cannot pull an active vehicle off transit into maintenance.", nil)
-		return
-	}
-	x.Status = "Open"
-	e = a.db.QueryRow(r.Context(), "INSERT INTO maintenance_logs(vehicle_reg,description,cost,start_date,status) VALUES($1,$2,$3,$4,'Open') RETURNING id", x.VehicleReg, x.Description, x.Cost, x.StartDate).Scan(&x.ID)
-	if e != nil {
-		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to open maintenance log", nil)
-		return
-	}
-	a.db.Exec(r.Context(), "UPDATE vehicles SET status='In Shop' WHERE registration_number=$1", x.VehicleReg)
-	a.broadcast("maintenance.opened", map[string]any{"log_id": x.ID, "vehicle_reg": x.VehicleReg, "status": "Open"})
-	httpx.WriteJSON(w, http.StatusOK, x)
-}
-
-func (a *App) closeMaintenance(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(r.PathValue("id"))
-	x, e := one[maintenance](r.Context(), a.db, "SELECT * FROM maintenance_logs WHERE id=$1", id)
-	if e != nil {
-		httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Maintenance log index not found.", nil)
-		return
-	}
-	if x.Status == "Closed" {
-		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_STATE", "Work order is already closed.", nil)
-		return
-	}
-	var body struct {
-		EndDate string `json:"end_date"`
-	}
-	if err := httpx.DecodeJSON(w, r, &body); err != nil {
-		return
-	}
-	a.db.Exec(r.Context(), "UPDATE maintenance_logs SET status='Closed',end_date=$1 WHERE id=$2", body.EndDate, id)
-	a.db.Exec(r.Context(), "UPDATE vehicles SET status='Available' WHERE registration_number=$1", x.VehicleReg)
-	a.broadcast("maintenance.closed", map[string]any{"log_id": id, "vehicle_reg": x.VehicleReg, "status": "Closed"})
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"message": "Workshop operations finished. Vehicle returned to fleet."})
-}
 
 func (a *App) expense(w http.ResponseWriter, r *http.Request) {
 	var x expenseRow

@@ -92,6 +92,8 @@ type maintenance struct {
 	StartDate   string  `json:"start_date"`
 	EndDate     *string `json:"end_date"`
 	Status      string  `json:"status"`
+	CreatedAt   *string `json:"created_at,omitempty"`
+	UpdatedAt   *string `json:"updated_at,omitempty"`
 }
 
 type expenseRow struct {
