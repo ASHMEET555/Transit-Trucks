@@ -1073,3 +1073,86 @@ func TestCompulsory_Dashboard_DriverPIIScrubbed(t *testing.T) {
 		t.Fatalf("driver license leaked in /dashboard/kpis response: %s", secretLicense)
 	}
 }
+
+// ---------------- 4. CSV EXPORT COMPULSORY TESTS ----------------
+
+func TestCompulsory_Dashboard_ExportCSV_StreamAndInjection(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	app := setupTestApp(t, db, true)
+	ctx := context.Background()
+
+	adminCookie := createTestUserAndLogin(t, app, "admin.export.csv@transitops.com", rbac.RoleAdmin)
+	driverCookie := createTestUserAndLogin(t, app, "driver.export.csv@transitops.com", rbac.RoleDriver)
+	safetyCookie := createTestUserAndLogin(t, app, "safety.export.csv@transitops.com", rbac.RoleSafetyOfficer)
+
+	// Driver and safety officer get 403
+	reqDriver := httptest.NewRequest("GET", "/api/v1/dashboard/export.csv", nil)
+	reqDriver.AddCookie(driverCookie)
+	wDriver := httptest.NewRecorder()
+	app.ServeHTTP(wDriver, reqDriver)
+	if wDriver.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for driver on export.csv, got %d", wDriver.Code)
+	}
+
+	reqSafety := httptest.NewRequest("GET", "/api/v1/dashboard/export.csv", nil)
+	reqSafety.AddCookie(safetyCookie)
+	wSafety := httptest.NewRecorder()
+	app.ServeHTTP(wSafety, reqSafety)
+	if wSafety.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for safety officer on export.csv, got %d", wSafety.Code)
+	}
+
+	// Insert vehicles with formula injection attack payloads
+	injReg1 := "=cmd|' /C calc'!A0"
+	injReg2 := "+SUM(A1:A10)"
+	injReg3 := "-100"
+	injReg4 := "@ATTACK"
+
+	for _, reg := range []string{injReg1, injReg2, injReg3, injReg4} {
+		_, _ = db.Exec(ctx, `INSERT INTO vehicles (registration_number, model, type, max_load_capacity, odometer, acquisition_cost, status, is_active, created_at, updated_at)
+			VALUES ($1, 'AttackModel', 'Van', 5000, 1000, 20000, 'Available', true, now(), now())
+			ON CONFLICT (registration_number) DO NOTHING`, reg)
+	}
+
+	defer func() {
+		for _, reg := range []string{injReg1, injReg2, injReg3, injReg4} {
+			_, _ = db.Exec(ctx, `DELETE FROM vehicles WHERE registration_number = $1`, reg)
+		}
+	}()
+
+	req := httptest.NewRequest("GET", "/api/v1/dashboard/export.csv", nil)
+	req.AddCookie(adminCookie)
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for export.csv, got %d: %s", w.Code, w.Body.String())
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "text/csv") {
+		t.Fatalf("expected text/csv Content-Type, got %s", contentType)
+	}
+
+	disp := w.Header().Get("Content-Disposition")
+	if !strings.Contains(disp, "attachment; filename=\"dashboard-") {
+		t.Fatalf("expected attachment Content-Disposition, got %s", disp)
+	}
+
+	csvBody := w.Body.String()
+
+	// Assert each malicious payload is sanitized with leading single quote "'"
+	if !strings.Contains(csvBody, "'=cmd|' /C calc'!A0") {
+		t.Errorf("injection not mitigated for '=cmd': %s", csvBody)
+	}
+	if !strings.Contains(csvBody, "'+SUM(A1:A10)") {
+		t.Errorf("injection not mitigated for '+SUM': %s", csvBody)
+	}
+	if !strings.Contains(csvBody, "'-100") {
+		t.Errorf("injection not mitigated for '-100': %s", csvBody)
+	}
+	if !strings.Contains(csvBody, "'@ATTACK") {
+		t.Errorf("injection not mitigated for '@ATTACK': %s", csvBody)
+	}
+}

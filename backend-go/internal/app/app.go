@@ -219,8 +219,10 @@ func (a *App) routes() {
 
 	// Dashboard
 	dashboardRoles := []string{rbac.RoleAdmin, rbac.RoleFleetManager, rbac.RoleFinancialAnalyst, rbac.RoleSafetyOfficer}
+	exportRoles := []string{rbac.RoleAdmin, rbac.RoleFleetManager, rbac.RoleFinancialAnalyst}
 	a.registerRoute("GET", "/api/v1/dashboard/kpis", dashboardRoles, false, a.handleDashboardKPIs)
 	a.registerRoute("GET", "/api/v1/dashboard/me", []string{rbac.RoleDriver}, false, a.handleDriverSelfDashboard)
+	a.registerRoute("GET", "/api/v1/dashboard/export.csv", exportRoles, false, a.handleDashboardExportCSV)
 
 	// WebSocket Hub
 	a.registerRoute("GET", "/ws/fleet", rbac.AnyAuthenticated, false, a.ws)
