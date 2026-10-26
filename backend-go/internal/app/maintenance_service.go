@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
@@ -189,7 +190,7 @@ func (a *App) handleOpenMaintenance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(req.Description) == "" || len(req.Description) > 500 {
+	if strings.TrimSpace(req.Description) == "" || utf8.RuneCountInString(req.Description) > 500 {
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Description is required and must not exceed 500 characters.", nil)
 		return
 	}
@@ -300,7 +301,7 @@ func (a *App) handleOpenMaintenance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respBytes, _ := json.Marshal(resLog)
-	if err := saveIdempotency(ctx, tx, key, user.Email, r.URL.Path, bodyHash, http.StatusCreated, string(respBytes)); err != nil {
+	if err := saveIdempotency(ctx, tx, key, user.ID, r.URL.Path, bodyHash, http.StatusCreated, string(respBytes)); err != nil {
 		status, code, msg := httpx.MapDBError(err, nil)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
@@ -413,8 +414,14 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 	nowUTC := time.Now().UTC()
 	endDateStr := nowUTC.Format("2006-01-02")
 	if req.EndDate != "" {
-		if _, err := time.Parse("2006-01-02", req.EndDate); err != nil {
+		parsedDate, err := time.Parse("2006-01-02", req.EndDate)
+		if err != nil {
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid end_date format, expected YYYY-MM-DD.", nil)
+			return
+		}
+		todayUTC := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+		if parsedDate.After(todayUTC.AddDate(0, 0, 1)) {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "End date cannot be more than 1 day in the future.", nil)
 			return
 		}
 		endDateStr = req.EndDate
@@ -446,6 +453,7 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If no other open log exists and vehicle is not Retired, set to Available. If Retired, leave Retired.
+	postStatus := vStatus
 	if otherOpenLogs == 0 && vStatus != "Retired" {
 		_, err = tx.Exec(ctx, `UPDATE vehicles SET status = 'Available', updated_at = now() WHERE registration_number = $1`, vReg)
 		if err != nil {
@@ -453,6 +461,7 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, r, status, code, msg, nil)
 			return
 		}
+		postStatus = "Available"
 	}
 
 	// Audit log
@@ -460,7 +469,7 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 		"vehicle_reg":     vReg,
 		"end_date":        endDateStr,
 		"other_open_logs": otherOpenLogs,
-		"vehicle_status":  vStatus,
+		"vehicle_status":  postStatus,
 	})
 
 	respPayload := map[string]any{
@@ -472,7 +481,7 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respBytes, _ := json.Marshal(respPayload)
-	if err := saveIdempotency(ctx, tx, key, user.Email, r.URL.Path, bodyHash, http.StatusOK, string(respBytes)); err != nil {
+	if err := saveIdempotency(ctx, tx, key, user.ID, r.URL.Path, bodyHash, http.StatusOK, string(respBytes)); err != nil {
 		status, code, msg := httpx.MapDBError(err, nil)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
@@ -483,7 +492,7 @@ func (a *App) handleCloseMaintenance(w http.ResponseWriter, r *http.Request) {
 		"maintenance_id": logID,
 		"vehicle_reg":    vReg,
 	})
-	if vStatus == "Available" {
+	if postStatus == "Available" {
 		_ = realtime.PublishTx(ctx, tx, realtime.EventVehicleStatusChange, map[string]any{
 			"vehicle_reg": vReg,
 			"status":      "Available",

@@ -175,7 +175,7 @@ func (a *App) handleCompleteTrip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respBytes, _ := json.Marshal(responseTrip)
-	if err := saveIdempotency(ctx, tx, key, user.Email, r.URL.Path, bodyHash, http.StatusOK, string(respBytes)); err != nil {
+	if err := saveIdempotency(ctx, tx, key, user.ID, r.URL.Path, bodyHash, http.StatusOK, string(respBytes)); err != nil {
 		status, code, msg := httpx.MapDBError(err, nil)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return

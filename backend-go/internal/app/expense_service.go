@@ -136,7 +136,7 @@ func (a *App) handleCreateExpense(w http.ResponseWriter, r *http.Request) {
 	var finalVehicleReg string
 	if req.TripID != nil {
 		var tripStatus, tripVehicleReg string
-		err := tx.QueryRow(ctx, `SELECT status, vehicle_reg FROM trips WHERE id = $1`, *req.TripID).Scan(&tripStatus, &tripVehicleReg)
+		err := tx.QueryRow(ctx, `SELECT status, vehicle_reg FROM trips WHERE id = $1 FOR UPDATE`, *req.TripID).Scan(&tripStatus, &tripVehicleReg)
 		if err != nil {
 			httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Trip record not found.", nil)
 			return
@@ -210,7 +210,7 @@ func (a *App) handleCreateExpense(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respBytes, _ := json.Marshal(res)
-	if err := saveIdempotency(ctx, tx, key, user.Email, r.URL.Path, bodyHash, http.StatusCreated, string(respBytes)); err != nil {
+	if err := saveIdempotency(ctx, tx, key, user.ID, r.URL.Path, bodyHash, http.StatusCreated, string(respBytes)); err != nil {
 		status, code, msg := httpx.MapDBError(err, nil)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return

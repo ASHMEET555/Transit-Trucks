@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -69,11 +70,14 @@ func setupTestApp(t *testing.T, db *pgxpool.Pool, isLocal bool) *App {
 	if !isLocal {
 		env = "production"
 	}
+	_, testCIDR, _ := net.ParseCIDR("192.0.2.0/24")
+	_, loopbackCIDR, _ := net.ParseCIDR("127.0.0.0/8")
 	cfg := Config{
-		Secret:         "a-very-long-and-secure-session-secret-key-32-bytes",
-		AllowedOrigins: []string{"http://localhost:3000", "https://app.transitops.com"},
-		Env:            env,
-		CookieDomain:   "transitops.com",
+		Secret:            "a-very-long-and-secure-session-secret-key-32-bytes",
+		AllowedOrigins:   []string{"http://localhost:3000", "https://app.transitops.com"},
+		Env:               env,
+		CookieDomain:      "transitops.com",
+		TrustedProxyCIDRs: []*net.IPNet{testCIDR, loopbackCIDR},
 	}
 	return New(db, cfg)
 }

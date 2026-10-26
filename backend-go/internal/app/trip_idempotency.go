@@ -40,7 +40,7 @@ func (a *App) checkIdempotency(w http.ResponseWriter, r *http.Request, bodyBytes
 	user := middleware.GetUser(r)
 	userID := "anonymous"
 	if user != nil {
-		userID = user.Email
+		userID = user.ID
 	}
 
 	h := sha256.Sum256(bodyBytes)

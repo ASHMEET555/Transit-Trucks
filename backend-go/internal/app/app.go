@@ -809,6 +809,11 @@ func (a *App) retireVehicle(w http.ResponseWriter, r *http.Request) {
 	}
 	recordAuditLogTx(r.Context(), tx, "vehicles", reg, "retire", actorEmail, map[string]any{"old_status": status, "new_status": "Retired"})
 
+	_ = realtime.PublishTx(r.Context(), tx, realtime.EventVehicleStatusChange, map[string]any{
+		"vehicle_reg": reg,
+		"status":      "Retired",
+	})
+
 	if err := tx.Commit(r.Context()); err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
 		return
@@ -1154,12 +1159,28 @@ func (a *App) suspendDriver(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if status == string(domain.DriverStatusOnTrip) {
+		httpx.WriteError(w, r, http.StatusConflict, "CONFLICT", "Cannot suspend driver while on trip", nil)
+		return
+	}
+
 	_, err = tx.Exec(r.Context(), `UPDATE drivers SET status = 'Suspended', updated_at = now() WHERE license_number = $1`, license)
 	if err != nil {
 		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
+
+	user := middleware.GetUser(r)
+	actorEmail := "system"
+	if user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLogTx(r.Context(), tx, "drivers", license, "suspend", actorEmail, map[string]any{"old_status": status, "new_status": "Suspended"})
+	_ = realtime.PublishTx(r.Context(), tx, realtime.EventDriverStatusChange, map[string]any{
+		"driver_license": license,
+		"status":         "Suspended",
+	})
 
 	if err := tx.Commit(r.Context()); err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
@@ -1188,12 +1209,32 @@ func (a *App) reinstateDriver(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if status == string(domain.DriverStatusOnTrip) {
+		httpx.WriteError(w, r, http.StatusConflict, "CONFLICT", "Cannot reinstate driver while on trip", nil)
+		return
+	}
+	if status != string(domain.DriverStatusSuspended) {
+		httpx.WriteError(w, r, http.StatusConflict, "CONFLICT", fmt.Sprintf("Can only reinstate a suspended driver (current status: %s)", status), nil)
+		return
+	}
+
 	_, err = tx.Exec(r.Context(), `UPDATE drivers SET status = 'Available', updated_at = now() WHERE license_number = $1`, license)
 	if err != nil {
 		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
+
+	user := middleware.GetUser(r)
+	actorEmail := "system"
+	if user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLogTx(r.Context(), tx, "drivers", license, "reinstate", actorEmail, map[string]any{"old_status": status, "new_status": "Available"})
+	_ = realtime.PublishTx(r.Context(), tx, realtime.EventDriverStatusChange, map[string]any{
+		"driver_license": license,
+		"status":         "Available",
+	})
 
 	if err := tx.Commit(r.Context()); err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
@@ -1234,6 +1275,17 @@ func (a *App) setDriverOffDuty(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user := middleware.GetUser(r)
+	actorEmail := "system"
+	if user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLogTx(r.Context(), tx, "drivers", license, "set_off_duty", actorEmail, map[string]any{"old_status": status, "new_status": "Off Duty"})
+	_ = realtime.PublishTx(r.Context(), tx, realtime.EventDriverStatusChange, map[string]any{
+		"driver_license": license,
+		"status":         "Off Duty",
+	})
+
 	if err := tx.Commit(r.Context()); err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
 		return
@@ -1272,6 +1324,17 @@ func (a *App) setDriverAvailable(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
+
+	user := middleware.GetUser(r)
+	actorEmail := "system"
+	if user != nil {
+		actorEmail = user.Email
+	}
+	recordAuditLogTx(r.Context(), tx, "drivers", license, "set_available", actorEmail, map[string]any{"old_status": status, "new_status": "Available"})
+	_ = realtime.PublishTx(r.Context(), tx, realtime.EventDriverStatusChange, map[string]any{
+		"driver_license": license,
+		"status":         "Available",
+	})
 
 	if err := tx.Commit(r.Context()); err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to commit transaction", nil)
