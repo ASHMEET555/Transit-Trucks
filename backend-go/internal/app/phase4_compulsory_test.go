@@ -776,3 +776,300 @@ func TestCompulsory_Finance_FuelMigration(t *testing.T) {
 		t.Fatalf("expected vehicle_reg column to exist on expenses table")
 	}
 }
+
+// ---------------- 3. DASHBOARD COMPULSORY TESTS ----------------
+
+func TestCompulsory_Dashboard_KPICorrectnessFixture(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	app := setupTestApp(t, db, true)
+	ctx := context.Background()
+
+	adminCookie := createTestUserAndLogin(t, app, "admin.kpi.fix@transitops.com", rbac.RoleAdmin)
+
+	v1 := fmt.Sprintf("KPI-V1-%s", uuid.NewString()[:6])
+	v2 := fmt.Sprintf("KPI-V2-%s", uuid.NewString()[:6])
+	v3 := fmt.Sprintf("KPI-V3-%s", uuid.NewString()[:6])
+	v4 := fmt.Sprintf("KPI-V4-%s", uuid.NewString()[:6])
+
+	d1 := fmt.Sprintf("KPI-D1-%s", uuid.NewString()[:6])
+	d2 := fmt.Sprintf("KPI-D2-%s", uuid.NewString()[:6])
+
+	createP4Vehicle(t, db, v1, "Available", "Van", 5000, 1000, 20000, true)
+	createP4Vehicle(t, db, v2, "On Trip", "Box Truck", 8000, 2000, 40000, true)
+	createP4Vehicle(t, db, v3, "In Shop", "Flatbed", 12000, 3000, 60000, true)
+	createP4Vehicle(t, db, v4, "Retired", "Semi", 20000, 4000, 80000, true)
+
+	createP4Driver(t, db, d1, "Available", "Light", time.Now().AddDate(1, 0, 0))
+	createP4Driver(t, db, d2, "On Trip", "Heavy", time.Now().AddDate(1, 0, 0))
+
+	// T1: Completed on V2, D2, odo 1000->1150 = 150 km, rev 1000.00
+	var t1ID int64
+	_ = db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, completed_at, created_at, updated_at)
+		VALUES ('New York Central Hub', 'Chicago Logistics Hub', $1, $2, 2000, 100, 1000, 'Completed', 1000, 1150, now(), now(), now()) RETURNING id`, v2, d2).Scan(&t1ID)
+
+	// T2: Completed on V1, D1, planned 250km, odo diff null -> fallback to 250 km, rev 2000.00
+	var t2ID int64
+	_ = db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, completed_at, created_at, updated_at)
+		VALUES ('Chicago Logistics Hub', 'Dallas Gateway Hub', $1, $2, 3000, 250, 2000, 'Completed', now(), now(), now()) RETURNING id`, v1, d1).Scan(&t2ID)
+
+	// T3: Cancelled on V1, D1, rev 5000.00 -> MUST NOT COUNT in revenue or distance
+	var t3ID int64
+	_ = db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, created_at, updated_at)
+		VALUES ('New York Central Hub', 'Atlanta Distribution Hub', $1, $2, 1000, 300, 5000, 'Cancelled', now(), now()) RETURNING id`, v1, d1).Scan(&t3ID)
+
+	// T4: Dispatched on V2, D2, rev 800.00 -> Active trip
+	var t4ID int64
+	_ = db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, created_at, updated_at)
+		VALUES ('Atlanta Distribution Hub', 'Miami Port Hub', $1, $2, 1500, 120, 800, 'Dispatched', 2000, now(), now()) RETURNING id`, v2, d2).Scan(&t4ID)
+
+	// T5: Draft on V1, D1, rev 400.00 -> Pending trip
+	var t5ID int64
+	_ = db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, created_at, updated_at)
+		VALUES ('Miami Port Hub', 'Denver Intermodal Hub', $1, $2, 800, 80, 400, 'Draft', now(), now()) RETURNING id`, v1, d1).Scan(&t5ID)
+
+	// Expenses
+	_, _ = db.Exec(ctx, `INSERT INTO expenses (trip_id, vehicle_reg, type, liters, cost, date, created_at, updated_at) VALUES ($1, $2, 'Fuel', 50.0, 100.00, CURRENT_DATE, now(), now())`, t1ID, v2)
+	_, _ = db.Exec(ctx, `INSERT INTO expenses (trip_id, vehicle_reg, type, liters, cost, date, created_at, updated_at) VALUES ($1, $2, 'Fuel', 50.0, 150.00, CURRENT_DATE, now(), now())`, t2ID, v1)
+	_, _ = db.Exec(ctx, `INSERT INTO expenses (vehicle_reg, type, cost, date, created_at, updated_at) VALUES ($1, 'Toll', 50.00, CURRENT_DATE, now(), now())`, v1)
+	_, _ = db.Exec(ctx, `INSERT INTO expenses (vehicle_reg, type, cost, date, created_at, updated_at) VALUES ($1, 'Maintenance', 300.00, CURRENT_DATE, now(), now())`, v3)
+
+	// Maintenance logs
+	_, _ = db.Exec(ctx, `INSERT INTO maintenance_logs (vehicle_reg, description, cost, start_date, end_date, status, created_at, updated_at) VALUES ($1, 'Closed service', 500.00, CURRENT_DATE, CURRENT_DATE, 'Closed', now(), now())`, v3)
+	_, _ = db.Exec(ctx, `INSERT INTO maintenance_logs (vehicle_reg, description, cost, start_date, status, created_at, updated_at) VALUES ($1, 'Open service', 700.00, CURRENT_DATE, 'Open', now(), now())`, v3)
+
+	req := httptest.NewRequest("GET", "/api/v1/dashboard/kpis", nil)
+	req.AddCookie(adminCookie)
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for dashboard KPIs, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var res DashboardKPIsResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// 1. Assert fleet counts
+	if res.ActiveVehicles < 1 {
+		t.Errorf("expected at least 1 active vehicle, got %d", res.ActiveVehicles)
+	}
+	if res.InShopVehicles < 1 {
+		t.Errorf("expected at least 1 in-shop vehicle, got %d", res.InShopVehicles)
+	}
+	if res.RetiredVehicles < 1 {
+		t.Errorf("expected at least 1 retired vehicle, got %d", res.RetiredVehicles)
+	}
+
+	// 2. Assert trips
+	if res.ActiveTrips < 1 {
+		t.Errorf("expected at least 1 active trip, got %d", res.ActiveTrips)
+	}
+	if res.PendingTrips < 2 {
+		t.Errorf("expected at least 2 pending trips, got %d", res.PendingTrips)
+	}
+	if res.CompletedTrips < 2 {
+		t.Errorf("expected at least 2 completed trips, got %d", res.CompletedTrips)
+	}
+
+	// 3. Find our specific vehicles in the array
+	var kpiV1, kpiV2, kpiV3 *VehicleKPI
+	for i := range res.Vehicles {
+		if res.Vehicles[i].RegistrationNumber == v1 {
+			kpiV1 = &res.Vehicles[i]
+		}
+		if res.Vehicles[i].RegistrationNumber == v2 {
+			kpiV2 = &res.Vehicles[i]
+		}
+		if res.Vehicles[i].RegistrationNumber == v3 {
+			kpiV3 = &res.Vehicles[i]
+		}
+	}
+
+	if kpiV1 == nil || kpiV2 == nil || kpiV3 == nil {
+		t.Fatalf("failed to find created vehicles in response: v1=%v, v2=%v, v3=%v", kpiV1, kpiV2, kpiV3)
+	}
+
+	// V1: revenue=2000.00, distance=250.00, fuel_cost=150.00, other=50.00, op=200.00
+	if kpiV1.Revenue != 2000.00 {
+		t.Errorf("V1 revenue: expected 2000.00, got %f", kpiV1.Revenue)
+	}
+	if kpiV1.Distance != 250.00 {
+		t.Errorf("V1 distance: expected 250.00, got %f", kpiV1.Distance)
+	}
+	if kpiV1.OperationalCost != 200.00 {
+		t.Errorf("V1 operational_cost: expected 200.00, got %f", kpiV1.OperationalCost)
+	}
+
+	// V2: revenue=1000.00, distance=150.00, fuel_cost=100.00, op=100.00
+	if kpiV2.Revenue != 1000.00 {
+		t.Errorf("V2 revenue: expected 1000.00, got %f", kpiV2.Revenue)
+	}
+	if kpiV2.Distance != 150.00 {
+		t.Errorf("V2 distance: expected 150.00, got %f", kpiV2.Distance)
+	}
+	if kpiV2.OperationalCost != 100.00 {
+		t.Errorf("V2 operational_cost: expected 100.00, got %f", kpiV2.OperationalCost)
+	}
+
+	// V3: maintenance=300 (expense) + 500 (closed log) = 800.00, op=800.00
+	if kpiV3.MaintenanceCost != 800.00 {
+		t.Errorf("V3 maintenance_cost: expected 800.00, got %f", kpiV3.MaintenanceCost)
+	}
+	if kpiV3.OperationalCost != 800.00 {
+		t.Errorf("V3 operational_cost: expected 800.00, got %f", kpiV3.OperationalCost)
+	}
+}
+
+func TestCompulsory_Dashboard_Benchmark10kTrips(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	app := setupTestApp(t, db, true)
+	ctx := context.Background()
+
+	adminCookie := createTestUserAndLogin(t, app, "admin.kpi.bench@transitops.com", rbac.RoleAdmin)
+
+	vReg := fmt.Sprintf("BENCH-V-%s", uuid.NewString()[:6])
+	dLic := fmt.Sprintf("BENCH-D-%s", uuid.NewString()[:6])
+	createP4Vehicle(t, db, vReg, "Available", "Van", 10000, 1000, 30000, true)
+	createP4Driver(t, db, dLic, "Available", "Heavy", time.Now().AddDate(2, 0, 0))
+
+	// Fast bulk insert of 10,000 completed trips
+	_, err := db.Exec(ctx, `
+		INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, completed_at, created_at, updated_at)
+		SELECT
+			'New York Central Hub',
+			'Chicago Logistics Hub',
+			$1,
+			$2,
+			1000 + (g % 500),
+			100 + (g % 100),
+			500 + (g % 200),
+			'Completed',
+			1000,
+			1150,
+			now(),
+			now(),
+			now()
+		FROM generate_series(1, 10000) AS g`, vReg, dLic)
+	if err != nil {
+		t.Fatalf("failed bulk insert of 10,000 trips: %v", err)
+	}
+
+	defer func() {
+		_, _ = db.Exec(ctx, `DELETE FROM trips WHERE vehicle_reg = $1`, vReg)
+		_, _ = db.Exec(ctx, `DELETE FROM vehicles WHERE registration_number = $1`, vReg)
+		_, _ = db.Exec(ctx, `DELETE FROM drivers WHERE license_number = $1`, dLic)
+	}()
+
+	// Measure GET /api/v1/dashboard/kpis duration
+	start := time.Now()
+	req := httptest.NewRequest("GET", "/api/v1/dashboard/kpis", nil)
+	req.AddCookie(adminCookie)
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+	elapsed := time.Since(start)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+
+	t.Logf("10k trips GET /dashboard/kpis completed in %v", elapsed)
+	if elapsed > 100*time.Millisecond {
+		t.Errorf("benchmark exceeded target: %v > 100ms", elapsed)
+	}
+}
+
+func TestCompulsory_Dashboard_RoleMatrix(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	app := setupTestApp(t, db, true)
+	ctx := context.Background()
+
+	adminCookie := createTestUserAndLogin(t, app, "admin.dash.rm@transitops.com", rbac.RoleAdmin)
+	fleetCookie := createTestUserAndLogin(t, app, "fleet.dash.rm@transitops.com", rbac.RoleFleetManager)
+	finCookie := createTestUserAndLogin(t, app, "fin.dash.rm@transitops.com", rbac.RoleFinancialAnalyst)
+	safetyCookie := createTestUserAndLogin(t, app, "safety.dash.rm@transitops.com", rbac.RoleSafetyOfficer)
+
+	// Driver user with driver license
+	driverLic := fmt.Sprintf("RM-DRV-%s", uuid.NewString()[:6])
+	createP4Driver(t, db, driverLic, "Available", "Heavy", time.Now().AddDate(1, 0, 0))
+	driverEmail := fmt.Sprintf("driver.dash.rm.%s@transitops.com", uuid.NewString()[:6])
+	driverCookie := createTestUserAndLogin(t, app, driverEmail, rbac.RoleDriver)
+	_, _ = db.Exec(ctx, `UPDATE users SET driver_license = $1 WHERE email = $2`, driverLic, driverEmail)
+
+	// GET /dashboard/kpis: Driver=403, Admin=200, Fleet=200, Fin=200, Safety=200
+	checkKpis := func(cookie *http.Cookie, expectedCode int) {
+		req := httptest.NewRequest("GET", "/api/v1/dashboard/kpis", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, req)
+		if w.Code != expectedCode {
+			t.Errorf("GET /dashboard/kpis expected %d, got %d", expectedCode, w.Code)
+		}
+	}
+
+	checkKpis(driverCookie, http.StatusForbidden)
+	checkKpis(adminCookie, http.StatusOK)
+	checkKpis(fleetCookie, http.StatusOK)
+	checkKpis(finCookie, http.StatusOK)
+	checkKpis(safetyCookie, http.StatusOK)
+
+	// GET /dashboard/me: Driver=200, Admin=403, Fleet=403, Fin=403, Safety=403
+	checkMe := func(cookie *http.Cookie, expectedCode int) {
+		req := httptest.NewRequest("GET", "/api/v1/dashboard/me", nil)
+		req.AddCookie(cookie)
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, req)
+		if w.Code != expectedCode {
+			t.Errorf("GET /dashboard/me expected %d, got %d", expectedCode, w.Code)
+		}
+	}
+
+	checkMe(driverCookie, http.StatusOK)
+	checkMe(adminCookie, http.StatusForbidden)
+	checkMe(fleetCookie, http.StatusForbidden)
+	checkMe(finCookie, http.StatusForbidden)
+	checkMe(safetyCookie, http.StatusForbidden)
+}
+
+func TestCompulsory_Dashboard_DriverPIIScrubbed(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	app := setupTestApp(t, db, true)
+	ctx := context.Background()
+
+	adminCookie := createTestUserAndLogin(t, app, "admin.pii.dash@transitops.com", rbac.RoleAdmin)
+
+	secretDriverName := "SuperSecretDriverNameXYZ"
+	secretLicense := fmt.Sprintf("LIC-PII-%s", uuid.NewString()[:6])
+	vReg := fmt.Sprintf("PII-V-%s", uuid.NewString()[:6])
+
+	createP4Vehicle(t, db, vReg, "Available", "Van", 5000, 1000, 20000, true)
+	_, _ = db.Exec(ctx, `INSERT INTO drivers (license_number, name, license_category, license_expiry_date, contact_number, safety_score, status, is_active, created_at, updated_at)
+		VALUES ($1, $2, 'Heavy', CURRENT_DATE + INTERVAL '1 year', '+1-555-8888', 95.0, 'Available', true, now(), now())`,
+		secretLicense, secretDriverName)
+
+	_, _ = db.Exec(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, completed_at, created_at, updated_at)
+		VALUES ('New York Central Hub', 'Chicago Logistics Hub', $1, $2, 1000, 200, 500, 'Completed', now(), now(), now())`,
+		vReg, secretLicense)
+
+	req := httptest.NewRequest("GET", "/api/v1/dashboard/kpis", nil)
+	req.AddCookie(adminCookie)
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+
+	bodyStr := w.Body.String()
+	if strings.Contains(bodyStr, secretDriverName) {
+		t.Fatalf("driver name leaked in /dashboard/kpis response: %s", secretDriverName)
+	}
+	if strings.Contains(bodyStr, secretLicense) {
+		t.Fatalf("driver license leaked in /dashboard/kpis response: %s", secretLicense)
+	}
+}

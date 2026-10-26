@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
 	"net"
 	"net/http"
 	"strconv"
@@ -219,7 +218,9 @@ func (a *App) routes() {
 	a.registerRoute("GET", "/api/v1/finance/summary", financeRoles, false, a.handleFinanceSummary)
 
 	// Dashboard
-	a.registerRoute("GET", "/api/v1/dashboard/kpis", rbac.AnyAuthenticated, false, a.kpis)
+	dashboardRoles := []string{rbac.RoleAdmin, rbac.RoleFleetManager, rbac.RoleFinancialAnalyst, rbac.RoleSafetyOfficer}
+	a.registerRoute("GET", "/api/v1/dashboard/kpis", dashboardRoles, false, a.handleDashboardKPIs)
+	a.registerRoute("GET", "/api/v1/dashboard/me", []string{rbac.RoleDriver}, false, a.handleDriverSelfDashboard)
 
 	// WebSocket Hub
 	a.registerRoute("GET", "/ws/fleet", rbac.AnyAuthenticated, false, a.ws)
@@ -1380,122 +1381,7 @@ func (a *App) trips(w http.ResponseWriter, r *http.Request) {
 
 
 
-func (a *App) kpis(w http.ResponseWriter, r *http.Request) {
-	vs, _ := rows[vehicle](r.Context(), a.db, "SELECT * FROM vehicles")
-	ds, _ := rows[driver](r.Context(), a.db, "SELECT * FROM drivers")
-	ts, _ := rows[trip](r.Context(), a.db, "SELECT * FROM trips")
-	ms, _ := rows[maintenance](r.Context(), a.db, "SELECT * FROM maintenance_logs")
-	active, available, shop, retired := 0, 0, 0, 0
-	for _, v := range vs {
-		switch v.Status {
-		case "On Trip":
-			active++
-		case "Available":
-			available++
-		case "In Shop":
-			shop++
-		case "Retired":
-			retired++
-		}
-	}
-	at, pt, ct, duty, ad := 0, 0, 0, 0, 0
-	for _, t := range ts {
-		if t.Status == "Dispatched" {
-			at++
-		}
-		if t.Status == "Draft" {
-			pt++
-		}
-		if t.Status == "Completed" {
-			ct++
-		}
-	}
-	for _, d := range ds {
-		if d.Status == "On Trip" {
-			duty++
-		}
-		if d.Status == "Available" {
-			ad++
-		}
-	}
-	var tf, td, tc, tr float64
-	analytics := []map[string]any{}
-	for _, v := range vs {
-		var rev, dist, fc, fl, mc float64
-		for _, t := range ts {
-			if t.VehicleReg == v.RegistrationNumber {
-				rev += t.Revenue
-				dist += t.PlannedDistance
-				es, _ := rows[expenseRow](r.Context(), a.db, "SELECT * FROM expenses WHERE trip_id=$1", t.ID)
-				for _, e := range es {
-					if e.Type == "Fuel" {
-						fc += e.Cost
-						if e.Liters != nil {
-							fl += *e.Liters
-						}
-					}
-				}
-			}
-		}
-		for _, m := range ms {
-			if m.VehicleReg == v.RegistrationNumber {
-				mc += m.Cost
-			}
-		}
-		op := fc + mc
-		var roi any = nil
-		var eff any = nil
-		if v.AcquisitionCost > 0 {
-			roi = (rev - op) / v.AcquisitionCost
-		}
-		if fl > 0 {
-			eff = dist / fl
-		}
-		tf += fl
-		td += dist
-		tc += op
-		tr += rev
-		analytics = append(analytics, map[string]any{
-			"registration_number": v.RegistrationNumber,
-			"model":               v.Model,
-			"type":                v.Type,
-			"status":              v.Status,
-			"acquisition_cost":    v.AcquisitionCost,
-			"revenue":             rev,
-			"fuel_cost":           fc,
-			"maintenance_cost":    mc,
-			"operational_cost":    op,
-			"fuel_liters":         fl,
-			"distance":            dist,
-			"fuel_efficiency":     eff,
-			"roi":                 roi,
-		})
-	}
-	var util float64
-	if len(vs)-retired > 0 {
-		util = math.Round(float64(active)/float64(len(vs)-retired)*10000) / 100
-	}
-	var oe any = nil
-	if tf > 0 {
-		oe = td / tf
-	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"active_vehicles":          active,
-		"available_vehicles":       available,
-		"in_shop_vehicles":         shop,
-		"retired_vehicles":         retired,
-		"active_trips":             at,
-		"pending_trips":            pt,
-		"completed_trips":          ct,
-		"drivers_on_duty":          duty,
-		"available_drivers":        ad,
-		"fleet_utilization":        util,
-		"overall_fuel_efficiency":  oe,
-		"total_operational_cost":   tc,
-		"total_revenue":            tr,
-		"vehicles":                 analytics,
-	})
-}
+
 
 func (a *App) ws(w http.ResponseWriter, r *http.Request) {
 	c, e := (&websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}).Upgrade(w, r, nil)
