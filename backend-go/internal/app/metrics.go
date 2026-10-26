@@ -83,8 +83,7 @@ func boundRoute(pattern string) string {
 
 	// If route starts with /api/v1/ or standard system endpoints, it's bounded
 	if strings.HasPrefix(pattern, "/api/v1/") ||
-		pattern == "/healthz" || pattern == "/readyz" || pattern == "/metrics" ||
-		pattern == "/ws/fleet" {
+		pattern == "/healthz" || pattern == "/readyz" || pattern == "/metrics" {
 		return pattern
 	}
 

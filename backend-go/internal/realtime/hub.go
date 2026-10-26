@@ -148,10 +148,9 @@ func (h *Hub) Upgrade(w http.ResponseWriter, r *http.Request, driverLicenseLooku
 		return fmt.Errorf("missing ticket")
 	}
 
-	// 2. Origin check: if Origin header is present, must be allowed
-	origin := r.Header.Get("Origin")
-	if origin != "" && !h.allowedOrigins[origin] {
-		httpx.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "Origin not allowed", nil)
+	// 2. Origin check: missing or disallowed Origin returns 403 before upgrade
+	if !h.CheckOrigin(r) {
+		httpx.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "Origin missing or not allowed", nil)
 		return fmt.Errorf("forbidden origin")
 	}
 

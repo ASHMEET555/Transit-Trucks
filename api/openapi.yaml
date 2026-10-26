@@ -773,13 +773,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/DashboardKPIs'
 
-  /ws/fleet:
-    get:
-      summary: Realtime WebSocket event stream (legacy)
-      responses:
-        '101':
-          description: Switching Protocols to WebSocket
-
   /api/v1/realtime/ticket:
     post:
       summary: Request single-use ticket for WebSocket connection

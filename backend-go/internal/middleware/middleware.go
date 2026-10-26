@@ -37,7 +37,7 @@ func WithUser(ctx context.Context, u *auth.SessionUser) context.Context {
 func RequestTimeout(timeout time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v1/ws" || r.URL.Path == "/ws/fleet" {
+			if r.URL.Path == "/api/v1/ws" {
 				next.ServeHTTP(w, r)
 				return
 			}

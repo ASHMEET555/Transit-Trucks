@@ -208,7 +208,7 @@ func (a *App) registerRoute(method, path string, roles []string, isPublic bool, 
 
 	if isPublic {
 		a.mux.HandleFunc(pattern, h)
-	} else if path == "/api/v1/ws" || path == "/ws/fleet" || path == "/metrics" || path == "/api/v1/internal/jobs/license-check" {
+	} else if path == "/api/v1/ws" || path == "/metrics" || path == "/api/v1/internal/jobs/license-check" {
 		// Endpoints with custom authorization models (tickets, Bearer tokens, or shared job secret)
 		a.mux.HandleFunc(pattern, h)
 	} else {
@@ -326,7 +326,6 @@ func (a *App) routes() {
 	// Realtime Hub (Phase 5)
 	a.registerRoute("POST", "/api/v1/realtime/ticket", rbac.AnyAuthenticated, false, a.handleIssueRealtimeTicket)
 	a.registerRoute("GET", "/api/v1/ws", rbac.AnyAuthenticated, false, a.handleWebSocketUpgrade)
-	a.registerRoute("GET", "/ws/fleet", rbac.AnyAuthenticated, false, a.handleWebSocketUpgrade)
 
 	// Metrics endpoint (Phase 5)
 	a.registerRoute("GET", "/metrics", []string{rbac.RoleAdmin}, false, a.handleMetrics)

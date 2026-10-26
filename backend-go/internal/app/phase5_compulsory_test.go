@@ -47,8 +47,17 @@ func TestCompulsory_WebSocketHandshakeTicketsAndOrigin(t *testing.T) {
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/v1/ws"
 
+	// 0. Legacy /ws/fleet -> 404 Not Found (route removed per spec)
+	legacyURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/ws/fleet"
+	_, resp, err := websocket.DefaultDialer.Dial(legacyURL, http.Header{
+		"Origin": []string{"http://localhost:3000"},
+	})
+	if err == nil || resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for removed legacy /ws/fleet, got status %v, err: %v", resp.StatusCode, err)
+	}
+
 	// 1. WS without ticket -> rejected at handshake with 401
-	_, resp, err := websocket.DefaultDialer.Dial(wsURL, http.Header{
+	_, resp, err = websocket.DefaultDialer.Dial(wsURL, http.Header{
 		"Origin": []string{"http://localhost:3000"},
 	})
 	if err == nil || resp.StatusCode != http.StatusUnauthorized {
@@ -59,7 +68,13 @@ func TestCompulsory_WebSocketHandshakeTicketsAndOrigin(t *testing.T) {
 	adminCookie := createTestUserAndLogin(t, app, "admin.ws.test@transitops.com", rbac.RoleAdmin)
 	ticket := issueTestTicket(t, app, adminCookie)
 
-	// 2. Wrong Origin -> rejected with 403 Forbidden
+	// 2a. Missing Origin -> rejected with 403 Forbidden
+	_, resp, err = websocket.DefaultDialer.Dial(wsURL+"?ticket="+ticket, nil)
+	if err == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for WS with missing Origin, got status %v, err: %v", resp.StatusCode, err)
+	}
+
+	// 2b. Wrong Origin -> rejected with 403 Forbidden
 	_, resp, err = websocket.DefaultDialer.Dial(wsURL+"?ticket="+ticket, http.Header{
 		"Origin": []string{"http://malicious-attacker.com"},
 	})
