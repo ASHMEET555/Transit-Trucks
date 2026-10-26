@@ -113,6 +113,22 @@ func (a *App) handleDashboardKPIs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var fromArg, toArg *string
+	if fromDate != "" {
+		fromArg = &fromDate
+	}
+	if toDate != "" {
+		toArg = &toDate
+	}
+
+	var typeArg, statusArg *string
+	if vType != "" {
+		typeArg = &vType
+	}
+	if vStatus != "" {
+		statusArg = &vStatus
+	}
+
 	ctx := r.Context()
 
 	// 1. Fleet & Driver Counts (Single Aggregate Query)
@@ -128,15 +144,25 @@ func (a *App) handleDashboardKPIs(w http.ResponseWriter, r *http.Request) {
 			COALESCE(COUNT(*) FILTER (WHERE status = 'Retired' OR is_active = false), 0) as retired_v,
 			COALESCE(ROUND((COUNT(*) FILTER (WHERE status = 'On Trip' AND is_active = true) * 100.0) /
 				NULLIF(COUNT(*) FILTER (WHERE status != 'Retired' AND is_active = true), 0), 2), 0.0) as util
-		FROM vehicles`
-	_ = a.db.QueryRow(ctx, countsQuery).Scan(&activeV, &availV, &inShopV, &retiredV, &fleetUtil)
+		FROM vehicles
+		WHERE ($1::TEXT IS NULL OR type = $1)
+		  AND ($2::TEXT IS NULL OR status = $2)`
+	err := a.db.QueryRow(ctx, countsQuery, typeArg, statusArg).Scan(&activeV, &availV, &inShopV, &retiredV, &fleetUtil)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve vehicle counts.", nil)
+		return
+	}
 
 	driverCountsQuery := `
 		SELECT
 			COALESCE(COUNT(*) FILTER (WHERE status = 'On Trip' AND is_active = true), 0) as duty_d,
 			COALESCE(COUNT(*) FILTER (WHERE status = 'Available' AND is_active = true), 0) as avail_d
 		FROM drivers`
-	_ = a.db.QueryRow(ctx, driverCountsQuery).Scan(&dutyD, &availD)
+	err = a.db.QueryRow(ctx, driverCountsQuery).Scan(&dutyD, &availD)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve driver counts.", nil)
+		return
+	}
 
 	// 2. Trips Aggregates in Date Range
 	var activeT, pendingT, completedT int
@@ -144,49 +170,69 @@ func (a *App) handleDashboardKPIs(w http.ResponseWriter, r *http.Request) {
 
 	tripQuery := `
 		SELECT
-			COALESCE(COUNT(*) FILTER (WHERE status = 'Dispatched'), 0) as active_t,
-			COALESCE(COUNT(*) FILTER (WHERE status IN ('Draft', 'Dispatched')), 0) as pending_t,
-			COALESCE(COUNT(*) FILTER (WHERE status = 'Completed'), 0) as completed_t,
-			COALESCE(SUM(CASE WHEN status = 'Completed' THEN revenue ELSE 0 END), 0) as total_rev,
+			COALESCE(COUNT(*) FILTER (WHERE t.status = 'Dispatched'), 0) as active_t,
+			COALESCE(COUNT(*) FILTER (WHERE t.status = 'Draft'), 0) as pending_t,
+			COALESCE(COUNT(*) FILTER (WHERE t.status = 'Completed'
+				AND ($1::DATE IS NULL OR (COALESCE(t.completed_at, t.updated_at) AT TIME ZONE 'UTC')::DATE >= $1::DATE)
+				AND ($2::DATE IS NULL OR (COALESCE(t.completed_at, t.updated_at) AT TIME ZONE 'UTC')::DATE <= $2::DATE)
+			), 0) as completed_t,
 			COALESCE(SUM(CASE
-				WHEN status = 'Completed' AND final_odometer IS NOT NULL AND start_odometer IS NOT NULL AND final_odometer >= start_odometer
-					THEN (final_odometer - start_odometer)
-				WHEN status = 'Completed'
-					THEN planned_distance
+				WHEN t.status = 'Completed'
+				AND ($1::DATE IS NULL OR (COALESCE(t.completed_at, t.updated_at) AT TIME ZONE 'UTC')::DATE >= $1::DATE)
+				AND ($2::DATE IS NULL OR (COALESCE(t.completed_at, t.updated_at) AT TIME ZONE 'UTC')::DATE <= $2::DATE)
+				THEN t.revenue ELSE 0 END), 0) as total_rev,
+			COALESCE(SUM(CASE
+				WHEN t.status = 'Completed'
+				AND ($1::DATE IS NULL OR (COALESCE(t.completed_at, t.updated_at) AT TIME ZONE 'UTC')::DATE >= $1::DATE)
+				AND ($2::DATE IS NULL OR (COALESCE(t.completed_at, t.updated_at) AT TIME ZONE 'UTC')::DATE <= $2::DATE)
+				AND t.final_odometer IS NOT NULL AND t.start_odometer IS NOT NULL AND t.final_odometer >= t.start_odometer
+				THEN (t.final_odometer - t.start_odometer)
 				ELSE 0
 			END), 0) as total_dist
-		FROM trips
-		WHERE ($1::DATE IS NULL OR (COALESCE(completed_at, updated_at) AT TIME ZONE 'UTC')::DATE >= $1::DATE)
-		  AND ($2::DATE IS NULL OR (COALESCE(completed_at, updated_at) AT TIME ZONE 'UTC')::DATE <= $2::DATE)`
+		FROM trips t
+		LEFT JOIN vehicles v ON t.vehicle_reg = v.registration_number
+		WHERE ($3::TEXT IS NULL OR v.type = $3)
+		  AND ($4::TEXT IS NULL OR v.status = $4)`
 
-	var fromArg, toArg *string
-	if fromDate != "" {
-		fromArg = &fromDate
+	err = a.db.QueryRow(ctx, tripQuery, fromArg, toArg, typeArg, statusArg).Scan(&activeT, &pendingT, &completedT, &totalRev, &totalDist)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve trip statistics.", nil)
+		return
 	}
-	if toDate != "" {
-		toArg = &toDate
-	}
-	_ = a.db.QueryRow(ctx, tripQuery, fromArg, toArg).Scan(&activeT, &pendingT, &completedT, &totalRev, &totalDist)
 
 	// 3. Operational Costs in Range: Expenses + Closed Maintenance Logs
 	var totalExpenses, totalFuelLiters float64
 	expQuery := `
 		SELECT
-			COALESCE(SUM(cost), 0),
-			COALESCE(SUM(CASE WHEN type = 'Fuel' THEN liters ELSE 0 END), 0)
-		FROM expenses
-		WHERE ($1::DATE IS NULL OR date >= $1::DATE)
-		  AND ($2::DATE IS NULL OR date <= $2::DATE)`
-	_ = a.db.QueryRow(ctx, expQuery, fromArg, toArg).Scan(&totalExpenses, &totalFuelLiters)
+			COALESCE(SUM(e.cost), 0),
+			COALESCE(SUM(CASE WHEN e.type = 'Fuel' THEN e.liters ELSE 0 END), 0)
+		FROM expenses e
+		LEFT JOIN vehicles v ON e.vehicle_reg = v.registration_number
+		WHERE ($1::DATE IS NULL OR e.date >= $1::DATE)
+		  AND ($2::DATE IS NULL OR e.date <= $2::DATE)
+		  AND ($3::TEXT IS NULL OR v.type = $3)
+		  AND ($4::TEXT IS NULL OR v.status = $4)`
+	err = a.db.QueryRow(ctx, expQuery, fromArg, toArg, typeArg, statusArg).Scan(&totalExpenses, &totalFuelLiters)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve expenses.", nil)
+		return
+	}
 
 	var totalClosedMaint float64
 	maintCostQuery := `
-		SELECT COALESCE(SUM(cost), 0)
-		FROM maintenance_logs
-		WHERE status = 'Closed'
-		  AND ($1::DATE IS NULL OR end_date >= $1::DATE)
-		  AND ($2::DATE IS NULL OR end_date <= $2::DATE)`
-	_ = a.db.QueryRow(ctx, maintCostQuery, fromArg, toArg).Scan(&totalClosedMaint)
+		SELECT COALESCE(SUM(m.cost), 0)
+		FROM maintenance_logs m
+		LEFT JOIN vehicles v ON m.vehicle_reg = v.registration_number
+		WHERE m.status = 'Closed'
+		  AND ($1::DATE IS NULL OR m.end_date >= $1::DATE)
+		  AND ($2::DATE IS NULL OR m.end_date <= $2::DATE)
+		  AND ($3::TEXT IS NULL OR v.type = $3)
+		  AND ($4::TEXT IS NULL OR v.status = $4)`
+	err = a.db.QueryRow(ctx, maintCostQuery, fromArg, toArg, typeArg, statusArg).Scan(&totalClosedMaint)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve maintenance cost.", nil)
+		return
+	}
 
 	totalOpCost := totalExpenses + totalClosedMaint
 
@@ -218,7 +264,7 @@ func (a *App) handleDashboardKPIs(w http.ResponseWriter, r *http.Request) {
 				SUM(CASE
 					WHEN final_odometer IS NOT NULL AND start_odometer IS NOT NULL AND final_odometer >= start_odometer
 						THEN (final_odometer - start_odometer)
-					ELSE planned_distance
+					ELSE 0
 				END) as dist
 			FROM trips
 			WHERE status = 'Completed'
@@ -253,14 +299,6 @@ func (a *App) handleDashboardKPIs(w http.ResponseWriter, r *http.Request) {
 		  AND ($4::TEXT IS NULL OR v.status = $4)
 		ORDER BY v.registration_number ASC`
 
-	var typeArg, statusArg *string
-	if vType != "" {
-		typeArg = &vType
-	}
-	if vStatus != "" {
-		statusArg = &vStatus
-	}
-
 	rows, err := a.db.Query(ctx, vAnalyticsQuery, fromArg, toArg, typeArg, statusArg)
 	if err != nil {
 		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to compute vehicle analytics.", nil)
@@ -285,7 +323,8 @@ func (a *App) handleDashboardKPIs(w http.ResponseWriter, r *http.Request) {
 			&item.MaintenanceCost,
 			&item.OperationalCost,
 		); err != nil {
-			continue
+			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to scan vehicle analytics row.", nil)
+			return
 		}
 		item.Distance = roundToTwoDecimals(vDist)
 		item.FuelLiters = roundToTwoDecimals(vFuelLit)
@@ -299,11 +338,15 @@ func (a *App) handleDashboardKPIs(w http.ResponseWriter, r *http.Request) {
 			item.FuelEfficiency = &eff
 		}
 		if item.AcquisitionCost > 0 {
-			roiVal := roundToTwoDecimals(((item.Revenue - item.OperationalCost) / item.AcquisitionCost) * 100.0)
+			roiVal := roundToTwoDecimals(((item.Revenue - (item.FuelCost + item.MaintenanceCost)) / item.AcquisitionCost) * 100.0)
 			item.ROI = &roiVal
 		}
 
 		vehicleList = append(vehicleList, item)
+	}
+	if err := rows.Err(); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to iterate vehicle analytics rows.", nil)
+		return
 	}
 
 	resp := DashboardKPIsResponse{

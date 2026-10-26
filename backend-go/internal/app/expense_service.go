@@ -451,108 +451,94 @@ func (a *App) handleFinanceSummary(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// 1. Identify which vehicles to report on
-	var vehicles []string
+	var fromArg, toArg, regArg *string
+	if fromDate != "" {
+		fromArg = &fromDate
+	}
+	if toDate != "" {
+		toArg = &toDate
+	}
 	if vehicleReg != "" {
 		var exists bool
 		err := a.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM vehicles WHERE registration_number = $1)`, vehicleReg).Scan(&exists)
-		if err != nil || !exists {
+		if err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to check vehicle existence.", nil)
+			return
+		}
+		if !exists {
 			httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Vehicle not found.", nil)
 			return
 		}
-		vehicles = []string{vehicleReg}
-	} else {
-		rows, err := a.db.Query(ctx, `SELECT registration_number FROM vehicles WHERE is_active = true ORDER BY registration_number ASC`)
-		if err != nil {
-			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to load vehicles", nil)
-			return
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var reg string
-			if err := rows.Scan(&reg); err == nil {
-				vehicles = append(vehicles, reg)
-			}
-		}
+		regArg = &vehicleReg
 	}
 
-	var results []VehicleFinanceSummary
-	var totalFuel, totalMaintExp, totalOtherExp, totalMaintLog, totalDist float64
-
-	for _, reg := range vehicles {
-		// Expenses query
-		expQuery := `
+	query := `
+		SELECT
+			v.registration_number,
+			COALESCE(e.fuel_cost, 0) as fuel_cost,
+			COALESCE(e.maint_cost, 0) as maint_cost,
+			COALESCE(e.other_cost, 0) as other_cost,
+			COALESCE(m.closed_maint_cost, 0) as closed_maint_cost,
+			COALESCE(t.total_dist, 0) as total_dist
+		FROM vehicles v
+		LEFT JOIN (
 			SELECT
+				vehicle_reg,
 				COALESCE(SUM(CASE WHEN type = 'Fuel' THEN cost ELSE 0 END), 0) as fuel_cost,
 				COALESCE(SUM(CASE WHEN type IN ('Maintenance', 'Maintenance-Surge') THEN cost ELSE 0 END), 0) as maint_cost,
 				COALESCE(SUM(CASE WHEN type IN ('Toll', 'Other') THEN cost ELSE 0 END), 0) as other_cost
 			FROM expenses
-			WHERE vehicle_reg = $1`
-		var expArgs []any
-		expArgs = append(expArgs, reg)
-		argIdx := 2
-		if fromDate != "" {
-			expQuery += fmt.Sprintf(" AND date >= $%d::DATE", argIdx)
-			expArgs = append(expArgs, fromDate)
-			argIdx++
-		}
-		if toDate != "" {
-			expQuery += fmt.Sprintf(" AND date <= $%d::DATE", argIdx)
-			expArgs = append(expArgs, toDate)
-			argIdx++
-		}
-
-		var fuelCost, maintExpCost, otherCost float64
-		_ = a.db.QueryRow(ctx, expQuery, expArgs...).Scan(&fuelCost, &maintExpCost, &otherCost)
-
-		// Closed maintenance logs cost query
-		maintLogQuery := `
-			SELECT COALESCE(SUM(cost), 0)
+			WHERE ($1::DATE IS NULL OR date >= $1::DATE)
+			  AND ($2::DATE IS NULL OR date <= $2::DATE)
+			GROUP BY vehicle_reg
+		) e ON e.vehicle_reg = v.registration_number
+		LEFT JOIN (
+			SELECT
+				vehicle_reg,
+				COALESCE(SUM(cost), 0) as closed_maint_cost
 			FROM maintenance_logs
-			WHERE vehicle_reg = $1 AND status = 'Closed'`
-		var maintArgs []any
-		maintArgs = append(maintArgs, reg)
-		mArgIdx := 2
-		if fromDate != "" {
-			maintLogQuery += fmt.Sprintf(" AND end_date >= $%d::DATE", mArgIdx)
-			maintArgs = append(maintArgs, fromDate)
-			mArgIdx++
-		}
-		if toDate != "" {
-			maintLogQuery += fmt.Sprintf(" AND end_date <= $%d::DATE", mArgIdx)
-			maintArgs = append(maintArgs, toDate)
-			mArgIdx++
-		}
-
-		var closedMaintCost float64
-		_ = a.db.QueryRow(ctx, maintLogQuery, maintArgs...).Scan(&closedMaintCost)
-
-		// Distance query: completed trips in range
-		distQuery := `
-			SELECT COALESCE(SUM(
-				CASE
-					WHEN final_odometer IS NOT NULL AND start_odometer IS NOT NULL AND final_odometer >= start_odometer THEN (final_odometer - start_odometer)
-					ELSE planned_distance
-				END
-			), 0)
+			WHERE status = 'Closed'
+			  AND ($1::DATE IS NULL OR end_date >= $1::DATE)
+			  AND ($2::DATE IS NULL OR end_date <= $2::DATE)
+			GROUP BY vehicle_reg
+		) m ON m.vehicle_reg = v.registration_number
+		LEFT JOIN (
+			SELECT
+				vehicle_reg,
+				COALESCE(SUM(
+					CASE
+						WHEN final_odometer IS NOT NULL AND start_odometer IS NOT NULL AND final_odometer >= start_odometer
+							THEN (final_odometer - start_odometer)
+						ELSE 0
+					END
+				), 0) as total_dist
 			FROM trips
-			WHERE vehicle_reg = $1 AND status = 'Completed'`
-		var distArgs []any
-		distArgs = append(distArgs, reg)
-		dArgIdx := 2
-		if fromDate != "" {
-			distQuery += fmt.Sprintf(" AND (COALESCE(completed_at, updated_at) AT TIME ZONE 'UTC')::date >= $%d::DATE", dArgIdx)
-			distArgs = append(distArgs, fromDate)
-			dArgIdx++
-		}
-		if toDate != "" {
-			distQuery += fmt.Sprintf(" AND (COALESCE(completed_at, updated_at) AT TIME ZONE 'UTC')::date <= $%d::DATE", dArgIdx)
-			distArgs = append(distArgs, toDate)
-			dArgIdx++
-		}
+			WHERE status = 'Completed'
+			  AND ($1::DATE IS NULL OR (COALESCE(completed_at, updated_at) AT TIME ZONE 'UTC')::DATE >= $1::DATE)
+			  AND ($2::DATE IS NULL OR (COALESCE(completed_at, updated_at) AT TIME ZONE 'UTC')::DATE <= $2::DATE)
+			GROUP BY vehicle_reg
+		) t ON t.vehicle_reg = v.registration_number
+		WHERE ($3::TEXT IS NOT NULL AND v.registration_number = $3)
+		   OR ($3::TEXT IS NULL AND v.is_active = true)
+		ORDER BY v.registration_number ASC`
 
-		var dist float64
-		_ = a.db.QueryRow(ctx, distQuery, distArgs...).Scan(&dist)
+	rows, err := a.db.Query(ctx, query, fromArg, toArg, regArg)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to compute finance summary.", nil)
+		return
+	}
+	defer rows.Close()
+
+	var results []VehicleFinanceSummary
+	var totalFuel, totalMaintExp, totalOtherExp, totalMaintLog, totalDist float64
+
+	for rows.Next() {
+		var reg string
+		var fuelCost, maintExpCost, otherCost, closedMaintCost, dist float64
+		if err := rows.Scan(&reg, &fuelCost, &maintExpCost, &otherCost, &closedMaintCost, &dist); err != nil {
+			httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to scan finance summary row.", nil)
+			return
+		}
 
 		var costPerKm *float64
 		if dist > 0 {
@@ -577,6 +563,10 @@ func (a *App) handleFinanceSummary(w http.ResponseWriter, r *http.Request) {
 		totalOtherExp += otherCost
 		totalMaintLog += closedMaintCost
 		totalDist += dist
+	}
+	if err := rows.Err(); err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to iterate finance summary rows.", nil)
+		return
 	}
 
 	var overallCostPerKm *float64

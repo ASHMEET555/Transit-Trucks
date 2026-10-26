@@ -808,10 +808,10 @@ func TestCompulsory_Dashboard_KPICorrectnessFixture(t *testing.T) {
 	_ = db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, completed_at, created_at, updated_at)
 		VALUES ('New York Central Hub', 'Chicago Logistics Hub', $1, $2, 2000, 100, 1000, 'Completed', 1000, 1150, now(), now(), now()) RETURNING id`, v2, d2).Scan(&t1ID)
 
-	// T2: Completed on V1, D1, planned 250km, odo diff null -> fallback to 250 km, rev 2000.00
+	// T2: Completed on V1, D1, odo 1000->1250 = 250 km, rev 2000.00
 	var t2ID int64
-	_ = db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, completed_at, created_at, updated_at)
-		VALUES ('Chicago Logistics Hub', 'Dallas Gateway Hub', $1, $2, 3000, 250, 2000, 'Completed', now(), now(), now()) RETURNING id`, v1, d1).Scan(&t2ID)
+	_ = db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, completed_at, created_at, updated_at)
+		VALUES ('Chicago Logistics Hub', 'Dallas Gateway Hub', $1, $2, 3000, 250, 2000, 'Completed', 1000, 1250, now(), now(), now()) RETURNING id`, v1, d1).Scan(&t2ID)
 
 	// T3: Cancelled on V1, D1, rev 5000.00 -> MUST NOT COUNT in revenue or distance
 	var t3ID int64
@@ -827,6 +827,11 @@ func TestCompulsory_Dashboard_KPICorrectnessFixture(t *testing.T) {
 	var t5ID int64
 	_ = db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, created_at, updated_at)
 		VALUES ('Miami Port Hub', 'Denver Intermodal Hub', $1, $2, 800, 80, 400, 'Draft', now(), now()) RETURNING id`, v1, d1).Scan(&t5ID)
+
+	// T6: Another Draft on V3, rev 300.00 -> Pending trip
+	var t6ID int64
+	_ = db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, cargo_weight, planned_distance, revenue, status, created_at, updated_at)
+		VALUES ('Denver Intermodal Hub', 'Chicago Logistics Hub', $1, 500, 50, 300, 'Draft', now(), now()) RETURNING id`, v3).Scan(&t6ID)
 
 	// Expenses
 	_, _ = db.Exec(ctx, `INSERT INTO expenses (trip_id, vehicle_reg, type, liters, cost, date, created_at, updated_at) VALUES ($1, $2, 'Fuel', 50.0, 100.00, CURRENT_DATE, now(), now())`, t1ID, v2)

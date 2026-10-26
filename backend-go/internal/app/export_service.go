@@ -75,7 +75,7 @@ func (a *App) handleDashboardExportCSV(w http.ResponseWriter, r *http.Request) {
 				SUM(CASE
 					WHEN final_odometer IS NOT NULL AND start_odometer IS NOT NULL AND final_odometer >= start_odometer
 						THEN (final_odometer - start_odometer)
-					ELSE planned_distance
+					ELSE 0
 				END) as dist
 			FROM trips
 			WHERE status = 'Completed'
