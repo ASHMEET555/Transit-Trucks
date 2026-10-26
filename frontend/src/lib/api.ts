@@ -43,6 +43,15 @@ export async function apiRequest<T = unknown>(
   const { method = "GET", body, form = false, auth = true, headers: customHeaders } = options
   const headers: Record<string, string> = { ...customHeaders }
 
+  // Auto-generate Idempotency-Key for mutating requests if not explicitly provided
+  if (method === "POST" || method === "PUT" || method === "PATCH") {
+    if (!headers["Idempotency-Key"]) {
+      headers["Idempotency-Key"] = typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+    }
+  }
+
   let payload: BodyInit | undefined
   if (body !== undefined) {
     if (form) {

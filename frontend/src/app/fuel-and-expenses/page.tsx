@@ -18,7 +18,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@/components/Table"
-import { ApiError, apiRequest } from "@/lib/api"
+import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
 import { canWrite } from "@/lib/rbacConfig"
 import jsPDF from "jspdf"
@@ -55,8 +55,9 @@ export default function FuelAndExpensesPage() {
   })
 
   useEffect(() => {
-    apiRequest<Trip[]>("/trips/")
-      .then((data) => {
+    apiRequest<any>("/trips/")
+      .then((res) => {
+        const data = extractItems<Trip>(res)
         setTrips(data)
         if (data.length) setTripId(String(data[0].id))
       })
@@ -68,7 +69,8 @@ export default function FuelAndExpensesPage() {
   async function loadExpenses(id: string) {
     if (!id) return
     try {
-      setExpenses(await apiRequest<Expense[]>(`/finance/expenses/${id}`))
+      const res = await apiRequest<any>(`/finance/expenses/${id}`)
+      setExpenses(extractItems<Expense>(res))
       setError(null)
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Failed to load expenses")
