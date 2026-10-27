@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -52,16 +53,33 @@ func TestTickets_LifecycleAndSingleUse(t *testing.T) {
 		t.Fatalf("expected 30s ttl and non-empty ticket, got ttl=%d, ticket=%s", ttl, rawTicket)
 	}
 
-	// 1. Consume ticket first time: succeeds
-	uID, role, err := realtime.ConsumeTicket(ctx, pool, rawTicket)
-	if err != nil {
-		t.Fatalf("failed to consume valid ticket: %v", err)
+	// 1. Concurrent consumes: exactly one of 20 concurrent attempts succeeds
+	var wg sync.WaitGroup
+	var successCount int64
+	var mu sync.Mutex
+
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			uID, role, cErr := realtime.ConsumeTicket(ctx, pool, rawTicket)
+			if cErr == nil {
+				mu.Lock()
+				successCount++
+				mu.Unlock()
+				if uID != "user-test-1" || role != rbac.RoleFleetManager {
+					t.Errorf("mismatched user/role on success: got %s / %s", uID, role)
+				}
+			}
+		}()
 	}
-	if uID != "user-test-1" || role != rbac.RoleFleetManager {
-		t.Fatalf("mismatched user/role: got %s / %s", uID, role)
+	wg.Wait()
+
+	if successCount != 1 {
+		t.Fatalf("expected exactly 1 successful consume among 20 concurrent attempts, got %d", successCount)
 	}
 
-	// 2. Consume ticket second time: fails with ErrInvalidTicket (single-use)
+	// 2. Consume ticket after consumption: fails with ErrInvalidTicket (single-use)
 	_, _, err = realtime.ConsumeTicket(ctx, pool, rawTicket)
 	if err == nil {
 		t.Fatalf("expected error consuming already used ticket, got nil")
@@ -178,5 +196,35 @@ func TestEvents_PayloadSizeCheck(t *testing.T) {
 	err = realtime.PublishTx(ctx, tx, realtime.EventTripCreated, hugeMap)
 	if err == nil {
 		t.Fatalf("expected error for payload exceeding 8KB, got nil")
+	}
+}
+
+func TestTickets_HashStorageNoPlaintext(t *testing.T) {
+	pool := getDB(t)
+	defer pool.Close()
+	ctx := context.Background()
+
+	rawTicket, _, err := realtime.IssueTicket(ctx, pool, "user-hash-test", rbac.RoleAdmin)
+	if err != nil {
+		t.Fatalf("failed to issue ticket: %v", err)
+	}
+
+	expectedHash := realtime.HashTicket(rawTicket)
+
+	// Verify the hash is stored in realtime_tickets
+	var countWithHash int
+	err = pool.QueryRow(ctx, `SELECT count(*) FROM realtime_tickets WHERE token_hash = $1`, expectedHash).Scan(&countWithHash)
+	if err != nil {
+		t.Fatalf("failed to query realtime_tickets: %v", err)
+	}
+	if countWithHash != 1 {
+		t.Fatalf("expected token_hash %s in table, count=%d", expectedHash, countWithHash)
+	}
+
+	// Verify plaintext rawTicket is nowhere in token_hash column
+	var countWithPlaintext int
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM realtime_tickets WHERE token_hash = $1`, rawTicket).Scan(&countWithPlaintext)
+	if countWithPlaintext != 0 {
+		t.Fatalf("raw ticket stored in plaintext in realtime_tickets!")
 	}
 }

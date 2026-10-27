@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -14,6 +15,7 @@ import (
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/rbac"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime"
+	"github.com/jackc/pgx/v5"
 )
 
 type createExpenseRequest struct {
@@ -135,10 +137,36 @@ func (a *App) handleCreateExpense(w http.ResponseWriter, r *http.Request) {
 	// Validate Trip / Vehicle
 	var finalVehicleReg string
 	if req.TripID != nil {
-		var tripStatus, tripVehicleReg string
-		err := tx.QueryRow(ctx, `SELECT status, vehicle_reg FROM trips WHERE id = $1 FOR UPDATE`, *req.TripID).Scan(&tripStatus, &tripVehicleReg)
+		// Look up vehicle_reg first without lock
+		var tripVehicleReg, tripDriverLic string
+		err := a.db.QueryRow(ctx, `SELECT vehicle_reg, driver_license FROM trips WHERE id = $1`, *req.TripID).Scan(&tripVehicleReg, &tripDriverLic)
 		if err != nil {
-			httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Trip record not found.", nil)
+			if errors.Is(err, pgx.ErrNoRows) {
+				httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Trip record not found.", nil)
+				return
+			}
+			status, code, msg := httpx.MapDBError(err, a.log)
+			httpx.WriteError(w, r, status, code, msg, nil)
+			return
+		}
+
+		// Global lock order: Vehicle -> Driver -> Trip
+		_, err = lockVehicleAndDriver(ctx, tx, tripVehicleReg, tripDriverLic)
+		if err != nil {
+			status, code, msg := httpx.MapDBError(err, a.log)
+			httpx.WriteError(w, r, status, code, msg, nil)
+			return
+		}
+
+		var tripStatus string
+		err = tx.QueryRow(ctx, `SELECT status FROM trips WHERE id = $1 FOR UPDATE`, *req.TripID).Scan(&tripStatus)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				httpx.WriteError(w, r, http.StatusNotFound, "NOT_FOUND", "Trip record not found.", nil)
+				return
+			}
+			status, code, msg := httpx.MapDBError(err, a.log)
+			httpx.WriteError(w, r, status, code, msg, nil)
 			return
 		}
 		if tripStatus == "Draft" || tripStatus == "Cancelled" {

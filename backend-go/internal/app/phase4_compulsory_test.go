@@ -795,10 +795,17 @@ func TestCompulsory_Dashboard_KPICorrectnessFixture(t *testing.T) {
 	d1 := fmt.Sprintf("KPI-D1-%s", uuid.NewString()[:6])
 	d2 := fmt.Sprintf("KPI-D2-%s", uuid.NewString()[:6])
 
+	// Clean existing trips, expenses, maintenance_logs, and vehicles so fixture numbers are isolated
+	_, _ = db.Exec(ctx, `DELETE FROM expenses`)
+	_, _ = db.Exec(ctx, `DELETE FROM trips`)
+	_, _ = db.Exec(ctx, `DELETE FROM maintenance_logs`)
+	_, _ = db.Exec(ctx, `DELETE FROM vehicles`)
+	_, _ = db.Exec(ctx, `DELETE FROM drivers`)
+
 	createP4Vehicle(t, db, v1, "Available", "Van", 5000, 1000, 20000, true)
 	createP4Vehicle(t, db, v2, "On Trip", "Box Truck", 8000, 2000, 40000, true)
 	createP4Vehicle(t, db, v3, "In Shop", "Flatbed", 12000, 3000, 60000, true)
-	createP4Vehicle(t, db, v4, "Retired", "Semi", 20000, 4000, 80000, true)
+	createP4Vehicle(t, db, v4, "Retired", "Semi", 20000, 4000, 80000, false)
 
 	createP4Driver(t, db, d1, "Available", "Light", time.Now().AddDate(1, 0, 0))
 	createP4Driver(t, db, d2, "On Trip", "Heavy", time.Now().AddDate(1, 0, 0))
@@ -830,13 +837,16 @@ func TestCompulsory_Dashboard_KPICorrectnessFixture(t *testing.T) {
 
 	// T6: Another Draft on V3, rev 300.00 -> Pending trip
 	var t6ID int64
-	_ = db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, cargo_weight, planned_distance, revenue, status, created_at, updated_at)
-		VALUES ('Denver Intermodal Hub', 'Chicago Logistics Hub', $1, 500, 50, 300, 'Draft', now(), now()) RETURNING id`, v3).Scan(&t6ID)
+	_ = db.QueryRow(ctx, `INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, created_at, updated_at)
+		VALUES ('Denver Intermodal Hub', 'Chicago Logistics Hub', $1, $2, 500, 50, 300, 'Draft', now(), now()) RETURNING id`, v3, d1).Scan(&t6ID)
 
-	// Expenses
-	_, _ = db.Exec(ctx, `INSERT INTO expenses (trip_id, vehicle_reg, type, liters, cost, date, created_at, updated_at) VALUES ($1, $2, 'Fuel', 50.0, 100.00, CURRENT_DATE, now(), now())`, t1ID, v2)
-	_, _ = db.Exec(ctx, `INSERT INTO expenses (trip_id, vehicle_reg, type, liters, cost, date, created_at, updated_at) VALUES ($1, $2, 'Fuel', 50.0, 150.00, CURRENT_DATE, now(), now())`, t2ID, v1)
+	// Expenses: zero fuel expenses logged -> overall_fuel_efficiency MUST BE NULL
+	// V1: 50.00 Toll + 150.00 other = 200.00 op cost
 	_, _ = db.Exec(ctx, `INSERT INTO expenses (vehicle_reg, type, cost, date, created_at, updated_at) VALUES ($1, 'Toll', 50.00, CURRENT_DATE, now(), now())`, v1)
+	_, _ = db.Exec(ctx, `INSERT INTO expenses (vehicle_reg, type, cost, date, created_at, updated_at) VALUES ($1, 'Other', 150.00, CURRENT_DATE, now(), now())`, v1)
+	// V2: 100.00 Toll = 100.00 op cost
+	_, _ = db.Exec(ctx, `INSERT INTO expenses (vehicle_reg, type, cost, date, created_at, updated_at) VALUES ($1, 'Toll', 100.00, CURRENT_DATE, now(), now())`, v2)
+	// V3: 300.00 Maintenance
 	_, _ = db.Exec(ctx, `INSERT INTO expenses (vehicle_reg, type, cost, date, created_at, updated_at) VALUES ($1, 'Maintenance', 300.00, CURRENT_DATE, now(), now())`, v3)
 
 	// Maintenance logs
@@ -858,25 +868,33 @@ func TestCompulsory_Dashboard_KPICorrectnessFixture(t *testing.T) {
 	}
 
 	// 1. Assert fleet counts
-	if res.ActiveVehicles < 1 {
-		t.Errorf("expected at least 1 active vehicle, got %d", res.ActiveVehicles)
+	if res.ActiveVehicles != 1 {
+		t.Errorf("expected 1 active vehicle, got %d", res.ActiveVehicles)
 	}
-	if res.InShopVehicles < 1 {
-		t.Errorf("expected at least 1 in-shop vehicle, got %d", res.InShopVehicles)
+	if res.AvailableVehicles != 1 {
+		t.Errorf("expected 1 available vehicle, got %d", res.AvailableVehicles)
 	}
-	if res.RetiredVehicles < 1 {
-		t.Errorf("expected at least 1 retired vehicle, got %d", res.RetiredVehicles)
+	if res.InShopVehicles != 1 {
+		t.Errorf("expected 1 in-shop vehicle, got %d", res.InShopVehicles)
+	}
+	if res.RetiredVehicles != 1 {
+		t.Errorf("expected 1 retired vehicle, got %d", res.RetiredVehicles)
 	}
 
 	// 2. Assert trips
-	if res.ActiveTrips < 1 {
-		t.Errorf("expected at least 1 active trip, got %d", res.ActiveTrips)
+	if res.ActiveTrips != 1 {
+		t.Errorf("expected 1 active trip, got %d", res.ActiveTrips)
 	}
-	if res.PendingTrips < 2 {
-		t.Errorf("expected at least 2 pending trips, got %d", res.PendingTrips)
+	if res.PendingTrips != 2 {
+		t.Errorf("expected 2 pending trips, got %d", res.PendingTrips)
 	}
-	if res.CompletedTrips < 2 {
-		t.Errorf("expected at least 2 completed trips, got %d", res.CompletedTrips)
+	if res.CompletedTrips != 2 {
+		t.Errorf("expected 2 completed trips, got %d", res.CompletedTrips)
+	}
+
+	// 2b. Assert fuel efficiency null when liters is 0
+	if res.OverallFuelEfficiency != nil {
+		t.Errorf("expected overall_fuel_efficiency == nil when fuel liters == 0, got %v", *res.OverallFuelEfficiency)
 	}
 
 	// 3. Find our specific vehicles in the array

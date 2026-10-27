@@ -93,14 +93,24 @@ func TestCompulsory_BoundedRouteLabelsInMetrics(t *testing.T) {
 	}
 	app := New(db, cfg)
 
-	// Hit a parameterized route with sensitive path parameter
+	// 1. Send 50 distinct trip IDs through the real router with varied remote addresses to avoid test rate limiting
+	for i := 1; i <= 50; i++ {
+		tripPath := fmt.Sprintf("/api/v1/trips/%d", 1000+i)
+		req := httptest.NewRequest("GET", tripPath, nil)
+		req.RemoteAddr = fmt.Sprintf("10.0.%d.%d:1234", i/250, i%250+1)
+		app.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	// 2. Hit driver parameterized route with sensitive path parameter
 	reqDriver := httptest.NewRequest("GET", "/api/v1/drivers/DL-LEAK-TEST-999", nil)
+	reqDriver.RemoteAddr = "10.1.0.1:1234"
 	app.ServeHTTP(httptest.NewRecorder(), reqDriver)
 
-	// Hit 50 random unmatched routes with high cardinality random paths
-	for i := 0; i < 50; i++ {
-		randomPath := fmt.Sprintf("/random-non-existent-path-%d", i)
-		req := httptest.NewRequest("GET", randomPath, nil)
+	// 3. Hit 1000 unknown paths through the real router
+	for i := 0; i < 1000; i++ {
+		unknownPath := fmt.Sprintf("/unknown/random/path/%d", i)
+		req := httptest.NewRequest("GET", unknownPath, nil)
+		req.RemoteAddr = fmt.Sprintf("10.2.%d.%d:1234", i/250, i%250+1)
 		app.ServeHTTP(httptest.NewRecorder(), req)
 	}
 
@@ -113,14 +123,25 @@ func TestCompulsory_BoundedRouteLabelsInMetrics(t *testing.T) {
 	body := w.Body.String()
 
 	// High cardinality random paths and dynamic IDs must NOT appear as route label values
-	if strings.Contains(body, "random-non-existent-path") {
-		t.Fatalf("high-cardinality path leaked into route labels! Body: %s", body)
+	if strings.Contains(body, "/unknown/random/path") {
+		t.Fatalf("high-cardinality unknown path leaked into route labels! Body: %s", body)
 	}
 	if strings.Contains(body, "DL-LEAK-TEST-999") {
-		t.Fatalf("sensitive path parameter leaked into route labels! Body: %s", body)
+		t.Fatalf("sensitive driver license leaked into route labels! Body: %s", body)
+	}
+	for i := 1; i <= 50; i++ {
+		tripStr := fmt.Sprintf("/api/v1/trips/%d", 1000+i)
+		if strings.Contains(body, tripStr) {
+			t.Fatalf("trip ID %d leaked into route labels! Body: %s", 1000+i, body)
+		}
 	}
 
-	// Dynamic path must be parameterized
+	// Dynamic trip path must be parameterized to /api/v1/trips/{id}
+	if !strings.Contains(body, `route="/api/v1/trips/{id}"`) {
+		t.Fatalf("expected parameterized route pattern /api/v1/trips/{id}, got: %s", body)
+	}
+
+	// Dynamic driver path must be parameterized
 	if !strings.Contains(body, `route="/api/v1/drivers/{license}"`) {
 		t.Fatalf("expected parameterized route pattern /api/v1/drivers/{license}, got: %s", body)
 	}

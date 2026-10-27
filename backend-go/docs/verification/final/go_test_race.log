@@ -1,0 +1,1 @@
+NOT RUN: Docker daemon unavailable on Windows host; -race requires Linux container with CGO

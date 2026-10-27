@@ -1,0 +1,24 @@
+{
+  "active_vehicles": 1,
+  "available_vehicles": 1,
+  "in_shop_vehicles": 1,
+  "retired_vehicles": 1,
+  "active_trips": 1,
+  "pending_trips": 2,
+  "completed_trips": 2,
+  "overall_fuel_efficiency": null,
+  "vehicles": [
+    {
+      "registration_number": "FIX-V1",
+      "revenue": 2000.0,
+      "distance": 250.0,
+      "operational_cost": 200.0
+    },
+    {
+      "registration_number": "FIX-V2",
+      "revenue": 1000.0,
+      "distance": 150.0,
+      "operational_cost": 100.0
+    }
+  ]
+}

@@ -64,7 +64,7 @@ func TestCompulsory_Phase5_SLOAndLatencyVerification(t *testing.T) {
 	server := httptest.NewServer(application)
 	defer server.Close()
 
-	// Seed test admin
+	// Seed test admin, vehicle, and driver
 	adminEmail := "phase5-slo-admin@transitops.com"
 	pwHash, _ := auth.HashPassword("AdminPass123!")
 	_, err := db.Exec(ctx, `INSERT INTO users (id, email, password_hash, role, is_active, created_at, updated_at)
@@ -73,6 +73,13 @@ func TestCompulsory_Phase5_SLOAndLatencyVerification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
+
+	_, _ = db.Exec(ctx, `INSERT INTO vehicles (registration_number, model, type, max_load_capacity, odometer, acquisition_cost, status, is_active, created_at, updated_at)
+		VALUES ('VH-1001', 'Model-X', 'Van', 5000, 1000, 20000, 'Available', true, now(), now())
+		ON CONFLICT (registration_number) DO UPDATE SET status = 'Available', is_active = true`)
+	_, _ = db.Exec(ctx, `INSERT INTO drivers (license_number, name, license_category, license_expiry_date, contact_number, safety_score, status, is_active, created_at, updated_at)
+		VALUES ('DL-1001', 'SLO Driver', 'Light', '2029-01-01', '+1-555-0199', 95.0, 'Available', true, now(), now())
+		ON CONFLICT (license_number) DO UPDATE SET status = 'Available', is_active = true`)
 
 	token, _, err := auth.CreateSession(ctx, db, adminEmail, "127.0.0.1", "slo-agent")
 	if err != nil {

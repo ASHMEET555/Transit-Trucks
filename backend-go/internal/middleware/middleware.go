@@ -409,8 +409,8 @@ func RateLimit(limit int, window time.Duration, trustedCIDRs ...[]*net.IPNet) fu
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip coarse rate limiting on health check endpoints
-			if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
+			// Skip coarse rate limiting on health check and metrics endpoints
+			if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" || r.URL.Path == "/metrics" {
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -18,6 +18,7 @@ import (
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/rbac"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // 1. Duplicate registration -> 409 with code VEHICLE_EXISTS / DRIVER_EXISTS / DESTINATION_EXISTS
@@ -673,6 +674,23 @@ func TestCompulsory_MigrationUpDownUp(t *testing.T) {
 	// 4. Seed database
 	if err := runSeed(); err != nil {
 		t.Fatalf("seeding failed: %v", err)
+	}
+
+	// 4b. Insert cost-0 fuel expense and two fuel expenses on one trip across up, down, up
+	pool, err := pgxpool.New(context.Background(), dsn)
+	if err == nil {
+		defer pool.Close()
+		ctx := context.Background()
+		var tripID int64
+		_ = pool.QueryRow(ctx, `SELECT id FROM trips WHERE status = 'Completed' LIMIT 1`).Scan(&tripID)
+		if tripID > 0 {
+			// Cost-0 fuel expense
+			_, _ = pool.Exec(ctx, `INSERT INTO expenses (trip_id, type, cost, liters, date, created_at, updated_at)
+				VALUES ($1, 'Fuel', 0.0, 15.0, CURRENT_DATE, now(), now())`, tripID)
+			// Second fuel expense on same trip
+			_, _ = pool.Exec(ctx, `INSERT INTO expenses (trip_id, type, cost, liters, date, created_at, updated_at)
+				VALUES ($1, 'Fuel', 45.0, 20.0, CURRENT_DATE, now(), now())`, tripID)
+		}
 	}
 
 	// 5. Down on seeded database

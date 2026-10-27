@@ -1,0 +1,624 @@
+docker run --rm --net host -v "E:/Hackathons/odoo/Transit-Trucks:/src" -w /src/backend-go golang:1.24-alpine sh -c "apk add --no-cache gcc musl-dev && GOTOOLCHAIN=auto go install golang.org/x/vuln/cmd/govulncheck@latest && GOTOOLCHAIN=auto govulncheck ./..."
+( 1/14) Upgrading musl (1.2.5-r21 -> 1.2.5-r24)
+( 2/14) Installing libgcc (15.2.0-r2)
+( 3/14) Installing jansson (2.14.1-r0)
+( 4/14) Installing libstdc++ (15.2.0-r2)
+( 5/14) Installing zstd-libs (1.5.7-r2)
+( 6/14) Installing binutils (2.45.1-r0)
+( 7/14) Installing libgomp (15.2.0-r2)
+( 8/14) Installing libatomic (15.2.0-r2)
+( 9/14) Installing gmp (6.3.0-r4)
+(10/14) Installing isl26 (0.26-r1)
+(11/14) Installing mpfr4 (4.2.2-r0)
+(12/14) Installing mpc1 (1.3.1-r1)
+(13/14) Installing gcc (15.2.0-r2)
+(14/14) Installing musl-dev (1.2.5-r24)
+Executing busybox-1.37.0-r30.trigger
+OK: 198.1 MiB in 30 packages
+go: downloading golang.org/x/vuln v1.9.0
+go: golang.org/x/vuln@v1.9.0 requires go >= 1.26.0; switching to go1.26.10
+go: downloading go1.26.10 (linux/amd64)
+go: downloading golang.org/x/telemetry v0.0.0-20261010193011-f71dc92da45e
+go: downloading golang.org/x/tools v0.52.0
+go: downloading golang.org/x/mod v0.42.0
+go: downloading golang.org/x/sync v0.24.0
+=== Symbol Results ===
+
+Vulnerability #1: GO-2026-6809
+    Distrust compromised intermediate certificates in crypto/x509
+  More info: https://pkg.go.dev/vuln/GO-2026-6809
+  Standard library
+    Found in: crypto/x509@go1.25.11
+    Fixed in: crypto/x509@go1.26.10
+    Example traces found:
+      #1: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe, which eventually calls x509.Certificate.Verify
+
+Vulnerability #2: GO-2026-6629
+    Panic parsing crafted input in x/text/secure/precis in golang.org/x/text
+  More info: https://pkg.go.dev/vuln/GO-2026-6629
+  Module: golang.org/x/text
+    Found in: golang.org/x/text@v0.38.0
+    Fixed in: golang.org/x/text@v0.41.0
+    Example traces found:
+      #1: internal/realtime/hub.go:389:27: realtime.Hub.listenLoop calls pgx.Connect, which eventually calls precis.Profile.String
+
+Vulnerability #3: GO-2026-6617
+    HTTP/2 server crash due to HPACK encoder race in net/http
+  More info: https://pkg.go.dev/vuln/GO-2026-6617
+  Standard library
+    Found in: net/http@go1.25.11
+    Fixed in: net/http@go1.26.9
+    Example traces found:
+      #1: cmd/server/main.go:28:37: server.main calls pgxpool.ParseConfig, which eventually calls http.CanonicalHeaderKey
+      #2: cmd/server/main.go:28:37: server.main calls pgxpool.ParseConfig, which eventually calls http.CanonicalHeaderKey
+      #3: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.Error
+      #4: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.Error
+      #5: internal/app/app.go:115:21: app.App.ServeHTTP calls http.HandlerFunc.ServeHTTP
+      #6: internal/app/app.go:115:21: app.App.ServeHTTP calls http.HandlerFunc.ServeHTTP
+      #7: internal/middleware/middleware.go:383:25: middleware.GetClientIP calls http.Header.Get
+      #8: internal/middleware/middleware.go:383:25: middleware.GetClientIP calls http.Header.Get
+      #9: internal/platform/httpx/httpx.go:86:16: httpx.WriteJSON calls http.Header.Set
+      #10: internal/platform/httpx/httpx.go:86:16: httpx.WriteJSON calls http.Header.Set
+      #11: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe
+      #12: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe
+      #13: cmd/loadtest/main.go:96:29: loadtest.main calls httptest.NewRequest, which eventually calls http.ReadRequest
+      #14: cmd/loadtest/main.go:96:29: loadtest.main calls httptest.NewRequest, which eventually calls http.ReadRequest
+      #15: cmd/loadtest/main.go:97:16: loadtest.main calls http.Request.AddCookie
+      #16: cmd/loadtest/main.go:97:16: loadtest.main calls http.Request.AddCookie
+      #17: internal/auth/session.go:211:23: auth.GetSessionToken calls http.Request.Cookie
+      #18: internal/auth/session.go:211:23: auth.GetSessionToken calls http.Request.Cookie
+      #19: internal/app/app.go:241:15: app.App.registerRoute calls http.ServeMux.Handle
+      #20: internal/app/app.go:241:15: app.App.registerRoute calls http.ServeMux.Handle
+      #21: internal/app/app.go:247:18: app.App.routes calls http.ServeMux.HandleFunc
+      #22: internal/app/app.go:247:18: app.App.routes calls http.ServeMux.HandleFunc
+      #23: cmd/server/main.go:85:31: server.main calls http.Server.ListenAndServe
+      #24: cmd/server/main.go:85:31: server.main calls http.Server.ListenAndServe
+      #25: cmd/server/main.go:99:24: server.main calls http.Server.Shutdown
+      #26: cmd/server/main.go:99:24: server.main calls http.Server.Shutdown
+      #27: internal/auth/session.go:197:16: auth.ClearSessionCookie calls http.SetCookie
+      #28: internal/auth/session.go:197:16: auth.ClearSessionCookie calls http.SetCookie
+      #29: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.body.Read
+      #30: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.body.Read
+      #31: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.bodyEOFSignal.Read
+      #32: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.bodyEOFSignal.Read
+      #33: internal/realtime/hub.go:245:34: realtime.Client.readPump calls websocket.Conn.ReadMessage, which eventually calls http.bodyLocked.Read
+      #34: internal/realtime/hub.go:245:34: realtime.Client.readPump calls websocket.Conn.ReadMessage, which eventually calls http.bodyLocked.Read
+      #35: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.checkConnErrorWriter.Write
+      #36: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.checkConnErrorWriter.Write
+      #37: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.chunkWriter.Write
+      #38: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.chunkWriter.Write
+      #39: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.connReader.Read
+      #40: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.connReader.Read
+      #41: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.expectContinueReader.Read
+      #42: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.expectContinueReader.Read
+      #43: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2ConnectionError.Error
+      #44: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2ConnectionError.Error
+      #45: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2ErrCode.String
+      #46: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2ErrCode.String
+      #47: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameHeader.String
+      #48: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameHeader.String
+      #49: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameType.String
+      #50: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameType.String
+      #51: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameWriteRequest.String
+      #52: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameWriteRequest.String
+      #53: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2Setting.String
+      #54: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2Setting.String
+      #55: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2SettingID.String
+      #56: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2SettingID.String
+      #57: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2StreamError.Error
+      #58: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2StreamError.Error
+      #59: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2bufferedWriterTimeoutWriter.Write
+      #60: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2bufferedWriterTimeoutWriter.Write
+      #61: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2chunkWriter.Write
+      #62: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2chunkWriter.Write
+      #63: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2connError.Error
+      #64: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2connError.Error
+      #65: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2duplicatePseudoHeaderError.Error
+      #66: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2duplicatePseudoHeaderError.Error
+      #67: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldNameError.Error
+      #68: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldNameError.Error
+      #69: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldValueError.Error
+      #70: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldValueError.Error
+      #71: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2pseudoHeaderError.Error
+      #72: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2pseudoHeaderError.Error
+      #73: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.http2requestBody.Read
+      #74: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.http2requestBody.Read
+      #75: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.http2responseWriter.Flush
+      #76: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.http2responseWriter.Flush
+      #77: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.http2responseWriter.Write
+      #78: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.http2responseWriter.Write
+      #79: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.http2responseWriter.WriteHeader
+      #80: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.http2responseWriter.WriteHeader
+      #81: cmd/migrate/main.go:54:19: migrate.main calls migrate.Migrate.Down, which eventually calls http.http2responseWriter.WriteString
+      #82: cmd/migrate/main.go:54:19: migrate.main calls migrate.Migrate.Down, which eventually calls http.http2responseWriter.WriteString
+      #83: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2writeData.String
+      #84: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2writeData.String
+      #85: internal/realtime/hub.go:189:18: realtime.Hub.Upgrade calls websocket.Conn.Close, which calls http.loggingConn.Close
+      #86: internal/realtime/hub.go:189:18: realtime.Hub.Upgrade calls websocket.Conn.Close, which calls http.loggingConn.Close
+      #87: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.loggingConn.Read
+      #88: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.loggingConn.Read
+      #89: internal/realtime/hub.go:188:25: realtime.Hub.Upgrade calls websocket.Conn.WriteControl, which calls http.loggingConn.Write
+      #90: internal/realtime/hub.go:188:25: realtime.Hub.Upgrade calls websocket.Conn.WriteControl, which calls http.loggingConn.Write
+      #91: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.maxBytesReader.Read
+      #92: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.maxBytesReader.Read
+      #93: cmd/loadtest/main.go:65:2: loadtest.main calls pgxpool.Pool.Close, which eventually calls http.onceCloseListener.Close
+      #94: cmd/loadtest/main.go:65:2: loadtest.main calls pgxpool.Pool.Close, which eventually calls http.onceCloseListener.Close
+      #95: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.response.Flush
+      #96: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.response.Flush
+      #97: internal/middleware/middleware.go:245:19: middleware.responseRecorder.Hijack calls http.response.Hijack
+      #98: internal/middleware/middleware.go:245:19: middleware.responseRecorder.Hijack calls http.response.Hijack
+      #99: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.response.Write
+      #100: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.response.Write
+      #101: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.response.WriteHeader
+      #102: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.response.WriteHeader
+      #103: internal/users/users.go:307:35: users.Handler.ResetPassword calls pgx.connRow.Scan, which eventually calls http.response.WriteString
+      #104: internal/users/users.go:307:35: users.Handler.ResetPassword calls pgx.connRow.Scan, which eventually calls http.response.WriteString
+
+Vulnerability #4: GO-2026-6613
+    HTTP/1 server connection desynchronization after 2xx CONNECT response in
+    net/http
+  More info: https://pkg.go.dev/vuln/GO-2026-6613
+  Standard library
+    Found in: net/http@go1.25.11
+    Fixed in: net/http@go1.26.9
+    Example traces found:
+      #1: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.http2responseWriter.Flush, which eventually calls http.CanonicalHeaderKey
+      #2: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.Error
+      #3: internal/app/app.go:115:21: app.App.ServeHTTP calls http.HandlerFunc.ServeHTTP
+      #4: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.http2responseWriter.WriteHeader, which eventually calls http.Header.Del
+      #5: internal/middleware/middleware.go:383:25: middleware.GetClientIP calls http.Header.Get
+      #6: internal/platform/httpx/httpx.go:86:16: httpx.WriteJSON calls http.Header.Set
+      #7: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe
+      #8: cmd/loadtest/main.go:96:29: loadtest.main calls httptest.NewRequest, which eventually calls http.ReadRequest
+      #9: cmd/loadtest/main.go:97:16: loadtest.main calls http.Request.AddCookie
+      #10: internal/auth/session.go:211:23: auth.GetSessionToken calls http.Request.Cookie
+      #11: internal/app/app.go:241:15: app.App.registerRoute calls http.ServeMux.Handle
+      #12: internal/app/app.go:247:18: app.App.routes calls http.ServeMux.HandleFunc
+      #13: cmd/server/main.go:85:31: server.main calls http.Server.ListenAndServe
+      #14: cmd/server/main.go:99:24: server.main calls http.Server.Shutdown
+      #15: internal/auth/session.go:197:16: auth.ClearSessionCookie calls http.SetCookie
+      #16: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.body.Read
+      #17: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.bodyEOFSignal.Read
+      #18: internal/realtime/hub.go:245:34: realtime.Client.readPump calls websocket.Conn.ReadMessage, which eventually calls http.bodyLocked.Read
+      #19: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.checkConnErrorWriter.Write
+      #20: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.chunkWriter.Write
+      #21: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.connReader.Read
+      #22: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.expectContinueReader.Read
+      #23: internal/realtime/hub.go:189:18: realtime.Hub.Upgrade calls websocket.Conn.Close, which calls http.loggingConn.Close
+      #24: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.loggingConn.Read
+      #25: internal/realtime/hub.go:188:25: realtime.Hub.Upgrade calls websocket.Conn.WriteControl, which calls http.loggingConn.Write
+      #26: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.maxBytesReader.Read
+      #27: cmd/loadtest/main.go:65:2: loadtest.main calls pgxpool.Pool.Close, which eventually calls http.onceCloseListener.Close
+      #28: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.response.Flush
+      #29: internal/middleware/middleware.go:245:19: middleware.responseRecorder.Hijack calls http.response.Hijack
+      #30: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.response.Write
+      #31: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.response.WriteHeader
+      #32: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.response.WriteString
+
+Vulnerability #5: GO-2026-6612
+    Double flow control refund on HTTP/2 server streams in net/http
+  More info: https://pkg.go.dev/vuln/GO-2026-6612
+  Standard library
+    Found in: net/http@go1.25.11
+    Fixed in: net/http@go1.26.9
+    Example traces found:
+      #1: cmd/server/main.go:28:37: server.main calls pgxpool.ParseConfig, which eventually calls http.CanonicalHeaderKey
+      #2: cmd/server/main.go:28:37: server.main calls pgxpool.ParseConfig, which eventually calls http.CanonicalHeaderKey
+      #3: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.Error
+      #4: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.Error
+      #5: internal/app/app.go:115:21: app.App.ServeHTTP calls http.HandlerFunc.ServeHTTP
+      #6: internal/app/app.go:115:21: app.App.ServeHTTP calls http.HandlerFunc.ServeHTTP
+      #7: internal/middleware/middleware.go:383:25: middleware.GetClientIP calls http.Header.Get
+      #8: internal/middleware/middleware.go:383:25: middleware.GetClientIP calls http.Header.Get
+      #9: internal/platform/httpx/httpx.go:86:16: httpx.WriteJSON calls http.Header.Set
+      #10: internal/platform/httpx/httpx.go:86:16: httpx.WriteJSON calls http.Header.Set
+      #11: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe
+      #12: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe
+      #13: cmd/loadtest/main.go:96:29: loadtest.main calls httptest.NewRequest, which eventually calls http.ReadRequest
+      #14: cmd/loadtest/main.go:96:29: loadtest.main calls httptest.NewRequest, which eventually calls http.ReadRequest
+      #15: cmd/loadtest/main.go:97:16: loadtest.main calls http.Request.AddCookie
+      #16: cmd/loadtest/main.go:97:16: loadtest.main calls http.Request.AddCookie
+      #17: internal/auth/session.go:211:23: auth.GetSessionToken calls http.Request.Cookie
+      #18: internal/auth/session.go:211:23: auth.GetSessionToken calls http.Request.Cookie
+      #19: internal/app/app.go:241:15: app.App.registerRoute calls http.ServeMux.Handle
+      #20: internal/app/app.go:241:15: app.App.registerRoute calls http.ServeMux.Handle
+      #21: internal/app/app.go:247:18: app.App.routes calls http.ServeMux.HandleFunc
+      #22: internal/app/app.go:247:18: app.App.routes calls http.ServeMux.HandleFunc
+      #23: cmd/server/main.go:85:31: server.main calls http.Server.ListenAndServe
+      #24: cmd/server/main.go:85:31: server.main calls http.Server.ListenAndServe
+      #25: cmd/server/main.go:99:24: server.main calls http.Server.Shutdown
+      #26: cmd/server/main.go:99:24: server.main calls http.Server.Shutdown
+      #27: internal/auth/session.go:197:16: auth.ClearSessionCookie calls http.SetCookie
+      #28: internal/auth/session.go:197:16: auth.ClearSessionCookie calls http.SetCookie
+      #29: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.body.Read
+      #30: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.body.Read
+      #31: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.bodyEOFSignal.Read
+      #32: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.bodyEOFSignal.Read
+      #33: internal/realtime/hub.go:245:34: realtime.Client.readPump calls websocket.Conn.ReadMessage, which eventually calls http.bodyLocked.Read
+      #34: internal/realtime/hub.go:245:34: realtime.Client.readPump calls websocket.Conn.ReadMessage, which eventually calls http.bodyLocked.Read
+      #35: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.checkConnErrorWriter.Write
+      #36: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.checkConnErrorWriter.Write
+      #37: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.chunkWriter.Write
+      #38: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.chunkWriter.Write
+      #39: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.connReader.Read
+      #40: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.connReader.Read
+      #41: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.expectContinueReader.Read
+      #42: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.expectContinueReader.Read
+      #43: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2ConnectionError.Error
+      #44: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2ConnectionError.Error
+      #45: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2ErrCode.String
+      #46: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2ErrCode.String
+      #47: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameHeader.String
+      #48: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameHeader.String
+      #49: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameType.String
+      #50: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameType.String
+      #51: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameWriteRequest.String
+      #52: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameWriteRequest.String
+      #53: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2Setting.String
+      #54: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2Setting.String
+      #55: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2SettingID.String
+      #56: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2SettingID.String
+      #57: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2StreamError.Error
+      #58: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2StreamError.Error
+      #59: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2bufferedWriterTimeoutWriter.Write
+      #60: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2bufferedWriterTimeoutWriter.Write
+      #61: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2chunkWriter.Write
+      #62: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2chunkWriter.Write
+      #63: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2connError.Error
+      #64: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2connError.Error
+      #65: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2duplicatePseudoHeaderError.Error
+      #66: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2duplicatePseudoHeaderError.Error
+      #67: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldNameError.Error
+      #68: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldNameError.Error
+      #69: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldValueError.Error
+      #70: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldValueError.Error
+      #71: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2pseudoHeaderError.Error
+      #72: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2pseudoHeaderError.Error
+      #73: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.http2requestBody.Read
+      #74: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.http2requestBody.Read
+      #75: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.http2responseWriter.Flush
+      #76: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.http2responseWriter.Flush
+      #77: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.http2responseWriter.Write
+      #78: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.http2responseWriter.Write
+      #79: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.http2responseWriter.WriteHeader
+      #80: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.http2responseWriter.WriteHeader
+      #81: cmd/migrate/main.go:54:19: migrate.main calls migrate.Migrate.Down, which eventually calls http.http2responseWriter.WriteString
+      #82: cmd/migrate/main.go:54:19: migrate.main calls migrate.Migrate.Down, which eventually calls http.http2responseWriter.WriteString
+      #83: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2writeData.String
+      #84: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2writeData.String
+      #85: internal/realtime/hub.go:189:18: realtime.Hub.Upgrade calls websocket.Conn.Close, which calls http.loggingConn.Close
+      #86: internal/realtime/hub.go:189:18: realtime.Hub.Upgrade calls websocket.Conn.Close, which calls http.loggingConn.Close
+      #87: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.loggingConn.Read
+      #88: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.loggingConn.Read
+      #89: internal/realtime/hub.go:188:25: realtime.Hub.Upgrade calls websocket.Conn.WriteControl, which calls http.loggingConn.Write
+      #90: internal/realtime/hub.go:188:25: realtime.Hub.Upgrade calls websocket.Conn.WriteControl, which calls http.loggingConn.Write
+      #91: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.maxBytesReader.Read
+      #92: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.maxBytesReader.Read
+      #93: cmd/loadtest/main.go:65:2: loadtest.main calls pgxpool.Pool.Close, which eventually calls http.onceCloseListener.Close
+      #94: cmd/loadtest/main.go:65:2: loadtest.main calls pgxpool.Pool.Close, which eventually calls http.onceCloseListener.Close
+      #95: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.response.Flush
+      #96: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.response.Flush
+      #97: internal/middleware/middleware.go:245:19: middleware.responseRecorder.Hijack calls http.response.Hijack
+      #98: internal/middleware/middleware.go:245:19: middleware.responseRecorder.Hijack calls http.response.Hijack
+      #99: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.response.Write
+      #100: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.response.Write
+      #101: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.response.WriteHeader
+      #102: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.response.WriteHeader
+      #103: internal/users/users.go:307:35: users.Handler.ResetPassword calls pgx.connRow.Scan, which eventually calls http.response.WriteString
+      #104: internal/users/users.go:307:35: users.Handler.ResetPassword calls pgx.connRow.Scan, which eventually calls http.response.WriteString
+
+Vulnerability #6: GO-2026-6611
+    Excessive CPU consumption from repeated initial window changes in net/http
+  More info: https://pkg.go.dev/vuln/GO-2026-6611
+  Standard library
+    Found in: net/http@go1.25.11
+    Fixed in: net/http@go1.26.9
+    Example traces found:
+      #1: cmd/server/main.go:28:37: server.main calls pgxpool.ParseConfig, which eventually calls http.CanonicalHeaderKey
+      #2: cmd/server/main.go:28:37: server.main calls pgxpool.ParseConfig, which eventually calls http.CanonicalHeaderKey
+      #3: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.Error
+      #4: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.Error
+      #5: internal/app/app.go:115:21: app.App.ServeHTTP calls http.HandlerFunc.ServeHTTP
+      #6: internal/app/app.go:115:21: app.App.ServeHTTP calls http.HandlerFunc.ServeHTTP
+      #7: internal/middleware/middleware.go:383:25: middleware.GetClientIP calls http.Header.Get
+      #8: internal/middleware/middleware.go:383:25: middleware.GetClientIP calls http.Header.Get
+      #9: internal/platform/httpx/httpx.go:86:16: httpx.WriteJSON calls http.Header.Set
+      #10: internal/platform/httpx/httpx.go:86:16: httpx.WriteJSON calls http.Header.Set
+      #11: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe
+      #12: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe
+      #13: cmd/loadtest/main.go:96:29: loadtest.main calls httptest.NewRequest, which eventually calls http.ReadRequest
+      #14: cmd/loadtest/main.go:96:29: loadtest.main calls httptest.NewRequest, which eventually calls http.ReadRequest
+      #15: cmd/loadtest/main.go:97:16: loadtest.main calls http.Request.AddCookie
+      #16: cmd/loadtest/main.go:97:16: loadtest.main calls http.Request.AddCookie
+      #17: internal/auth/session.go:211:23: auth.GetSessionToken calls http.Request.Cookie
+      #18: internal/auth/session.go:211:23: auth.GetSessionToken calls http.Request.Cookie
+      #19: internal/app/app.go:241:15: app.App.registerRoute calls http.ServeMux.Handle
+      #20: internal/app/app.go:241:15: app.App.registerRoute calls http.ServeMux.Handle
+      #21: internal/app/app.go:247:18: app.App.routes calls http.ServeMux.HandleFunc
+      #22: internal/app/app.go:247:18: app.App.routes calls http.ServeMux.HandleFunc
+      #23: cmd/server/main.go:85:31: server.main calls http.Server.ListenAndServe
+      #24: cmd/server/main.go:85:31: server.main calls http.Server.ListenAndServe
+      #25: cmd/server/main.go:99:24: server.main calls http.Server.Shutdown
+      #26: cmd/server/main.go:99:24: server.main calls http.Server.Shutdown
+      #27: internal/auth/session.go:197:16: auth.ClearSessionCookie calls http.SetCookie
+      #28: internal/auth/session.go:197:16: auth.ClearSessionCookie calls http.SetCookie
+      #29: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.body.Read
+      #30: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.body.Read
+      #31: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.bodyEOFSignal.Read
+      #32: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.bodyEOFSignal.Read
+      #33: internal/realtime/hub.go:245:34: realtime.Client.readPump calls websocket.Conn.ReadMessage, which eventually calls http.bodyLocked.Read
+      #34: internal/realtime/hub.go:245:34: realtime.Client.readPump calls websocket.Conn.ReadMessage, which eventually calls http.bodyLocked.Read
+      #35: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.checkConnErrorWriter.Write
+      #36: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.checkConnErrorWriter.Write
+      #37: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.chunkWriter.Write
+      #38: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.chunkWriter.Write
+      #39: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.connReader.Read
+      #40: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.connReader.Read
+      #41: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.expectContinueReader.Read
+      #42: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.expectContinueReader.Read
+      #43: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2ConnectionError.Error
+      #44: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2ConnectionError.Error
+      #45: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2ErrCode.String
+      #46: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2ErrCode.String
+      #47: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameHeader.String
+      #48: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameHeader.String
+      #49: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameType.String
+      #50: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameType.String
+      #51: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameWriteRequest.String
+      #52: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameWriteRequest.String
+      #53: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2Setting.String
+      #54: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2Setting.String
+      #55: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2SettingID.String
+      #56: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2SettingID.String
+      #57: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2StreamError.Error
+      #58: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2StreamError.Error
+      #59: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2bufferedWriterTimeoutWriter.Write
+      #60: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2bufferedWriterTimeoutWriter.Write
+      #61: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2chunkWriter.Write
+      #62: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2chunkWriter.Write
+      #63: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2connError.Error
+      #64: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2connError.Error
+      #65: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2duplicatePseudoHeaderError.Error
+      #66: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2duplicatePseudoHeaderError.Error
+      #67: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldNameError.Error
+      #68: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldNameError.Error
+      #69: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldValueError.Error
+      #70: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldValueError.Error
+      #71: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2pseudoHeaderError.Error
+      #72: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2pseudoHeaderError.Error
+      #73: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.http2requestBody.Read
+      #74: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.http2requestBody.Read
+      #75: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.http2responseWriter.Flush
+      #76: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.http2responseWriter.Flush
+      #77: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.http2responseWriter.Write
+      #78: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.http2responseWriter.Write
+      #79: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.http2responseWriter.WriteHeader
+      #80: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.http2responseWriter.WriteHeader
+      #81: cmd/migrate/main.go:54:19: migrate.main calls migrate.Migrate.Down, which eventually calls http.http2responseWriter.WriteString
+      #82: cmd/migrate/main.go:54:19: migrate.main calls migrate.Migrate.Down, which eventually calls http.http2responseWriter.WriteString
+      #83: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2writeData.String
+      #84: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2writeData.String
+      #85: internal/realtime/hub.go:189:18: realtime.Hub.Upgrade calls websocket.Conn.Close, which calls http.loggingConn.Close
+      #86: internal/realtime/hub.go:189:18: realtime.Hub.Upgrade calls websocket.Conn.Close, which calls http.loggingConn.Close
+      #87: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.loggingConn.Read
+      #88: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.loggingConn.Read
+      #89: internal/realtime/hub.go:188:25: realtime.Hub.Upgrade calls websocket.Conn.WriteControl, which calls http.loggingConn.Write
+      #90: internal/realtime/hub.go:188:25: realtime.Hub.Upgrade calls websocket.Conn.WriteControl, which calls http.loggingConn.Write
+      #91: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.maxBytesReader.Read
+      #92: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.maxBytesReader.Read
+      #93: cmd/loadtest/main.go:65:2: loadtest.main calls pgxpool.Pool.Close, which eventually calls http.onceCloseListener.Close
+      #94: cmd/loadtest/main.go:65:2: loadtest.main calls pgxpool.Pool.Close, which eventually calls http.onceCloseListener.Close
+      #95: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.response.Flush
+      #96: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.response.Flush
+      #97: internal/middleware/middleware.go:245:19: middleware.responseRecorder.Hijack calls http.response.Hijack
+      #98: internal/middleware/middleware.go:245:19: middleware.responseRecorder.Hijack calls http.response.Hijack
+      #99: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.response.Write
+      #100: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.response.Write
+      #101: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.response.WriteHeader
+      #102: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.response.WriteHeader
+      #103: internal/users/users.go:307:35: users.Handler.ResetPassword calls pgx.connRow.Scan, which eventually calls http.response.WriteString
+      #104: internal/users/users.go:307:35: users.Handler.ResetPassword calls pgx.connRow.Scan, which eventually calls http.response.WriteString
+
+Vulnerability #7: GO-2026-6608
+    Memory limit bypass when parsing MIME headers in net/textproto,
+    mime/multipart
+  More info: https://pkg.go.dev/vuln/GO-2026-6608
+  Standard library
+    Found in: net/textproto@go1.25.11
+    Fixed in: net/textproto@go1.26.9
+    Example traces found:
+      #1: cmd/loadtest/main.go:96:29: loadtest.main calls httptest.NewRequest, which eventually calls textproto.Reader.ReadMIMEHeader
+
+Vulnerability #8: GO-2026-6607
+    Reject malformed ECH outer extension references in crypto/tls
+  More info: https://pkg.go.dev/vuln/GO-2026-6607
+  Standard library
+    Found in: crypto/tls@go1.25.11
+    Fixed in: crypto/tls@go1.26.9
+    Example traces found:
+      #1: cmd/migrate/main.go:70:20: migrate.main calls migrate.Migrate.Force, which eventually calls tls.Conn.Handshake
+      #2: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe, which eventually calls tls.Conn.HandshakeContext
+      #3: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls tls.Conn.Read
+      #4: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe, which eventually calls tls.Conn.Write
+
+Vulnerability #9: GO-2026-6603
+    HTTP/2 server memory exhaustion due to Trailer headers in net/http
+  More info: https://pkg.go.dev/vuln/GO-2026-6603
+  Standard library
+    Found in: net/http@go1.25.11
+    Fixed in: net/http@go1.26.9
+    Example traces found:
+      #1: cmd/server/main.go:28:37: server.main calls pgxpool.ParseConfig, which eventually calls http.CanonicalHeaderKey
+      #2: cmd/server/main.go:28:37: server.main calls pgxpool.ParseConfig, which eventually calls http.CanonicalHeaderKey
+      #3: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.Error
+      #4: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.Error
+      #5: internal/app/app.go:115:21: app.App.ServeHTTP calls http.HandlerFunc.ServeHTTP
+      #6: internal/app/app.go:115:21: app.App.ServeHTTP calls http.HandlerFunc.ServeHTTP
+      #7: internal/middleware/middleware.go:383:25: middleware.GetClientIP calls http.Header.Get
+      #8: internal/middleware/middleware.go:383:25: middleware.GetClientIP calls http.Header.Get
+      #9: internal/platform/httpx/httpx.go:86:16: httpx.WriteJSON calls http.Header.Set
+      #10: internal/platform/httpx/httpx.go:86:16: httpx.WriteJSON calls http.Header.Set
+      #11: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe
+      #12: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe
+      #13: cmd/loadtest/main.go:96:29: loadtest.main calls httptest.NewRequest, which eventually calls http.ReadRequest
+      #14: cmd/loadtest/main.go:96:29: loadtest.main calls httptest.NewRequest, which eventually calls http.ReadRequest
+      #15: cmd/loadtest/main.go:97:16: loadtest.main calls http.Request.AddCookie
+      #16: cmd/loadtest/main.go:97:16: loadtest.main calls http.Request.AddCookie
+      #17: internal/auth/session.go:211:23: auth.GetSessionToken calls http.Request.Cookie
+      #18: internal/auth/session.go:211:23: auth.GetSessionToken calls http.Request.Cookie
+      #19: internal/app/app.go:241:15: app.App.registerRoute calls http.ServeMux.Handle
+      #20: internal/app/app.go:241:15: app.App.registerRoute calls http.ServeMux.Handle
+      #21: internal/app/app.go:247:18: app.App.routes calls http.ServeMux.HandleFunc
+      #22: internal/app/app.go:247:18: app.App.routes calls http.ServeMux.HandleFunc
+      #23: cmd/server/main.go:85:31: server.main calls http.Server.ListenAndServe
+      #24: cmd/server/main.go:85:31: server.main calls http.Server.ListenAndServe
+      #25: cmd/server/main.go:99:24: server.main calls http.Server.Shutdown
+      #26: cmd/server/main.go:99:24: server.main calls http.Server.Shutdown
+      #27: internal/auth/session.go:197:16: auth.ClearSessionCookie calls http.SetCookie
+      #28: internal/auth/session.go:197:16: auth.ClearSessionCookie calls http.SetCookie
+      #29: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.body.Read
+      #30: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.body.Read
+      #31: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.bodyEOFSignal.Read
+      #32: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.bodyEOFSignal.Read
+      #33: internal/realtime/hub.go:245:34: realtime.Client.readPump calls websocket.Conn.ReadMessage, which eventually calls http.bodyLocked.Read
+      #34: internal/realtime/hub.go:245:34: realtime.Client.readPump calls websocket.Conn.ReadMessage, which eventually calls http.bodyLocked.Read
+      #35: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.checkConnErrorWriter.Write
+      #36: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.checkConnErrorWriter.Write
+      #37: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.chunkWriter.Write
+      #38: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.chunkWriter.Write
+      #39: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.connReader.Read
+      #40: internal/realtime/hub.go:185:32: realtime.Hub.Upgrade calls websocket.Upgrader.Upgrade, which eventually calls http.connReader.Read
+      #41: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.expectContinueReader.Read
+      #42: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.expectContinueReader.Read
+      #43: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2ConnectionError.Error
+      #44: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2ConnectionError.Error
+      #45: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2ErrCode.String
+      #46: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2ErrCode.String
+      #47: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameHeader.String
+      #48: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameHeader.String
+      #49: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameType.String
+      #50: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameType.String
+      #51: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameWriteRequest.String
+      #52: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2FrameWriteRequest.String
+      #53: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2Setting.String
+      #54: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2Setting.String
+      #55: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2SettingID.String
+      #56: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2SettingID.String
+      #57: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2StreamError.Error
+      #58: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2StreamError.Error
+      #59: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2bufferedWriterTimeoutWriter.Write
+      #60: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2bufferedWriterTimeoutWriter.Write
+      #61: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2chunkWriter.Write
+      #62: cmd/loadtest/main.go:62:14: loadtest.main calls fmt.Fprintf, which eventually calls http.http2chunkWriter.Write
+      #63: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2connError.Error
+      #64: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls pgconn.ConnectError.Error, which eventually calls http.http2connError.Error
+      #65: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2duplicatePseudoHeaderError.Error
+      #66: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2duplicatePseudoHeaderError.Error
+      #67: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldNameError.Error
+      #68: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldNameError.Error
+      #69: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldValueError.Error
+      #70: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2headerFieldValueError.Error
+      #71: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2pseudoHeaderError.Error
+      #72: internal/platform/httpx/httpx.go:110:33: httpx.DecodeJSON calls http.http2pseudoHeaderError.Error
+      #73: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.http2requestBody.Read
+      #74: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.http2requestBody.Read
+      #75: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.http2responseWriter.Flush
+      #76: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.http2responseWriter.Flush
+      #77: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.http2responseWriter.Write
+      #78: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.http2responseWriter.Write
+      #79: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.http2responseWriter.WriteHeader
+      #80: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.http2responseWriter.WriteHeader
+      #81: cmd/migrate/main.go:54:19: migrate.main calls migrate.Migrate.Down, which eventually calls http.http2responseWriter.WriteString
+      #82: cmd/migrate/main.go:54:19: migrate.main calls migrate.Migrate.Down, which eventually calls http.http2responseWriter.WriteString
+      #83: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2writeData.String
+      #84: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which eventually calls http.http2writeData.String
+      #85: internal/realtime/hub.go:189:18: realtime.Hub.Upgrade calls websocket.Conn.Close, which calls http.loggingConn.Close
+      #86: internal/realtime/hub.go:189:18: realtime.Hub.Upgrade calls websocket.Conn.Close, which calls http.loggingConn.Close
+      #87: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.loggingConn.Read
+      #88: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls http.loggingConn.Read
+      #89: internal/realtime/hub.go:188:25: realtime.Hub.Upgrade calls websocket.Conn.WriteControl, which calls http.loggingConn.Write
+      #90: internal/realtime/hub.go:188:25: realtime.Hub.Upgrade calls websocket.Conn.WriteControl, which calls http.loggingConn.Write
+      #91: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.maxBytesReader.Read
+      #92: internal/platform/httpx/httpx.go:96:19: httpx.DecodeJSON calls json.Decoder.Decode, which eventually calls http.maxBytesReader.Read
+      #93: cmd/loadtest/main.go:65:2: loadtest.main calls pgxpool.Pool.Close, which eventually calls http.onceCloseListener.Close
+      #94: cmd/loadtest/main.go:65:2: loadtest.main calls pgxpool.Pool.Close, which eventually calls http.onceCloseListener.Close
+      #95: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.response.Flush
+      #96: internal/middleware/middleware.go:252:10: middleware.responseRecorder.Flush calls http.response.Flush
+      #97: internal/middleware/middleware.go:245:19: middleware.responseRecorder.Hijack calls http.response.Hijack
+      #98: internal/middleware/middleware.go:245:19: middleware.responseRecorder.Hijack calls http.response.Hijack
+      #99: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.response.Write
+      #100: cmd/admin/main.go:45:15: admin.main calls fmt.Fprintln, which calls http.response.Write
+      #101: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.response.WriteHeader
+      #102: internal/middleware/middleware.go:240:31: middleware.responseRecorder.WriteHeader calls http.response.WriteHeader
+      #103: internal/users/users.go:307:35: users.Handler.ResetPassword calls pgx.connRow.Scan, which eventually calls http.response.WriteString
+      #104: internal/users/users.go:307:35: users.Handler.ResetPassword calls pgx.connRow.Scan, which eventually calls http.response.WriteString
+
+Vulnerability #10: GO-2026-6090
+    Limit handshake messages we are willing to accept post-handshake in
+    crypto/tls
+  More info: https://pkg.go.dev/vuln/GO-2026-6090
+  Standard library
+    Found in: crypto/tls@go1.25.11
+    Fixed in: crypto/tls@go1.25.13
+    Example traces found:
+      #1: cmd/migrate/main.go:70:20: migrate.main calls migrate.Migrate.Force, which eventually calls tls.Conn.Handshake
+      #2: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe, which eventually calls tls.Conn.HandshakeContext
+      #3: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls tls.Conn.Read
+      #4: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe, which eventually calls tls.Conn.Write
+
+Vulnerability #11: GO-2026-6089
+    Apply ReadHeaderTimeout when doing unencrypted HTTP/2 check in net/http
+  More info: https://pkg.go.dev/vuln/GO-2026-6089
+  Standard library
+    Found in: net/http@go1.25.11
+    Fixed in: net/http@go1.25.13
+    Example traces found:
+      #1: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe
+      #2: cmd/server/main.go:85:31: server.main calls http.Server.ListenAndServe
+
+Vulnerability #12: GO-2026-6088
+    Add recursion depth guard during decode in encoding/xml
+  More info: https://pkg.go.dev/vuln/GO-2026-6088
+  Standard library
+    Found in: encoding/xml@go1.25.11
+    Fixed in: encoding/xml@go1.25.13
+    Example traces found:
+      #1: internal/users/users.go:307:35: users.Handler.ResetPassword calls pgx.connRow.Scan, which eventually calls xml.Unmarshal
+
+Vulnerability #13: GO-2026-5972
+    Enforce maximum recursion depth in encoding/asn1
+  More info: https://pkg.go.dev/vuln/GO-2026-5972
+  Standard library
+    Found in: encoding/asn1@go1.25.11
+    Fixed in: encoding/asn1@go1.25.13
+    Example traces found:
+      #1: cmd/loadtest/main.go:65:2: loadtest.main calls pgxpool.Pool.Close, which eventually calls asn1.Unmarshal
+
+Vulnerability #14: GO-2026-5970
+    Infinite loop on invalid input in golang.org/x/text
+  More info: https://pkg.go.dev/vuln/GO-2026-5970
+  Module: golang.org/x/text
+    Found in: golang.org/x/text@v0.38.0
+    Fixed in: golang.org/x/text@v0.39.0
+    Example traces found:
+      #1: internal/realtime/hub.go:389:27: realtime.Hub.listenLoop calls pgx.Connect, which eventually calls norm.Form.Properties
+      #2: internal/realtime/hub.go:389:27: realtime.Hub.listenLoop calls pgx.Connect, which eventually calls norm.Form.Span
+      #3: internal/realtime/hub.go:389:27: realtime.Hub.listenLoop calls pgx.Connect, which eventually calls norm.Form.Transform
+
+Vulnerability #15: GO-2026-5856
+    Invoking Encrypted Client Hello privacy leak in crypto/tls
+  More info: https://pkg.go.dev/vuln/GO-2026-5856
+  Standard library
+    Found in: crypto/tls@go1.25.11
+    Fixed in: crypto/tls@go1.25.12
+    Example traces found:
+      #1: cmd/migrate/main.go:70:20: migrate.main calls migrate.Migrate.Force, which eventually calls tls.Conn.Handshake
+      #2: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe, which eventually calls tls.Conn.HandshakeContext
+      #3: internal/auth/session.go:43:24: auth.GenerateRawToken calls rand.Read, which eventually calls tls.Conn.Read
+      #4: internal/app/app.go:119:28: app.App.ListenAndServe calls http.ListenAndServe, which eventually calls tls.Conn.Write
+
+Your code is affected by 15 vulnerabilities from 1 module and the Go standard library.
+This scan also found 7 vulnerabilities in packages you import and 7
+vulnerabilities in modules you require, but your code doesn't appear to call
+these vulnerabilities.
+Use '-show verbose' for more details.

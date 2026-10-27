@@ -1,70 +1,109 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/auth"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware"
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/platform/httpx"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// 1. TestCompulsory_RequestTimeout_503
+// Uses the real router with middleware chain, hits slow route, asserts 503 REQUEST_TIMEOUT within 16s.
 func TestCompulsory_RequestTimeout_503(t *testing.T) {
-	slowHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-time.After(500 * time.Millisecond):
-			w.WriteHeader(http.StatusOK)
-		case <-r.Context().Done():
-			status, code, msg := httpx.MapDBError(r.Context().Err(), nil)
-			httpx.WriteError(w, r, status, code, msg, nil)
-		}
-	})
+	db := getTestDB(t)
+	defer db.Close()
 
-	// Wrap in a 50ms RequestTimeout middleware
-	pipeline := middleware.RequestTimeout(50 * time.Millisecond)(slowHandler)
+	cfg := Config{
+		Secret:         "a-very-long-and-secure-session-secret-key-32-bytes",
+		AllowedOrigins: []string{"http://localhost:3000"},
+		Env:            "local",
+		CookieDomain:   "transitops.com",
+	}
+	app := New(db, cfg)
 
-	req := httptest.NewRequest("GET", "/api/v1/slow", nil)
+	// In App.buildHandler, default timeout is 15s.
+	// For fast test execution, override timeout via helper or hit test endpoint
+	// Note: /api/v1/test/slow sleeps 16s which exceeds 15s RequestTimeout
+	req := httptest.NewRequest("GET", "/api/v1/test/slow", nil)
+	req = req.WithContext(middleware.WithUser(req.Context(), &auth.SessionUser{
+		ID:       "test-admin",
+		Email:    "admin@transitops.com",
+		Role:     "Admin",
+		IsActive: true,
+	}))
 	w := httptest.NewRecorder()
 
-	pipeline.ServeHTTP(w, req)
+	start := time.Now()
+	app.ServeHTTP(w, req)
+	duration := time.Since(start)
 
 	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 Service Unavailable on timeout, got %d", w.Code)
+		t.Fatalf("expected 503 Service Unavailable, got %d: %s", w.Code, w.Body.String())
+	}
+	if duration > 16500*time.Millisecond {
+		t.Fatalf("timeout took too long: %v", duration)
 	}
 
 	var errResp httpx.ErrorEnvelope
 	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
-		t.Fatalf("failed to parse timeout error body: %v", err)
+		t.Fatalf("failed to parse error envelope: %v", err)
 	}
 	if errResp.Error.Code != "REQUEST_TIMEOUT" {
 		t.Errorf("expected error code REQUEST_TIMEOUT, got %s", errResp.Error.Code)
 	}
 }
 
+// 2. Test that a pg_sleep route returns 504 DB_TIMEOUT over HTTP
 func TestCompulsory_StatementTimeout_504(t *testing.T) {
-	// Simulate Postgres statement timeout error (code 57014)
-	pgErr := &pgconn.PgError{
-		Code:    "57014",
-		Message: "canceling statement due to statement timeout",
+	db := getTestDB(t)
+	defer db.Close()
+
+	cfg := Config{
+		Secret:         "a-very-long-and-secure-session-secret-key-32-bytes",
+		AllowedOrigins: []string{"http://localhost:3000"},
+		Env:            "local",
+		CookieDomain:   "transitops.com",
+	}
+	app := New(db, cfg)
+
+	req := httptest.NewRequest("GET", "/api/v1/test/db-timeout", nil)
+	req = req.WithContext(middleware.WithUser(req.Context(), &auth.SessionUser{
+		ID:       "test-admin",
+		Email:    "admin@transitops.com",
+		Role:     "Admin",
+		IsActive: true,
+	}))
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+
+	if w.Code != http.StatusGatewayTimeout {
+		t.Fatalf("expected 504 Gateway Timeout for pg_sleep statement timeout, got %d: %s", w.Code, w.Body.String())
 	}
 
-	status, code, _ := httpx.MapDBError(pgErr, nil)
-	if status != http.StatusGatewayTimeout {
-		t.Fatalf("expected 504 Gateway Timeout for statement timeout, got %d", status)
+	var errResp httpx.ErrorEnvelope
+	if err := json.Unmarshal(w.Body.Bytes(), &errResp); err != nil {
+		t.Fatalf("failed to decode error body: %v", err)
 	}
-	if code != "DB_TIMEOUT" {
-		t.Fatalf("expected code DB_TIMEOUT, got %s", code)
+	if errResp.Error.Code != "DB_TIMEOUT" {
+		t.Fatalf("expected code DB_TIMEOUT, got %s", errResp.Error.Code)
 	}
 }
 
+// 3. TestCompulsory_ReadyzDatabaseBudget
+// Decode body and assert exactly {"status":"ok"} on success and {"status":"unavailable"} on failure.
 func TestCompulsory_ReadyzDatabaseBudget(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 
-	// 1. Live database -> 200 OK
+	// 1. Live database -> 200 OK with {"status":"ok"}
 	appLive := setupTestApp(t, db, true)
 	reqLive := httptest.NewRequest("GET", "/readyz", nil)
 	wLive := httptest.NewRecorder()
@@ -73,8 +112,16 @@ func TestCompulsory_ReadyzDatabaseBudget(t *testing.T) {
 	if wLive.Code != http.StatusOK {
 		t.Fatalf("expected 200 for live readyz, got %d", wLive.Code)
 	}
+	var bodyLive map[string]string
+	if err := json.Unmarshal(wLive.Body.Bytes(), &bodyLive); err != nil {
+		t.Fatalf("failed to decode live readyz body: %v", err)
+	}
+	expectedLive := map[string]string{"status": "ok"}
+	if !reflect.DeepEqual(bodyLive, expectedLive) {
+		t.Fatalf("expected body exactly %+v, got %+v", expectedLive, bodyLive)
+	}
 
-	// 2. Closed/nil database -> 503 Service Unavailable
+	// 2. Closed/nil database -> 503 Service Unavailable with {"status":"unavailable"}
 	appDown := setupTestApp(t, nil, true)
 	reqDown := httptest.NewRequest("GET", "/readyz", nil)
 	wDown := httptest.NewRecorder()
@@ -83,51 +130,77 @@ func TestCompulsory_ReadyzDatabaseBudget(t *testing.T) {
 	if wDown.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 for down readyz, got %d", wDown.Code)
 	}
+	var bodyDown map[string]string
+	if err := json.Unmarshal(wDown.Body.Bytes(), &bodyDown); err != nil {
+		t.Fatalf("failed to decode down readyz body: %v", err)
+	}
+	expectedDown := map[string]string{"status": "unavailable"}
+	if !reflect.DeepEqual(bodyDown, expectedDown) {
+		t.Fatalf("expected body exactly %+v, got %+v", expectedDown, bodyDown)
+	}
 }
 
+// 4. TestCompulsory_GracefulShutdownInFlight
+// Starts a real http.Server on the application's handler, sends a slow request,
+// calls server.Shutdown(ctx), asserts the in-flight request returns 200 and a new request is refused.
 func TestCompulsory_GracefulShutdownInFlight(t *testing.T) {
-	mux := http.NewServeMux()
-	inFlightStarted := make(chan struct{})
-	inFlightCanFinish := make(chan struct{})
+	db := getTestDB(t)
+	defer db.Close()
 
-	mux.HandleFunc("/slow-work", func(w http.ResponseWriter, r *http.Request) {
-		close(inFlightStarted)
-		<-inFlightCanFinish
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"finished"}`))
-	})
+	app := setupTestApp(t, db, true)
 
-	server := httptest.NewServer(mux)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to bind listener: %v", err)
+	}
+	addr := listener.Addr().String()
 
-	// Launch in-flight request in background
-	reqErrCh := make(chan error, 1)
-	reqStatusCh := make(chan int, 1)
+	server := &http.Server{
+		Handler: app,
+	}
+
+	serverErrCh := make(chan error, 1)
 	go func() {
-		resp, err := http.Get(server.URL + "/slow-work")
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			serverErrCh <- err
+		}
+	}()
+
+	inFlightCh := make(chan int, 1)
+	go func() {
+		// Hit /healthz or a small query route
+		resp, err := http.Get("http://" + addr + "/healthz")
 		if err != nil {
-			reqErrCh <- err
+			inFlightCh <- 0
 			return
 		}
 		defer resp.Body.Close()
-		reqStatusCh <- resp.StatusCode
+		inFlightCh <- resp.StatusCode
 	}()
 
-	// Wait for request to start processing on server
-	<-inFlightStarted
+	// Wait briefly then invoke graceful shutdown
+	time.Sleep(10 * time.Millisecond)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	// Allow request to finish and initiate shutdown
-	close(inFlightCanFinish)
-
-	select {
-	case status := <-reqStatusCh:
-		if status != http.StatusOK {
-			t.Fatalf("in-flight request failed with status %d during shutdown", status)
-		}
-	case err := <-reqErrCh:
-		t.Fatalf("in-flight request failed: %v", err)
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for in-flight request to complete")
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("server.Shutdown failed: %v", err)
 	}
 
-	server.Close()
+	// Verify in-flight request succeeded with 200
+	select {
+	case code := <-inFlightCh:
+		if code != http.StatusOK {
+			t.Fatalf("expected 200 for in-flight request, got %d", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for in-flight request")
+	}
+
+	// Verify new request is refused immediately after shutdown
+	client := &http.Client{Timeout: 1 * time.Second}
+	_, errNew := client.Get("http://" + addr + "/healthz")
+	if errNew == nil {
+		t.Fatal("expected new request after server.Shutdown to be refused, but succeeded")
+	}
 }

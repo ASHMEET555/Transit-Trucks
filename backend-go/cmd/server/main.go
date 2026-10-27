@@ -73,12 +73,7 @@ func main() {
 	a.Start(ctx)
 	defer a.Close()
 
-	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           a,
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
+	srv := NewHTTPServer(cfg.Port, a)
 
 	go func() {
 		logger.Info("listening", "address", cfg.Port)
@@ -100,4 +95,14 @@ func main() {
 		logger.Error("graceful server shutdown failed", "error", err)
 	}
 	logger.Info("server shutdown complete")
+}
+
+// NewHTTPServer constructs an http.Server with bounded header and idle timeouts
+func NewHTTPServer(port string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              ":" + port,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 }

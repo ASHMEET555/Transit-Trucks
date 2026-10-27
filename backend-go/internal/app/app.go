@@ -258,6 +258,10 @@ func (a *App) routes() {
 	// System / Health probes (Public)
 	a.registerRoute("GET", "/healthz", nil, true, a.healthz)
 	a.registerRoute("GET", "/readyz", nil, true, a.readyz)
+	if a.cfg.IsLocal() {
+		a.registerRoute("GET", "/api/v1/test/slow", rbac.AnyAuthenticated, false, a.handleTestSlow)
+		a.registerRoute("GET", "/api/v1/test/db-timeout", rbac.AnyAuthenticated, false, a.handleTestDBTimeout)
+	}
 
 	// Auth endpoints
 	a.registerRoute("POST", "/api/v1/auth/login", nil, true, a.login)
@@ -377,6 +381,38 @@ func (a *App) readyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (a *App) handleTestSlow(w http.ResponseWriter, r *http.Request) {
+	select {
+	case <-time.After(16 * time.Second):
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	case <-r.Context().Done():
+		return
+	}
+}
+
+func (a *App) handleTestDBTimeout(w http.ResponseWriter, r *http.Request) {
+	if a.db == nil {
+		httpx.WriteError(w, r, http.StatusServiceUnavailable, "DB_UNAVAILABLE", "Database not connected", nil)
+		return
+	}
+	// Run pg_sleep with a statement_timeout
+	conn, err := a.db.Acquire(r.Context())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to acquire conn", nil)
+		return
+	}
+	defer conn.Release()
+
+	_, _ = conn.Exec(r.Context(), "SET statement_timeout = '50ms'")
+	_, err = conn.Exec(r.Context(), "SELECT pg_sleep(1)")
+	if err != nil {
+		status, code, msg := httpx.MapDBError(err, a.log)
+		httpx.WriteError(w, r, status, code, msg, nil)
+		return
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
