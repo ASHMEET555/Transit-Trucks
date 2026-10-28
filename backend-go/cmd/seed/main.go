@@ -214,7 +214,11 @@ func main() {
 			`INSERT INTO users (id, email, password_hash, role, is_active, driver_license, created_at, updated_at)
 			 VALUES ($1, $2, $3, $4, true, $5, $6, $6)
 			 ON CONFLICT (email) DO UPDATE SET
-			   role = EXCLUDED.role, driver_license = EXCLUDED.driver_license, is_active = true`,
+			   password_hash = EXCLUDED.password_hash,
+			   role = EXCLUDED.role,
+			   driver_license = EXCLUDED.driver_license,
+			   is_active = true,
+			   updated_at = EXCLUDED.updated_at`,
 			userId, u.email, passHash, u.role, u.license, now)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error inserting user %s: %v\n", u.email, err)
