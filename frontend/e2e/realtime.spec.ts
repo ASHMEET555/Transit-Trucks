@@ -1,31 +1,25 @@
-import { test, expect, Page } from "@playwright/test"
+﻿import { test, expect, Page } from "@playwright/test"
 import { execSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 
+const API = "http://localhost:8000/api/v1"
+
 test.describe("M31: Multi-Browser Realtime Journey", () => {
-  const fmEmail = process.env.E2E_FM_EMAIL
-  const fmPassword = process.env.E2E_FM_PASSWORD
-  const driverEmail = process.env.E2E_DRIVER_EMAIL
-  const driverPassword = process.env.E2E_DRIVER_PASSWORD
-  const faEmail = process.env.E2E_FA_EMAIL
-  const faPassword = process.env.E2E_FA_PASSWORD
+  const creds = {
+    fm: { email: process.env.E2E_FM_EMAIL, password: process.env.E2E_FM_PASSWORD },
+    driver: { email: process.env.E2E_DRIVER_EMAIL, password: process.env.E2E_DRIVER_PASSWORD },
+    fa: { email: process.env.E2E_FA_EMAIL, password: process.env.E2E_FA_PASSWORD },
+  }
 
   test.beforeAll(async () => {
-    if (!fmEmail || !fmPassword || !driverEmail || !driverPassword || !faEmail || !faPassword) {
-      throw new Error(
-        "Missing required E2E credentials in environment variables (E2E_FM_EMAIL, E2E_FM_PASSWORD, E2E_DRIVER_EMAIL, E2E_DRIVER_PASSWORD, E2E_FA_EMAIL, E2E_FA_PASSWORD)"
-      )
+    for (const [name, c] of Object.entries(creds)) {
+      if (!c.email || !c.password) throw new Error(`Missing E2E credentials for ${name}`)
     }
-
-    // Ensure vehicle and driver are available for dispatch before test begins
-    try {
-      execSync(
-        `docker exec transit-trucks-postgres-1 psql -U transitops -d transitops -c "UPDATE trips SET status = 'Cancelled' WHERE (vehicle_reg = 'VH-1005' OR driver_license = 'DL-1001') AND status = 'Dispatched'; UPDATE vehicles SET status = 'Available' WHERE registration_number = 'VH-1005'; UPDATE drivers SET status = 'Available' WHERE license_number = 'DL-1001';"`
-      )
-    } catch (e) {
-      // In case docker exec is not available locally, proceed with existing state
-      console.warn("DB setup warning:", e)
-    }
+    // Reset the fixture. If this fails, stop: the test must not run against unknown state.
+    execSync(
+      `docker exec transit-trucks-postgres-1 psql -U transitops -d transitops -c "UPDATE trips SET status = 'Cancelled' WHERE (vehicle_reg = 'VH-1005' OR driver_license = 'DL-1001') AND status = 'Dispatched'; UPDATE vehicles SET status = 'Available' WHERE registration_number = 'VH-1005'; UPDATE drivers SET status = 'Available' WHERE license_number = 'DL-1001';"`,
+      { stdio: "pipe" }
+    )
   })
 
   async function login(page: Page, email: string, pass: string) {
@@ -36,43 +30,33 @@ test.describe("M31: Multi-Browser Realtime Journey", () => {
     await page.waitForURL((url) => !url.pathname.includes("/login"), { timeout: 15000 })
   }
 
-  test("dispatches trip from FM, receives realtime update in Driver without reload, preserves FA PII boundary", async ({
-    browser,
-  }) => {
-    // 1. Create three independent browser contexts
-    const contextA = await browser.newContext()
-    const contextB = await browser.newContext()
-    const contextC = await browser.newContext()
-
-    const pageA = await contextA.newPage()
-    const pageB = await contextB.newPage()
-    const pageC = await contextC.newPage()
-
+  test("FM dispatch reaches Driver without reload; FA gets only allowed events", async ({ browser }) => {
+    const ctxA = await browser.newContext()
+    const ctxB = await browser.newContext()
+    const ctxC = await browser.newContext()
     try {
-      // 2. Log in each user
-      await login(pageA, fmEmail!, fmPassword!)
-      await login(pageB, driverEmail!, driverPassword!)
-      await login(pageC, faEmail!, faPassword!)
+      const pageA = await ctxA.newPage()
+      const pageB = await ctxB.newPage()
+      const pageC = await ctxC.newPage()
 
-      // 3. Open pages that use useFleetEvents
+      // Count every main-frame navigation on the Driver page from the start.
+      let pageBNavigations = 0
+      pageB.on("framenavigated", (frame) => {
+        if (frame === pageB.mainFrame()) pageBNavigations++
+      })
+
+      await login(pageA, creds.fm.email!, creds.fm.password!)
+      await login(pageB, creds.driver.email!, creds.driver.password!)
+      await login(pageC, creds.fa.email!, creds.fa.password!)
       await pageA.goto("/trips")
       await pageB.goto("/trips")
       await pageC.goto("/dashboard")
-
-      // Wait for Driver trip list to mount
       await pageB.waitForSelector("table", { timeout: 10000 })
 
-      // 4. Attach navigation listener on Page B to ensure no page reload occurs
-      let pageBNavigations = 0
-      pageB.on("framenavigated", (frame) => {
-        if (frame === pageB.mainFrame()) {
-          pageBNavigations++
-        }
-      })
-      const initialNavCount = pageBNavigations
+      // Baseline: taken after the Driver page is fully loaded, immediately before dispatch.
+      const baseline = pageBNavigations
 
-      // 5. Context A dispatches a trip to the Driver's vehicle and driver
-      const dispatchRes = await pageA.request.post("http://localhost:8000/api/v1/trips", {
+      const dispatchRes = await pageA.request.post(`${API}/trips`, {
         data: {
           source_name: "New York Central Hub",
           destination_name: "Chicago Logistics Hub",
@@ -83,63 +67,45 @@ test.describe("M31: Multi-Browser Realtime Journey", () => {
           revenue: 1200,
           dispatch: true,
         },
-        headers: {
-          "Idempotency-Key": randomUUID(),
-          "X-Forwarded-For": "10.0.1.50",
-        },
+        headers: { "Idempotency-Key": randomUUID(), "X-Forwarded-For": "10.0.1.50" },
       })
-      if (dispatchRes.status() !== 201) {
-        console.error("Dispatch failed:", await dispatchRes.text())
-      }
-      expect(dispatchRes.status()).toBe(201)
-      const createdTrip = await dispatchRes.json()
-      const tripId = createdTrip.id
+      expect(dispatchRes.status(), await dispatchRes.text()).toBe(201)
+      const trip = await dispatchRes.json()
+      const tripId = trip.id
 
-      // 6. Assert: Context B shows the new trip within 5 s, without a page reload
-      const tripLocator = pageB.locator(`text=#${tripId}`)
-      await expect(tripLocator).toBeVisible({ timeout: 5000 })
-      expect(pageBNavigations).toBe(initialNavCount)
+      // Driver sees the trip without a reload.
+      await expect(pageB.locator(`text=#${tripId}`)).toBeVisible({ timeout: 5000 })
+      expect(pageBNavigations, "Driver page navigated during realtime update").toBe(baseline)
 
-      // 7. Assert: Context C receives no event whose payload references the driver's license
-      const logsC = await pageC.evaluate(() => (window as any).__fleetEventLog || [])
-      for (const ev of logsC) {
-        const payloadStr = JSON.stringify(ev)
-        expect(payloadStr).not.toContain("DL-1001")
-      }
-
-      // 8. Assert: Context C does receive trip.completed or expense.created when Context A completes the trip
-      const startOdo = Number(createdTrip.start_odometer) || 95919
-      const completeRes = await pageA.request.post(`http://localhost:8000/api/v1/trips/${tripId}/complete`, {
-        data: {
-          final_odometer: startOdo + 140,
-          fuel_liters: 40,
-          fuel_cost: 120,
-        },
-        headers: {
-          "Idempotency-Key": randomUUID(),
-          "X-Forwarded-For": "10.0.1.51",
-        },
+      const startOdo = Number(trip.start_odometer) || 95919
+      const completeRes = await pageA.request.post(`${API}/trips/${tripId}/complete`, {
+        data: { final_odometer: startOdo + 140, fuel_liters: 40, fuel_cost: 120 },
+        headers: { "Idempotency-Key": randomUUID(), "X-Forwarded-For": "10.0.1.51" },
       })
-      if (completeRes.status() !== 200) {
-        console.error("Complete failed:", completeRes.status(), await completeRes.text())
-      }
-      expect(completeRes.status()).toBe(200)
+      expect(completeRes.status(), await completeRes.text()).toBe(200)
 
+      const readLog = () =>
+        pageC.evaluate(() => (window as any).__fleetEventLog ?? []) as Promise<any[]>
+
+      // Positive proof the FA hook is active: an allowed event for this trip arrives.
       await expect
-        .poll(
-          async () => {
-            const currentLogs = await pageC.evaluate(() => (window as any).__fleetEventLog || [])
-            return currentLogs.some(
-              (e: any) => e.type === "trip.completed" || e.type === "expense.created"
-            )
-          },
-          { timeout: 5000 }
-        )
+        .poll(async () => (await readLog()).some((e) => e.type === "trip.completed"), { timeout: 5000 })
         .toBe(true)
+
+      const logC = await readLog()
+      expect(logC.length, "FA event log is empty; hook not active").toBeGreaterThan(0)
+
+      // Role boundary: FA must not receive dispatch events or any driver PII.
+      expect(logC.some((e) => e.type === "trip.dispatched")).toBe(false)
+      for (const ev of logC) {
+        const s = JSON.stringify(ev)
+        expect(s).not.toContain("DL-1001")
+        expect(s).not.toMatch(/"(driver_license|license_number|driver_name|email|phone)"/)
+      }
     } finally {
-      await contextA.close()
-      await contextB.close()
-      await contextC.close()
+      await ctxA.close()
+      await ctxB.close()
+      await ctxC.close()
     }
   })
 })
