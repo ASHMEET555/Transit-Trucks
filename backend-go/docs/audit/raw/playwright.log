@@ -1,0 +1,12 @@
+﻿npm run test:e2e
+
+> template-planner@0.1.0 test:e2e
+> playwright test
+
+
+Running 1 test using 1 worker
+
+
+  âœ“  1 [chromium] â€º e2e\realtime.spec.ts:39:7 â€º M31: Multi-Browser Realtime Journey â€º dispatches trip from FM, receives realtime update in Driver without reload, preserves FA PII boundary (13.5s)
+
+  1 passed (25.3s)

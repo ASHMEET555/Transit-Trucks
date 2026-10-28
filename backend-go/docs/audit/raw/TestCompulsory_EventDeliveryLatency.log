@@ -1,0 +1,6 @@
+﻿go test -count=1 -v -run '^TestCompulsory_EventDeliveryLatency$' ./internal/realtime
+=== RUN   TestCompulsory_EventDeliveryLatency
+    latency_test.go:230: Event Delivery Latency (N=100 samples): min=8.085ms, median=10.2371ms, p95=14.9412ms, max=17.1521ms
+--- PASS: TestCompulsory_EventDeliveryLatency (1.67s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime	1.732s

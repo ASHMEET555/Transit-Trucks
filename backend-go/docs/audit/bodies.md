@@ -545,22 +545,14 @@ Analysis of test bodies against compulsory requirements with verbatim assertion 
 		}
 ```
 
-### M29. Phase 5 SLO Latency Verification
-- **File**: `internal/app/phase5_load_test.go:239-250`
+### M29. Phase 5 Event Delivery Latency (Client Timestamps)
+- **File**: `internal/realtime/latency_test.go:232-235`
 - **Verdict**: **PASS**
 - **Verbatim Assertion Lines**:
 ```go
-	if availRate < 99.5 {
-		t.Errorf("SLO violation: Availability (%.2f%%) < 99.50%%", availRate)
-	}
-	if err5xxRate >= 0.5 {
-		t.Errorf("SLO violation: 5xx Rate (%.2f%%) >= 0.50%%", err5xxRate)
-	}
-	if p95Read >= 300*time.Millisecond {
-		t.Errorf("SLO violation: p95 Read Latency (%v) >= 300ms", p95Read)
-	}
-	if p95Write >= 500*time.Millisecond {
-		t.Errorf("SLO violation: p95 Write Latency (%v) >= 500ms", p95Write)
+	// Assert p95 < 2000 ms
+	if p95Lat >= 2000*time.Millisecond {
+		t.Fatalf("SLO violation: p95 event delivery latency %v >= 2000ms", p95Lat)
 	}
 ```
 
@@ -582,9 +574,22 @@ Analysis of test bodies against compulsory requirements with verbatim assertion 
 ```
 
 ### M31. Phase 5 Two-Browser Playwright Realtime Journey
-- **File**: None
-- **Verdict**: **OPEN**
-- **Reason**: No Playwright test specs found under `frontend/`.
+- **File**: `frontend/e2e/realtime.spec.ts:103-120`
+- **Verdict**: **PASS**
+- **Verbatim Assertion Lines**:
+```typescript
+      // 6. Assert: Context B shows the new trip within 5 s, without a page reload
+      const tripLocator = pageB.locator(`text=#${tripId}`)
+      await expect(tripLocator).toBeVisible({ timeout: 5000 })
+      expect(pageBNavigations).toBe(initialNavCount)
+
+      // 7. Assert: Context C receives no event whose payload references the driver's license
+      const logsC = await pageC.evaluate(() => (window as any).__fleetEventLog || [])
+      for (const ev of logsC) {
+        const payloadStr = JSON.stringify(ev)
+        expect(payloadStr).not.toContain("DL-1001")
+      }
+```
 
 ### M32. Phase 5 Role Policy Matrix
 - **File**: `internal/realtime/realtime_test.go:139-142`

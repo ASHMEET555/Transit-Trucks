@@ -35,9 +35,9 @@ Branch: `phase-5-remediation`
 | **M26** | Phase 4 CSV 50,000 rows, first byte < 1 s, bounded memory, "=" escaped | **PASS** | `TestCompulsory_Dashboard_ExportCSV_StreamAndInjection` | `docs/audit/raw/TestCompulsory_Dashboard_ExportCSV_StreamAndInjection.log` | Seeds 50,000 completed trips; TTFB = 41.5ms (< 1s); CSV formula injection characters sanitized |
 | **M27** | Phase 4 lifecycle integration (register -> dispatch -> complete -> maint -> close -> dashboard) | **PASS** | `TestCompulsory_VehicleLifecycleIntegration` | `docs/audit/raw/TestCompulsory_VehicleLifecycleIntegration.log` | End-to-end integration: vehicle registered -> dispatched -> completed with fuel -> maintenance logged -> closed -> dashboard KPIs verified |
 | **M28** | Phase 5 event payload < 8000 bytes for every type | **PASS** | `TestEvents_PayloadSizeCheck` | `docs/audit/raw/TestEvents_PayloadSizeCheck.log` | Tests all registered event types: 7999 bytes accepted; 8000+ bytes rejected with error |
-| **M29** | Phase 5 event delivery latency measured with client timestamps | **PASS** | `TestCompulsory_Phase5_SLOAndLatencyVerification` | `docs/audit/raw/TestCompulsory_Phase5_SLOAndLatencyVerification.log` | Asserts Availability >= 99.5%, 5xx < 0.5%, p95 read < 300ms, p95 write < 500ms |
+| **M29** | Phase 5 event delivery latency measured with client timestamps | **PASS** | `TestCompulsory_EventDeliveryLatency` | `docs/audit/raw/TestCompulsory_EventDeliveryLatency.log` | N=100 dispatches client-timed delivery: min=8.1ms, med=10.2ms, p95=14.9ms (< 2000ms target); p95 < 2000ms asserted |
 | **M30** | Phase 5 k6 run (60 s smoke minimum) | **PASS** | Containerized k6 smoke run | `docs/audit/raw/k6.log` | 60s k6 run in grafana/k6 container; failed_requests_rate = 0.00% (< 0.005), p95 read = 19ms (< 300ms), p95 write = 28.5ms (< 500ms) |
-| **M31** | Phase 5 two-browser Playwright realtime journey | **OPEN** | None | None | No Playwright test specs found under frontend/ |
+| **M31** | Phase 5 two-browser Playwright realtime journey | **PASS** | `M31: Multi-Browser Realtime Journey` | `docs/audit/raw/playwright.log` | Asserts trip dispatched in FM appears in Driver trip list within 5s without page reload; FA receives no driver license PII; FA receives trip.completed |
 | **M32** | Phase 5 role policy matches plan 5.3 | **PASS** | `TestPolicy_RoleEventMatrix` | `docs/audit/raw/TestPolicy_RoleEventMatrix.log` | Asserts exact CanReceive matrix for Admin, Fleet Manager, Safety Officer, Driver, Financial Analyst |
 | **M33** | Phase 5 socket hygiene (ping 20s, 60s silence, 1013 slow, 4429 over 5, 1001 shutdown) | **PASS** | `TestCompulsory_MaxConnectionsAndSlowConsumer` | `docs/audit/raw/TestCompulsory_MaxConnectionsAndSlowConsumer.log` | Asserts 6th connection rejected with 4429; PingInterval=20s, PongWait=60s, CloseSlowConsumer=1013, CloseShutdown=1001 |
 | **M34** | Phase 5 metrics: every plan 5.6 family present in scrape | **PASS** | `TestCompulsory_ProtectedMetricsEndpoint` | `docs/audit/raw/TestCompulsory_ProtectedMetricsEndpoint.log` | Scrapes /metrics with Bearer token; asserts http_requests_total, durations, in_flight, pool, ws, events |
@@ -47,8 +47,8 @@ Branch: `phase-5-remediation`
 
 ## 2. Status Counts
 
-- **PASS**: 34
-- **OPEN**: 1 (`M31` - No Playwright test specs found under `frontend/`)
+- **PASS**: 35
+- **OPEN**: 0
 - **FAIL**: 0
 - **WEAK**: 0
 - **NOT RUN**: 0
@@ -63,6 +63,6 @@ Total Audited M-Items: 35 (M1–M35, M30 counted once)
 
 ---
 
-## 4. Verdict Phase 5: READY (Except M31 OPEN)
+## 4. Verdict Phase 5: READY
 
-**Reason**: All compulsory backend reliability, concurrency, realtime, metrics, and security items (M10–M23, M28–M30, M32–M35) and `go test -race ./...` are **PASS**. The sole remaining item is **M31** (OPEN, frontend Playwright specs not implemented).
+**Reason**: Every Phase 5 acceptance item (M10–M23, M28–M35), containerized race detector (`race.log`), k6 smoke test (`k6.log`), and Playwright multi-browser realtime test (`playwright.log`) are **PASS**. Phase 5 is 100% COMPLETE.
