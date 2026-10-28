@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestCompulsory_Trip_Idempotency$' ./internal/app
+=== RUN   TestCompulsory_Trip_Idempotency
+--- PASS: TestCompulsory_Trip_Idempotency (0.26s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	0.344s

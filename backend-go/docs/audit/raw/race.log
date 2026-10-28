@@ -1,0 +1,9 @@
+﻿docker run --rm --net=host -e GOTOOLCHAIN=auto -e DATABASE_URL="postgresql://transitops:transitops@localhost:5432/transitops?sslmode=disable" -v /mnt/e/Hackathons/odoo/Transit-Trucks:/src -w /src/backend-go golang:1.24-alpine sh -c "apk add --no-cache gcc musl-dev && CGO_ENABLED=1 go test -race -count=1 ./..."
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/cmd/seed	16.325s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/cmd/server	1.344s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/api	21.336s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	147.182s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/auth	2.881s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/config	1.072s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware	1.624s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime	1.598s

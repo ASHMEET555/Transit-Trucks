@@ -1,0 +1,12 @@
+﻿go test -count=1 -v -run '^TestCompulsory_Phase5_SLOAndLatencyVerification$' ./internal/app
+=== RUN   TestCompulsory_Phase5_SLOAndLatencyVerification
+    phase5_load_test.go:142: Event delivery latency: min=9.4582ms, max=32.3513ms, p95=32.3513ms
+    phase5_load_test.go:233: Steady State SLO Results (Total Reqs: 900):
+    phase5_load_test.go:234:   Availability: 100.00% (target: >= 99.50%)
+    phase5_load_test.go:235:   5xx Rate: 0.00% (target: < 0.50%)
+    phase5_load_test.go:236:   p95 Read Latency: 26.429ms (target: < 300ms)
+    phase5_load_test.go:237:   p95 Write Latency: 28.5678ms (target: < 500ms)
+    phase5_load_test.go:281: 3x Spike Test Results (Total Reqs: 225, Errors: 0, Error Rate: 0.00%)
+--- PASS: TestCompulsory_Phase5_SLOAndLatencyVerification (0.70s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	0.785s

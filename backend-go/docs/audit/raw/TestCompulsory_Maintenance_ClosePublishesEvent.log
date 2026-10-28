@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestCompulsory_Maintenance_ClosePublishesEvent$' ./internal/app
+=== RUN   TestCompulsory_Maintenance_ClosePublishesEvent
+--- PASS: TestCompulsory_Maintenance_ClosePublishesEvent (0.18s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	0.257s

@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestEvents_PayloadSizeCheck$' ./internal/realtime
+=== RUN   TestEvents_PayloadSizeCheck
+--- PASS: TestEvents_PayloadSizeCheck (0.05s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime	0.088s

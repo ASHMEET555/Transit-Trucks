@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestOpenAPITypesDrift$' ./internal/api
+=== RUN   TestOpenAPITypesDrift
+--- PASS: TestOpenAPITypesDrift (0.74s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/api	0.766s

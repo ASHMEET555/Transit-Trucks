@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestCompulsory_Finance_SummarySingleQuery$' ./internal/app
+=== RUN   TestCompulsory_Finance_SummarySingleQuery
+--- PASS: TestCompulsory_Finance_SummarySingleQuery (0.21s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	0.285s

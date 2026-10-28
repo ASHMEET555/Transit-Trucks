@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestCompulsory_StatementTimeout_504$' ./internal/app
+=== RUN   TestCompulsory_StatementTimeout_504
+--- PASS: TestCompulsory_StatementTimeout_504 (0.10s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	0.179s

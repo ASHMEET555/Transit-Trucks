@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestPolicy_SanitizedClientPayloadPII$' ./internal/realtime
+=== RUN   TestPolicy_SanitizedClientPayloadPII
+--- PASS: TestPolicy_SanitizedClientPayloadPII (0.00s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime	0.029s

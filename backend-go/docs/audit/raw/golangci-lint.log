@@ -1,0 +1,3 @@
+﻿docker run --rm -v E:\Hackathons\odoo\Transit-Trucks\backend-go:/app -w /app golangci/golangci-lint:v1.64.6 golangci-lint run ./...
+Error: can't load config: the Go language version (go1.24) used to build golangci-lint is lower than the targeted Go version (1.26.10)
+Failed executing command with error: can't load config: the Go language version (go1.24) used to build golangci-lint is lower than the targeted Go version (1.26.10)

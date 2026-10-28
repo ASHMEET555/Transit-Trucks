@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestCompulsory_Audit_KeysetPagination$' ./internal/app
+=== RUN   TestCompulsory_Audit_KeysetPagination
+--- PASS: TestCompulsory_Audit_KeysetPagination (0.22s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	0.333s

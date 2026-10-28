@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestTickets_HashStorageNoPlaintext$' ./internal/realtime
+=== RUN   TestTickets_HashStorageNoPlaintext
+--- PASS: TestTickets_HashStorageNoPlaintext (0.05s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime	0.084s

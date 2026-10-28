@@ -1,0 +1,49 @@
+﻿go test -count=1 -v -run '^TestPolicy_RoleEventMatrix$' ./internal/realtime
+=== RUN   TestPolicy_RoleEventMatrix
+=== RUN   TestPolicy_RoleEventMatrix/Admin_receives_trip.created
+=== RUN   TestPolicy_RoleEventMatrix/Admin_receives_expense.created
+=== RUN   TestPolicy_RoleEventMatrix/Admin_receives_maintenance.opened
+=== RUN   TestPolicy_RoleEventMatrix/Fleet_Manager_receives_trip.dispatched
+=== RUN   TestPolicy_RoleEventMatrix/Fleet_Manager_receives_driver.status_changed
+=== RUN   TestPolicy_RoleEventMatrix/Driver_receives_own_trip.created
+=== RUN   TestPolicy_RoleEventMatrix/Driver_receives_own_trip.completed
+=== RUN   TestPolicy_RoleEventMatrix/Driver_blocked_from_other_driver's_trip.completed
+=== RUN   TestPolicy_RoleEventMatrix/Driver_blocked_from_expense.created
+=== RUN   TestPolicy_RoleEventMatrix/Driver_blocked_from_maintenance.opened
+=== RUN   TestPolicy_RoleEventMatrix/Driver_receives_own_driver.status_changed
+=== RUN   TestPolicy_RoleEventMatrix/Driver_blocked_from_other_driver.status_changed
+=== RUN   TestPolicy_RoleEventMatrix/Financial_Analyst_receives_expense.created
+=== RUN   TestPolicy_RoleEventMatrix/Financial_Analyst_receives_trip.completed
+=== RUN   TestPolicy_RoleEventMatrix/Financial_Analyst_blocked_from_trip.created
+=== RUN   TestPolicy_RoleEventMatrix/Financial_Analyst_blocked_from_maintenance.opened
+=== RUN   TestPolicy_RoleEventMatrix/Financial_Analyst_blocked_from_driver.status_changed
+=== RUN   TestPolicy_RoleEventMatrix/Safety_Officer_receives_driver.status_changed
+=== RUN   TestPolicy_RoleEventMatrix/Safety_Officer_receives_maintenance.opened
+=== RUN   TestPolicy_RoleEventMatrix/Safety_Officer_receives_notification.created
+=== RUN   TestPolicy_RoleEventMatrix/Safety_Officer_blocked_from_trip.created
+=== RUN   TestPolicy_RoleEventMatrix/Safety_Officer_blocked_from_expense.created
+--- PASS: TestPolicy_RoleEventMatrix (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Admin_receives_trip.created (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Admin_receives_expense.created (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Admin_receives_maintenance.opened (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Fleet_Manager_receives_trip.dispatched (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Fleet_Manager_receives_driver.status_changed (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Driver_receives_own_trip.created (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Driver_receives_own_trip.completed (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Driver_blocked_from_other_driver's_trip.completed (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Driver_blocked_from_expense.created (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Driver_blocked_from_maintenance.opened (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Driver_receives_own_driver.status_changed (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Driver_blocked_from_other_driver.status_changed (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Financial_Analyst_receives_expense.created (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Financial_Analyst_receives_trip.completed (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Financial_Analyst_blocked_from_trip.created (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Financial_Analyst_blocked_from_maintenance.opened (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Financial_Analyst_blocked_from_driver.status_changed (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Safety_Officer_receives_driver.status_changed (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Safety_Officer_receives_maintenance.opened (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Safety_Officer_receives_notification.created (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Safety_Officer_blocked_from_trip.created (0.00s)
+    --- PASS: TestPolicy_RoleEventMatrix/Safety_Officer_blocked_from_expense.created (0.00s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime	0.035s

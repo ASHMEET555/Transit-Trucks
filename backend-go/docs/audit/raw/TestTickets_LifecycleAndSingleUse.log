@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestTickets_LifecycleAndSingleUse$' ./internal/realtime
+=== RUN   TestTickets_LifecycleAndSingleUse
+--- PASS: TestTickets_LifecycleAndSingleUse (0.10s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/realtime	0.140s

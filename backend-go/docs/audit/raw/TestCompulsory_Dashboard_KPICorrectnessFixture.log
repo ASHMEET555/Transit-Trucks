@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestCompulsory_Dashboard_KPICorrectnessFixture$' ./internal/app
+=== RUN   TestCompulsory_Dashboard_KPICorrectnessFixture
+--- PASS: TestCompulsory_Dashboard_KPICorrectnessFixture (0.22s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	0.299s

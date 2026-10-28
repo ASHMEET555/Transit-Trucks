@@ -1,0 +1,6 @@
+﻿go test -count=1 -v -run '^TestCompulsory_Dashboard_ExportCSV_StreamAndInjection$' ./internal/app
+=== RUN   TestCompulsory_Dashboard_ExportCSV_StreamAndInjection
+    phase4_compulsory_test.go:1292: 50,000 completed trips CSV export completed in 60.1724ms
+--- PASS: TestCompulsory_Dashboard_ExportCSV_StreamAndInjection (2.57s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	2.653s

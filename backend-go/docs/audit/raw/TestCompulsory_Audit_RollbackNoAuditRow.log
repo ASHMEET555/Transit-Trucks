@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestCompulsory_Audit_RollbackNoAuditRow$' ./internal/app
+=== RUN   TestCompulsory_Audit_RollbackNoAuditRow
+--- PASS: TestCompulsory_Audit_RollbackNoAuditRow (0.18s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	0.266s

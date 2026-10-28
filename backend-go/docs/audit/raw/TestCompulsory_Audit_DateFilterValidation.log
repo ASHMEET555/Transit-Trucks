@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestCompulsory_Audit_DateFilterValidation$' ./internal/app
+=== RUN   TestCompulsory_Audit_DateFilterValidation
+--- PASS: TestCompulsory_Audit_DateFilterValidation (0.16s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	0.241s

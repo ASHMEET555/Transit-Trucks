@@ -1,0 +1,30 @@
+﻿npm test
+
+> template-planner@0.1.0 test
+> node --test src/lib/__tests__/*.test.mjs --reporter=verbose
+
+(node:9172) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///E:/Hackathons/odoo/Transit-Trucks/frontend/src/lib/idempotency.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\E:\Hackathons\odoo\Transit-Trucks\frontend\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ Idempotency - RFC 4122 compliant UUID v4 generator format (8.632ms)
+✔ Idempotency - Retried action sends identical Idempotency-Key; new action sends new key (0.4909ms)
+✔ Realtime - URL formatting has exactly one /api/v1 (0.2878ms)
+✔ Realtime - Backoff algorithm increases and caps strictly at 30 s (0.2003ms)
+✔ Realtime - Status labels are live, reconnecting, offline (0.6722ms)
+✔ RBAC - Admin role has access to all routes (1.1948ms)
+✔ RBAC - Fleet Manager role has access to operational routes (0.2167ms)
+✔ RBAC - Driver role has restricted visibility (0.1695ms)
+✔ RBAC - Safety Officer role has restricted visibility (0.131ms)
+✔ RBAC - Financial Analyst role has finance routes visible (0.1784ms)
+✔ Realtime - URL formatting with ticket (1.7431ms)
+✔ Realtime - Event payload parser handles standard and legacy formats (0.2896ms)
+✔ Realtime - Backoff algorithm bounds delay between 1s and 30s with jitter (0.6052ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 616.5398

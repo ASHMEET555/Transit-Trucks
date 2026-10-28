@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestCompulsory_RequestTimeout_503$' ./internal/app
+=== RUN   TestCompulsory_RequestTimeout_503
+--- PASS: TestCompulsory_RequestTimeout_503 (15.05s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	15.126s

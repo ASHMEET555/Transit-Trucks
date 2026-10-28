@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestCompulsory_VehicleLifecycleIntegration$' ./internal/app
+=== RUN   TestCompulsory_VehicleLifecycleIntegration
+--- PASS: TestCompulsory_VehicleLifecycleIntegration (0.25s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	0.337s

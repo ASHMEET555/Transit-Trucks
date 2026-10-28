@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestServer_TimeoutConfig$' ./cmd/server
+=== RUN   TestServer_TimeoutConfig
+--- PASS: TestServer_TimeoutConfig (0.00s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/cmd/server	0.072s

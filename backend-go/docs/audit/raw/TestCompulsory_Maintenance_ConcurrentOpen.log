@@ -1,0 +1,5 @@
+﻿go test -count=1 -v -run '^TestCompulsory_Maintenance_ConcurrentOpen$' ./internal/app
+=== RUN   TestCompulsory_Maintenance_ConcurrentOpen
+--- PASS: TestCompulsory_Maintenance_ConcurrentOpen (5.59s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	5.684s

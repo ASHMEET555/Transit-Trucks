@@ -1,0 +1,7 @@
+﻿go test -count=1 -v -run '^TestCompulsory_Dashboard_Benchmark10kTrips$' ./internal/app
+=== RUN   TestCompulsory_Dashboard_Benchmark10kTrips
+    phase4_compulsory_test.go:1044: Plan Seed Serial (200 reqs): min=39.0271ms, max=83.3892ms, p95=61.5234ms
+    phase4_compulsory_test.go:1083: Plan Seed Concurrent (32 clients, 320 reqs): min=49.3739ms, max=244.8452ms, p95=212.6212ms
+--- PASS: TestCompulsory_Dashboard_Benchmark10kTrips (12.06s)
+PASS
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/app	12.148s
