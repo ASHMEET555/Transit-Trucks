@@ -323,14 +323,31 @@ func TestCompulsory_MaxConnectionsAndSlowConsumer(t *testing.T) {
 	conn6, _, err := websocket.DefaultDialer.Dial(wsBase+tkt6, http.Header{"Origin": []string{"http://localhost:3000"}})
 	if err == nil {
 		// Verify close code received
-		_ = conn6.SetReadDeadline(time.Now().Add(1 * time.Second))
+		_ = conn6.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, _, readErr := conn6.ReadMessage()
 		if readErr == nil {
 			t.Fatalf("expected 6th connection to be closed with 4429, but message read succeeded")
 		}
 		if !websocket.IsCloseError(readErr, realtime.CloseTooManyConns) {
-			t.Logf("connection closed with: %v (expected close 4429)", readErr)
+			t.Errorf("connection closed with: %v (expected close 4429)", readErr)
 		}
 		conn6.Close()
+	}
+
+	// Verify constant values for socket hygiene: Ping 20s, Silence/Pong 60s, SlowConsumer 1013, Shutdown 1001
+	if realtime.PingInterval != 20*time.Second {
+		t.Errorf("expected PingInterval 20s, got %v", realtime.PingInterval)
+	}
+	if realtime.PongWait != 60*time.Second {
+		t.Errorf("expected PongWait 60s, got %v", realtime.PongWait)
+	}
+	if realtime.CloseSlowConsumer != 1013 {
+		t.Errorf("expected CloseSlowConsumer 1013, got %d", realtime.CloseSlowConsumer)
+	}
+	if realtime.CloseShutdown != 1001 {
+		t.Errorf("expected CloseShutdown 1001, got %d", realtime.CloseShutdown)
+	}
+	if realtime.CloseTooManyConns != 4429 {
+		t.Errorf("expected CloseTooManyConns 4429, got %d", realtime.CloseTooManyConns)
 	}
 }

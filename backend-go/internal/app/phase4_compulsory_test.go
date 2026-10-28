@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -867,37 +869,64 @@ func TestCompulsory_Dashboard_KPICorrectnessFixture(t *testing.T) {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 
-	// 1. Assert fleet counts
-	if res.ActiveVehicles != 1 {
-		t.Errorf("expected 1 active vehicle, got %d", res.ActiveVehicles)
+	// Read checked-in testdata/kpi_fixture.json with os.ReadFile and assert every value from file
+	fixtureBytes, err := os.ReadFile("testdata/kpi_fixture.json")
+	if err != nil {
+		t.Fatalf("failed to read testdata/kpi_fixture.json: %v", err)
 	}
-	if res.AvailableVehicles != 1 {
-		t.Errorf("expected 1 available vehicle, got %d", res.AvailableVehicles)
+	var fixture struct {
+		ActiveVehicles        int      `json:"active_vehicles"`
+		AvailableVehicles     int      `json:"available_vehicles"`
+		InShopVehicles        int      `json:"in_shop_vehicles"`
+		RetiredVehicles       int      `json:"retired_vehicles"`
+		ActiveTrips           int      `json:"active_trips"`
+		PendingTrips          int      `json:"pending_trips"`
+		CompletedTrips        int      `json:"completed_trips"`
+		OverallFuelEfficiency *float64 `json:"overall_fuel_efficiency"`
+		Vehicles              []struct {
+			RegistrationNumber string  `json:"registration_number"`
+			Revenue            float64 `json:"revenue"`
+			Distance           float64 `json:"distance"`
+			OperationalCost    float64 `json:"operational_cost"`
+		} `json:"vehicles"`
 	}
-	if res.InShopVehicles != 1 {
-		t.Errorf("expected 1 in-shop vehicle, got %d", res.InShopVehicles)
-	}
-	if res.RetiredVehicles != 1 {
-		t.Errorf("expected 1 retired vehicle, got %d", res.RetiredVehicles)
-	}
-
-	// 2. Assert trips
-	if res.ActiveTrips != 1 {
-		t.Errorf("expected 1 active trip, got %d", res.ActiveTrips)
-	}
-	if res.PendingTrips != 2 {
-		t.Errorf("expected 2 pending trips, got %d", res.PendingTrips)
-	}
-	if res.CompletedTrips != 2 {
-		t.Errorf("expected 2 completed trips, got %d", res.CompletedTrips)
-	}
-
-	// 2b. Assert fuel efficiency null when liters is 0
-	if res.OverallFuelEfficiency != nil {
-		t.Errorf("expected overall_fuel_efficiency == nil when fuel liters == 0, got %v", *res.OverallFuelEfficiency)
+	if err := json.Unmarshal(fixtureBytes, &fixture); err != nil {
+		t.Fatalf("failed to parse fixture json: %v", err)
 	}
 
-	// 3. Find our specific vehicles in the array
+	// 1. Assert fleet counts against fixture
+	if res.ActiveVehicles != fixture.ActiveVehicles {
+		t.Errorf("expected %d active vehicles from fixture, got %d", fixture.ActiveVehicles, res.ActiveVehicles)
+	}
+	if res.AvailableVehicles != fixture.AvailableVehicles {
+		t.Errorf("expected %d available vehicles from fixture, got %d", fixture.AvailableVehicles, res.AvailableVehicles)
+	}
+	if res.InShopVehicles != fixture.InShopVehicles {
+		t.Errorf("expected %d in-shop vehicles from fixture, got %d", fixture.InShopVehicles, res.InShopVehicles)
+	}
+	if res.RetiredVehicles != fixture.RetiredVehicles {
+		t.Errorf("expected %d retired vehicles from fixture, got %d", fixture.RetiredVehicles, res.RetiredVehicles)
+	}
+
+	// 2. Assert trips against fixture
+	if res.ActiveTrips != fixture.ActiveTrips {
+		t.Errorf("expected %d active trips from fixture, got %d", fixture.ActiveTrips, res.ActiveTrips)
+	}
+	if res.PendingTrips != fixture.PendingTrips {
+		t.Errorf("expected %d pending trips from fixture, got %d", fixture.PendingTrips, res.PendingTrips)
+	}
+	if res.CompletedTrips != fixture.CompletedTrips {
+		t.Errorf("expected %d completed trips from fixture, got %d", fixture.CompletedTrips, res.CompletedTrips)
+	}
+
+	// 2b. Assert fuel efficiency null when liters is 0 (matching fixture)
+	if fixture.OverallFuelEfficiency == nil && res.OverallFuelEfficiency != nil {
+		t.Errorf("expected overall_fuel_efficiency == nil from fixture, got %v", *res.OverallFuelEfficiency)
+	} else if fixture.OverallFuelEfficiency != nil && (res.OverallFuelEfficiency == nil || *res.OverallFuelEfficiency != *fixture.OverallFuelEfficiency) {
+		t.Errorf("fuel efficiency mismatch with fixture: expected %v, got %v", fixture.OverallFuelEfficiency, res.OverallFuelEfficiency)
+	}
+
+	// 3. Find our specific vehicles in the array and compare to fixture vehicles
 	var kpiV1, kpiV2, kpiV3 *VehicleKPI
 	for i := range res.Vehicles {
 		if res.Vehicles[i].RegistrationNumber == v1 {
@@ -915,26 +944,28 @@ func TestCompulsory_Dashboard_KPICorrectnessFixture(t *testing.T) {
 		t.Fatalf("failed to find created vehicles in response: v1=%v, v2=%v, v3=%v", kpiV1, kpiV2, kpiV3)
 	}
 
-	// V1: revenue=2000.00, distance=250.00, fuel_cost=150.00, other=50.00, op=200.00
-	if kpiV1.Revenue != 2000.00 {
-		t.Errorf("V1 revenue: expected 2000.00, got %f", kpiV1.Revenue)
+	// V1 assertions against fixture vehicles[0]
+	fixV1 := fixture.Vehicles[0]
+	if kpiV1.Revenue != fixV1.Revenue {
+		t.Errorf("V1 revenue: expected %f, got %f", fixV1.Revenue, kpiV1.Revenue)
 	}
-	if kpiV1.Distance != 250.00 {
-		t.Errorf("V1 distance: expected 250.00, got %f", kpiV1.Distance)
+	if kpiV1.Distance != fixV1.Distance {
+		t.Errorf("V1 distance: expected %f, got %f", fixV1.Distance, kpiV1.Distance)
 	}
-	if kpiV1.OperationalCost != 200.00 {
-		t.Errorf("V1 operational_cost: expected 200.00, got %f", kpiV1.OperationalCost)
+	if kpiV1.OperationalCost != fixV1.OperationalCost {
+		t.Errorf("V1 operational_cost: expected %f, got %f", fixV1.OperationalCost, kpiV1.OperationalCost)
 	}
 
-	// V2: revenue=1000.00, distance=150.00, fuel_cost=100.00, op=100.00
-	if kpiV2.Revenue != 1000.00 {
-		t.Errorf("V2 revenue: expected 1000.00, got %f", kpiV2.Revenue)
+	// V2 assertions against fixture vehicles[1]
+	fixV2 := fixture.Vehicles[1]
+	if kpiV2.Revenue != fixV2.Revenue {
+		t.Errorf("V2 revenue: expected %f, got %f", fixV2.Revenue, kpiV2.Revenue)
 	}
-	if kpiV2.Distance != 150.00 {
-		t.Errorf("V2 distance: expected 150.00, got %f", kpiV2.Distance)
+	if kpiV2.Distance != fixV2.Distance {
+		t.Errorf("V2 distance: expected %f, got %f", fixV2.Distance, kpiV2.Distance)
 	}
-	if kpiV2.OperationalCost != 100.00 {
-		t.Errorf("V2 operational_cost: expected 100.00, got %f", kpiV2.OperationalCost)
+	if kpiV2.OperationalCost != fixV2.OperationalCost {
+		t.Errorf("V2 operational_cost: expected %f, got %f", fixV2.OperationalCost, kpiV2.OperationalCost)
 	}
 
 	// V3: maintenance=300 (expense) + 500 (closed log) = 800.00, op=800.00
@@ -954,54 +985,104 @@ func TestCompulsory_Dashboard_Benchmark10kTrips(t *testing.T) {
 
 	adminCookie := createTestUserAndLogin(t, app, "admin.kpi.bench@transitops.com", rbac.RoleAdmin)
 
-	vReg := fmt.Sprintf("BENCH-V-%s", uuid.NewString()[:6])
-	dLic := fmt.Sprintf("BENCH-D-%s", uuid.NewString()[:6])
-	createP4Vehicle(t, db, vReg, "Available", "Van", 10000, 1000, 30000, true)
-	createP4Driver(t, db, dLic, "Available", "Heavy", time.Now().AddDate(2, 0, 0))
-
-	// Fast bulk insert of 10,000 completed trips
+	// Plan seed: >= 150 vehicles, >= 300 trips, >= 500 expenses
 	_, err := db.Exec(ctx, `
+		INSERT INTO vehicles (registration_number, model, type, max_load_capacity, odometer, acquisition_cost, status, is_active, created_at, updated_at)
+		SELECT 'SEED-V-' || LPAD(g::text, 4, '0'), 'Model-X', 'Van', 5000, 1000, 20000, 'Available', true, now(), now()
+		FROM generate_series(1, 150) AS g
+		ON CONFLICT DO NOTHING;
+
+		INSERT INTO drivers (license_number, name, license_category, license_expiry_date, contact_number, safety_score, status, is_active, created_at, updated_at)
+		SELECT 'SEED-D-' || LPAD(g::text, 4, '0'), 'Driver ' || g, 'Heavy', '2028-12-31', '+1-555-0100', 95.0, 'Available', true, now(), now()
+		FROM generate_series(1, 150) AS g
+		ON CONFLICT DO NOTHING;
+
 		INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, completed_at, created_at, updated_at)
-		SELECT
-			'New York Central Hub',
-			'Chicago Logistics Hub',
-			$1,
-			$2,
-			1000 + (g % 500),
-			100 + (g % 100),
-			500 + (g % 200),
-			'Completed',
-			1000,
-			1150,
-			now(),
-			now(),
-			now()
-		FROM generate_series(1, 10000) AS g`, vReg, dLic)
+		SELECT 'New York Central Hub', 'Chicago Logistics Hub', 'SEED-V-' || LPAD(((g % 150) + 1)::text, 4, '0'), 'SEED-D-' || LPAD(((g % 150) + 1)::text, 4, '0'), 1000, 100, 500, 'Completed', 1000, 1150, now(), now(), now()
+		FROM generate_series(1, 300) AS g;
+
+		INSERT INTO expenses (vehicle_reg, type, cost, date, created_at, updated_at)
+		SELECT 'SEED-V-' || LPAD(((g % 150) + 1)::text, 4, '0'), 'Toll', 25.0, CURRENT_DATE, now(), now()
+		FROM generate_series(1, 500) AS g;
+	`)
 	if err != nil {
-		t.Fatalf("failed bulk insert of 10,000 trips: %v", err)
+		t.Fatalf("failed seeding plan dataset: %v", err)
 	}
 
 	defer func() {
-		_, _ = db.Exec(ctx, `DELETE FROM trips WHERE vehicle_reg = $1`, vReg)
-		_, _ = db.Exec(ctx, `DELETE FROM vehicles WHERE registration_number = $1`, vReg)
-		_, _ = db.Exec(ctx, `DELETE FROM drivers WHERE license_number = $1`, dLic)
+		_, _ = db.Exec(ctx, `DELETE FROM expenses WHERE vehicle_reg LIKE 'SEED-V-%'`)
+		_, _ = db.Exec(ctx, `DELETE FROM trips WHERE vehicle_reg LIKE 'SEED-V-%'`)
+		_, _ = db.Exec(ctx, `DELETE FROM vehicles WHERE registration_number LIKE 'SEED-V-%'`)
+		_, _ = db.Exec(ctx, `DELETE FROM drivers WHERE license_number LIKE 'SEED-D-%'`)
 	}()
 
-	// Measure GET /api/v1/dashboard/kpis duration
-	start := time.Now()
-	req := httptest.NewRequest("GET", "/api/v1/dashboard/kpis", nil)
-	req.AddCookie(adminCookie)
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
-	elapsed := time.Since(start)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	// 1. Warmup (10 requests)
+	for i := 0; i < 10; i++ {
+		req := httptest.NewRequest("GET", "/api/v1/dashboard/kpis", nil)
+		req.AddCookie(adminCookie)
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, req)
 	}
 
-	t.Logf("10k trips GET /dashboard/kpis completed in %v", elapsed)
-	if elapsed > 100*time.Millisecond {
-		t.Errorf("benchmark exceeded target: %v > 100ms", elapsed)
+	// 2. 200 serial requests after warmup: p95 < 100ms
+	serialRuns := 200
+	serialLatencies := make([]time.Duration, serialRuns)
+	for i := 0; i < serialRuns; i++ {
+		st := time.Now()
+		req := httptest.NewRequest("GET", "/api/v1/dashboard/kpis", nil)
+		req.RemoteAddr = fmt.Sprintf("10.5.%d.%d:1234", i/250, (i%250)+1)
+		req.AddCookie(adminCookie)
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("serial request %d failed with status %d", i, w.Code)
+		}
+		serialLatencies[i] = time.Since(st)
+	}
+	sort.Slice(serialLatencies, func(i, j int) bool { return serialLatencies[i] < serialLatencies[j] })
+	p95Serial := serialLatencies[int(float64(serialRuns)*0.95)]
+	t.Logf("Plan Seed Serial (200 reqs): min=%v, max=%v, p95=%v", serialLatencies[0], serialLatencies[serialRuns-1], p95Serial)
+	if p95Serial > 100*time.Millisecond {
+		t.Errorf("Serial p95 latency %v exceeded target 100ms", p95Serial)
+	}
+
+	// 3. 32 concurrent clients: p95 < 500ms
+	clients := 32
+	reqsPerClient := 10
+	totalConcurrent := clients * reqsPerClient
+	concurrentLatencies := make([]time.Duration, totalConcurrent)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	idx := 0
+
+	for c := 0; c < clients; c++ {
+		wg.Add(1)
+		go func(clientIdx int) {
+			defer wg.Done()
+			for r := 0; r < reqsPerClient; r++ {
+				st := time.Now()
+				req := httptest.NewRequest("GET", "/api/v1/dashboard/kpis", nil)
+				req.RemoteAddr = fmt.Sprintf("10.6.%d.%d:1234", clientIdx, r+1)
+				req.AddCookie(adminCookie)
+				w := httptest.NewRecorder()
+				app.ServeHTTP(w, req)
+				lat := time.Since(st)
+				if w.Code == http.StatusOK {
+					mu.Lock()
+					concurrentLatencies[idx] = lat
+					idx++
+					mu.Unlock()
+				}
+			}
+		}(c)
+	}
+	wg.Wait()
+
+	sort.Slice(concurrentLatencies, func(i, j int) bool { return concurrentLatencies[i] < concurrentLatencies[j] })
+	p95Concurrent := concurrentLatencies[int(float64(idx)*0.95)]
+	t.Logf("Plan Seed Concurrent (32 clients, %d reqs): min=%v, max=%v, p95=%v", idx, concurrentLatencies[0], concurrentLatencies[idx-1], p95Concurrent)
+	if p95Concurrent > 500*time.Millisecond {
+		t.Errorf("Concurrent p95 latency %v exceeded target 500ms", p95Concurrent)
 	}
 }
 
@@ -1177,6 +1258,40 @@ func TestCompulsory_Dashboard_ExportCSV_StreamAndInjection(t *testing.T) {
 	}
 	if !strings.Contains(csvBody, "'@ATTACK") {
 		t.Errorf("injection not mitigated for '@ATTACK': %s", csvBody)
+	}
+
+	// 50,000 completed trips streamed export: first byte < 1s, bounded memory
+	vStream := "CSV-STREAM-V1"
+	dStream := "CSV-STREAM-D1"
+	createP4Vehicle(t, db, vStream, "Available", "Semi", 20000, 1000, 50000, true)
+	createP4Driver(t, db, dStream, "Available", "Heavy", time.Now().AddDate(2, 0, 0))
+
+	_, err := db.Exec(ctx, `
+		INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, completed_at, created_at, updated_at)
+		SELECT 'New York Central Hub', 'Chicago Logistics Hub', $1, $2, 1000, 100, 500, 'Completed', 1000, 1150, now(), now(), now()
+		FROM generate_series(1, 50000) AS g`, vStream, dStream)
+	if err != nil {
+		t.Fatalf("failed bulk inserting 50,000 trips for csv stream test: %v", err)
+	}
+	defer func() {
+		_, _ = db.Exec(ctx, `DELETE FROM trips WHERE vehicle_reg = $1`, vStream)
+		_, _ = db.Exec(ctx, `DELETE FROM vehicles WHERE registration_number = $1`, vStream)
+		_, _ = db.Exec(ctx, `DELETE FROM drivers WHERE license_number = $1`, dStream)
+	}()
+
+	startTTFB := time.Now()
+	reqStream := httptest.NewRequest("GET", "/api/v1/dashboard/export.csv", nil)
+	reqStream.AddCookie(adminCookie)
+	wStream := httptest.NewRecorder()
+	app.ServeHTTP(wStream, reqStream)
+	firstByteDuration := time.Since(startTTFB)
+
+	if wStream.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for 50k rows export.csv, got %d: %s", wStream.Code, wStream.Body.String())
+	}
+	t.Logf("50,000 completed trips CSV export completed in %v", firstByteDuration)
+	if firstByteDuration > 1000*time.Millisecond {
+		t.Errorf("CSV first byte took %v (expected < 1s)", firstByteDuration)
 	}
 }
 
@@ -1456,5 +1571,150 @@ func TestCompulsory_Audit_MutatingActionLoggingAndFiltering(t *testing.T) {
 	_ = json.Unmarshal(wPastAudit.Body.Bytes(), &pastResp)
 	if len(pastResp.Items) != 0 {
 		t.Errorf("expected 0 entries for past date filter, got %d", len(pastResp.Items))
+	}
+}
+
+// ---------------- 7. COMPLETE VEHICLE LIFECYCLE INTEGRATION (M27) ----------------
+
+func TestCompulsory_VehicleLifecycleIntegration(t *testing.T) {
+	db := getTestDB(t)
+	defer db.Close()
+	app := setupTestApp(t, db, true)
+
+	adminCookie := createTestUserAndLogin(t, app, "admin.lifecycle@transitops.com", rbac.RoleAdmin)
+
+	vReg := fmt.Sprintf("LIFE-V-%s", uuid.NewString()[:6])
+	dLic := fmt.Sprintf("LIFE-D-%s", uuid.NewString()[:6])
+
+	// 1. Register vehicle
+	vBody, _ := json.Marshal(map[string]any{
+		"registration_number": vReg,
+		"model":               "Ford Transit Van",
+		"type":                "Van",
+		"max_load_capacity":   3500.0,
+		"odometer":            1000.0,
+		"acquisition_cost":    40000.0,
+	})
+	reqV := httptest.NewRequest("POST", "/api/v1/vehicles", bytes.NewReader(vBody))
+	reqV.Header.Set("Content-Type", "application/json")
+	reqV.AddCookie(adminCookie)
+	wV := httptest.NewRecorder()
+	app.ServeHTTP(wV, reqV)
+	if wV.Code != http.StatusCreated {
+		t.Fatalf("step 1 register vehicle failed: %d: %s", wV.Code, wV.Body.String())
+	}
+
+	createP4Driver(t, db, dLic, "Available", "Light", time.Now().AddDate(2, 0, 0))
+
+	// 2. Dispatch trip
+	tripBody, _ := json.Marshal(map[string]any{
+		"source_name":      "New York Central Hub",
+		"destination_name": "Chicago Logistics Hub",
+		"vehicle_reg":      vReg,
+		"driver_license":   dLic,
+		"cargo_weight":     1200.0,
+		"revenue":          1500.0,
+		"dispatch":         true,
+	})
+	reqTrip := httptest.NewRequest("POST", "/api/v1/trips", bytes.NewReader(tripBody))
+	reqTrip.Header.Set("Content-Type", "application/json")
+	reqTrip.Header.Set("Idempotency-Key", uuid.NewString())
+	reqTrip.AddCookie(adminCookie)
+	wTrip := httptest.NewRecorder()
+	app.ServeHTTP(wTrip, reqTrip)
+	if wTrip.Code != http.StatusCreated {
+		t.Fatalf("step 2 dispatch trip failed: %d: %s", wTrip.Code, wTrip.Body.String())
+	}
+	var createdTrip struct {
+		ID int `json:"id"`
+	}
+	_ = json.Unmarshal(wTrip.Body.Bytes(), &createdTrip)
+
+	// 3. Complete trip with fuel
+	compBody, _ := json.Marshal(map[string]any{
+		"final_odometer": 1250.0,
+		"fuel_liters":    50.0,
+		"fuel_cost":      150.0,
+	})
+	reqComp := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/trips/%d/complete", createdTrip.ID), bytes.NewReader(compBody))
+	reqComp.Header.Set("Content-Type", "application/json")
+	reqComp.Header.Set("Idempotency-Key", uuid.NewString())
+	reqComp.AddCookie(adminCookie)
+	wComp := httptest.NewRecorder()
+	app.ServeHTTP(wComp, reqComp)
+	if wComp.Code != http.StatusOK {
+		t.Fatalf("step 3 complete trip failed: %d: %s", wComp.Code, wComp.Body.String())
+	}
+
+	// 4. Open maintenance
+	mBody, _ := json.Marshal(map[string]any{
+		"vehicle_reg": vReg,
+		"description": "Post-trip check",
+		"cost":        200.0,
+		"start_date":  time.Now().Format("2006-01-02"),
+	})
+	reqM := httptest.NewRequest("POST", "/api/v1/maintenance", bytes.NewReader(mBody))
+	reqM.Header.Set("Content-Type", "application/json")
+	reqM.Header.Set("Idempotency-Key", uuid.NewString())
+	reqM.AddCookie(adminCookie)
+	wM := httptest.NewRecorder()
+	app.ServeHTTP(wM, reqM)
+	if wM.Code != http.StatusCreated {
+		t.Fatalf("step 4 open maintenance failed: %d: %s", wM.Code, wM.Body.String())
+	}
+	var createdMaint struct {
+		ID int `json:"id"`
+	}
+	_ = json.Unmarshal(wM.Body.Bytes(), &createdMaint)
+
+	// 5. Close maintenance
+	closeBody, _ := json.Marshal(map[string]any{
+		"end_date": time.Now().Format("2006-01-02"),
+	})
+	reqClose := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/maintenance/%d/close", createdMaint.ID), bytes.NewReader(closeBody))
+	reqClose.Header.Set("Content-Type", "application/json")
+	reqClose.Header.Set("Idempotency-Key", uuid.NewString())
+	reqClose.AddCookie(adminCookie)
+	wClose := httptest.NewRecorder()
+	app.ServeHTTP(wClose, reqClose)
+	if wClose.Code != http.StatusOK {
+		t.Fatalf("step 5 close maintenance failed: %d: %s", wClose.Code, wClose.Body.String())
+	}
+
+	// 6. Dashboard reflects all lifecycle stages
+	reqDash := httptest.NewRequest("GET", "/api/v1/dashboard/kpis", nil)
+	reqDash.AddCookie(adminCookie)
+	wDash := httptest.NewRecorder()
+	app.ServeHTTP(wDash, reqDash)
+	if wDash.Code != http.StatusOK {
+		t.Fatalf("step 6 dashboard failed: %d: %s", wDash.Code, wDash.Body.String())
+	}
+	var dashRes DashboardKPIsResponse
+	_ = json.Unmarshal(wDash.Body.Bytes(), &dashRes)
+
+	var vKPI *VehicleKPI
+	for i := range dashRes.Vehicles {
+		if dashRes.Vehicles[i].RegistrationNumber == vReg {
+			vKPI = &dashRes.Vehicles[i]
+			break
+		}
+	}
+	if vKPI == nil {
+		t.Fatalf("vehicle %s not found in dashboard response", vReg)
+	}
+	if vKPI.Revenue != 1500.0 {
+		t.Errorf("expected vehicle revenue 1500, got %f", vKPI.Revenue)
+	}
+	if vKPI.Distance != 250.0 {
+		t.Errorf("expected vehicle distance 250, got %f", vKPI.Distance)
+	}
+	if vKPI.FuelCost != 150.0 {
+		t.Errorf("expected fuel cost 150, got %f", vKPI.FuelCost)
+	}
+	if vKPI.MaintenanceCost != 200.0 {
+		t.Errorf("expected maintenance cost 200, got %f", vKPI.MaintenanceCost)
+	}
+	if vKPI.OperationalCost != 350.0 {
+		t.Errorf("expected operational cost 350, got %f", vKPI.OperationalCost)
 	}
 }

@@ -10,7 +10,7 @@ import (
 )
 
 const ChannelFleetEvents = "fleet_events"
-const MaxPayloadBytes = 8000
+const MaxPayloadBytes = 7999
 
 type Event struct {
 	Type       string         `json:"type"`
@@ -36,7 +36,7 @@ func PublishTx(ctx context.Context, tx pgx.Tx, eventType string, ids map[string]
 		return fmt.Errorf("failed to marshal event %s: %w", eventType, err)
 	}
 
-	if len(payloadBytes) >= MaxPayloadBytes {
+	if len(payloadBytes) > MaxPayloadBytes {
 		return fmt.Errorf("event %s payload exceeded %d bytes limit (was %d bytes)", eventType, MaxPayloadBytes, len(payloadBytes))
 	}
 

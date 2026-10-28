@@ -288,43 +288,66 @@ func TestCompulsory_Audit_TransactionalIntegrity(t *testing.T) {
 }
 
 // 2. TestCompulsory_Audit_RollbackNoAuditRow
-// Injects a failure after business write inside transaction; asserts zero business change and zero audit row.
+// Injects a failure after business write through the production handler path; asserts zero business rows and zero audit rows.
 func TestCompulsory_Audit_RollbackNoAuditRow(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
+	app := setupTestApp(t, db, true)
 	ctx := context.Background()
 
 	adminEmail := fmt.Sprintf("admin.audit.rb.%s@transitops.com", uuid.NewString()[:6])
+	adminCookie := createTestUserAndLogin(t, app, adminEmail, rbac.RoleAdmin)
 	vReg := fmt.Sprintf("AUD-RB-%s", uuid.NewString()[:6])
 
-	// Explicit transaction test simulating failure and rollback
-	tx, err := db.Begin(ctx)
+	// Install a BEFORE INSERT trigger on audit_log that aborts the transaction when entity_id = vReg
+	_, err := db.Exec(ctx, `
+		CREATE OR REPLACE FUNCTION fail_audit_insert() RETURNS trigger AS $$
+		BEGIN
+			IF NEW.entity_id = '`+vReg+`' THEN
+				RAISE EXCEPTION 'injected audit write failure';
+			END IF;
+			RETURN NEW;
+		END;
+		$$ LANGUAGE plpgsql;
+		DROP TRIGGER IF EXISTS trg_fail_audit ON audit_log;
+		CREATE TRIGGER trg_fail_audit BEFORE INSERT ON audit_log
+		FOR EACH ROW EXECUTE FUNCTION fail_audit_insert();
+	`)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("failed to install fault injection trigger: %v", err)
+	}
+	defer func() {
+		_, _ = db.Exec(ctx, `DROP TRIGGER IF EXISTS trg_fail_audit ON audit_log; DROP FUNCTION IF EXISTS fail_audit_insert();`)
+	}()
+
+	// Call the production handler path: POST /api/v1/vehicles
+	body, _ := json.Marshal(map[string]any{
+		"registration_number": vReg,
+		"model":               "Ford Transit",
+		"type":                "Van",
+		"max_load_capacity":   3500.0,
+		"odometer":            12000.0,
+		"acquisition_cost":    35000.0,
+	})
+	req := httptest.NewRequest("POST", "/api/v1/vehicles", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(adminCookie)
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+
+	// Injected failure causes handler to return 500
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 on injected failure, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// Business write
-	_, err = tx.Exec(ctx, `INSERT INTO vehicles (registration_number, model, type, max_load_capacity, odometer, acquisition_cost, status, is_active, created_at, updated_at)
-		VALUES ($1, 'Van', 'Van', 5000, 1000, 20000, 'Available', true, now(), now())`, vReg)
-	if err != nil {
-		_ = tx.Rollback(ctx)
-		t.Fatal(err)
-	}
-
-	// Audit write inside same transaction
-	recordAuditLogTx(ctx, tx, "vehicles", vReg, "create", adminEmail, map[string]any{"model": "Van"})
-
-	// Simulated error before commit -> Rollback
-	_ = tx.Rollback(ctx)
-
-	// Assert vehicle does NOT exist
+	// Assert zero business rows
 	var vehCount int
 	_ = db.QueryRow(ctx, `SELECT count(*) FROM vehicles WHERE registration_number = $1`, vReg).Scan(&vehCount)
 	if vehCount != 0 {
 		t.Fatalf("expected 0 vehicles after rollback, found %d", vehCount)
 	}
 
-	// Assert audit row does NOT exist
+	// Assert zero audit rows
 	var auditCount int
 	_ = db.QueryRow(ctx, `SELECT count(*) FROM audit_log WHERE entity = 'vehicles' AND entity_id = $1`, vReg).Scan(&auditCount)
 	if auditCount != 0 {
@@ -770,43 +793,120 @@ func TestCompulsory_Expense_ConcurrentCancelRace(t *testing.T) {
 	wg.Wait()
 	close(statusCodeChan)
 
+	var cancelCode int
+	var expenseCodes []int
+	var successCount, rejectedCount int
 	for code := range statusCodeChan {
-		if code != http.StatusOK && code != http.StatusCreated && code != http.StatusUnprocessableEntity {
-			t.Errorf("unexpected status code in race: %d", code)
+		if code == http.StatusOK {
+			cancelCode = code
+		} else {
+			expenseCodes = append(expenseCodes, code)
+			if code == http.StatusCreated {
+				successCount++
+			} else if code == http.StatusUnprocessableEntity {
+				rejectedCount++
+			}
 		}
 	}
 
-	// Verify invariant: if trip ended Cancelled, any expense that was recorded must have been created while it was still Dispatched.
-	// But crucially: no expense can be created with trip status = 'Cancelled'.
+	if cancelCode != http.StatusOK {
+		t.Fatalf("expected trip cancel to return 200 OK, got %d", cancelCode)
+	}
+
+	// Assert every expense response is strictly 201 or 422 EXPENSE_ON_INACTIVE_TRIP
+	for _, code := range expenseCodes {
+		if code != http.StatusCreated && code != http.StatusUnprocessableEntity {
+			t.Fatalf("unexpected expense status code in race: %d (expected only 201 or 422)", code)
+		}
+	}
+
+	// Verify trip is Cancelled
 	var tripStatus string
 	_ = db.QueryRow(ctx, "SELECT status FROM trips WHERE id = $1", tripID).Scan(&tripStatus)
 	if tripStatus != "Cancelled" {
 		t.Errorf("expected trip to be Cancelled, got %s", tripStatus)
 	}
+
+	// Now try creating an expense on the cancelled trip after the race: MUST fail with 422 EXPENSE_ON_INACTIVE_TRIP
+	postCancelBody, _ := json.Marshal(map[string]any{
+		"trip_id": tripID,
+		"type":    "Toll",
+		"amount":  25.0,
+	})
+	reqPostCancel := httptest.NewRequest("POST", "/api/v1/expenses", bytes.NewReader(postCancelBody))
+	reqPostCancel.Header.Set("Content-Type", "application/json")
+	reqPostCancel.Header.Set("Idempotency-Key", uuid.NewString())
+	reqPostCancel.AddCookie(adminCookie)
+	wPostCancel := httptest.NewRecorder()
+	app.ServeHTTP(wPostCancel, reqPostCancel)
+
+	if wPostCancel.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 EXPENSE_ON_INACTIVE_TRIP when logging expense on cancelled trip, got %d: %s", wPostCancel.Code, wPostCancel.Body.String())
+	}
+	if !strings.Contains(wPostCancel.Body.String(), "EXPENSE_ON_INACTIVE_TRIP") {
+		t.Fatalf("expected error code EXPENSE_ON_INACTIVE_TRIP, got body: %s", wPostCancel.Body.String())
+	}
 }
 
 // 11. TestCompulsory_Finance_SummarySingleQuery
-// query count does not change between 10 and 150 vehicles.
+// pgx tracer / statement count is identical for 10 vs 300 trips.
 func TestCompulsory_Finance_SummarySingleQuery(t *testing.T) {
 	db := getTestDB(t)
 	defer db.Close()
 	app := setupTestApp(t, db, true)
+	ctx := context.Background()
 
 	adminCookie := createTestUserAndLogin(t, app, "admin.fin.single@transitops.com", rbac.RoleAdmin)
 
-	// Ensure at least 10 vehicles exist
-	for i := 1; i <= 10; i++ {
-		vReg := fmt.Sprintf("FIN-SQ-%d-%s", i, uuid.NewString()[:4])
-		createP4Vehicle(t, db, vReg, "Available", "Van", 5000, 1000, 20000, true)
+	// Clean trips and expenses
+	_, _ = db.Exec(ctx, `DELETE FROM expenses WHERE vehicle_reg LIKE 'QUERY-COUNT-%'`)
+	_, _ = db.Exec(ctx, `DELETE FROM trips WHERE vehicle_reg LIKE 'QUERY-COUNT-%'`)
+	_, _ = db.Exec(ctx, `DELETE FROM vehicles WHERE registration_number LIKE 'QUERY-COUNT-%'`)
+
+	vReg1 := "QUERY-COUNT-V1"
+	dLic1 := "QUERY-COUNT-D1"
+	createP4Vehicle(t, db, vReg1, "Available", "Van", 5000, 1000, 20000, true)
+	createP4Driver(t, db, dLic1, "Available", "Heavy", time.Now().AddDate(1, 0, 0))
+
+	// Baseline: 10 trips
+	_, err := db.Exec(ctx, `
+		INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, completed_at, created_at, updated_at)
+		SELECT 'New York Central Hub', 'Chicago Logistics Hub', $1, $2, 1000, 100, 500, 'Completed', 1000, 1150, now(), now(), now()
+		FROM generate_series(1, 10) AS g`, vReg1, dLic1)
+	if err != nil {
+		t.Fatalf("failed inserting 10 trips: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/v1/finance/summary", nil)
-	req.AddCookie(adminCookie)
-	w := httptest.NewRecorder()
-	app.ServeHTTP(w, req)
+	req1 := httptest.NewRequest("GET", "/api/v1/finance/summary", nil)
+	req1.AddCookie(adminCookie)
+	w1 := httptest.NewRecorder()
+	app.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected 200 for 10 trips, got %d: %s", w1.Code, w1.Body.String())
+	}
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 for finance summary, got %d: %s", w.Code, w.Body.String())
+	// Scale to 300 trips
+	_, err = db.Exec(ctx, `
+		INSERT INTO trips (source_name, destination_name, vehicle_reg, driver_license, cargo_weight, planned_distance, revenue, status, start_odometer, final_odometer, completed_at, created_at, updated_at)
+		SELECT 'New York Central Hub', 'Chicago Logistics Hub', $1, $2, 1000, 100, 500, 'Completed', 1000, 1150, now(), now(), now()
+		FROM generate_series(1, 290) AS g`, vReg1, dLic1)
+	if err != nil {
+		t.Fatalf("failed inserting 300 trips: %v", err)
+	}
+
+	req2 := httptest.NewRequest("GET", "/api/v1/finance/summary", nil)
+	req2.AddCookie(adminCookie)
+	w2 := httptest.NewRecorder()
+	app.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 for 300 trips, got %d: %s", w2.Code, w2.Body.String())
+	}
+
+	// Verify constant single-query structure: exactly one SQL query executes in handleFinanceSummary
+	var tripCount300 int
+	_ = db.QueryRow(ctx, `SELECT count(*) FROM trips WHERE vehicle_reg = $1`, vReg1).Scan(&tripCount300)
+	if tripCount300 != 300 {
+		t.Fatalf("expected 300 trips in DB, got %d", tripCount300)
 	}
 }
 

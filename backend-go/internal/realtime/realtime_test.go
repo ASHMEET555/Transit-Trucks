@@ -2,6 +2,7 @@ package realtime_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"sync"
@@ -177,25 +178,44 @@ func TestEvents_PayloadSizeCheck(t *testing.T) {
 	defer pool.Close()
 	ctx := context.Background()
 
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		t.Fatalf("failed to begin tx: %v", err)
-	}
-	defer tx.Rollback(ctx)
+	// For every registered event type: max payload accepted, oversized payload rejected
+	for _, eventType := range realtime.AllEventTypes {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			t.Fatalf("failed to begin tx: %v", err)
+		}
 
-	// 1. Normal size: succeeds
-	err = realtime.PublishTx(ctx, tx, realtime.EventTripCreated, map[string]any{"trip_id": 1})
-	if err != nil {
-		t.Fatalf("expected success for normal payload, got: %v", err)
-	}
+		// Calculate base event structure size
+		baseEv := realtime.Event{
+			Type:       eventType,
+			IDs:        map[string]any{"k": ""},
+			OccurredAt: time.Now().UTC().Format(time.RFC3339),
+		}
+		baseBytes, _ := json.Marshal(baseEv)
+		// Max allowed size is 7999 bytes (PostgreSQL NOTIFY max payload)
+		fillLenMax := 7999 - len(baseBytes)
+		if fillLenMax < 0 {
+			t.Fatalf("base event exceeded max bytes")
+		}
 
-	// 2. Exceeds 8000 bytes: rejected
-	hugeMap := map[string]any{
-		"big_data": strings.Repeat("A", 8500),
-	}
-	err = realtime.PublishTx(ctx, tx, realtime.EventTripCreated, hugeMap)
-	if err == nil {
-		t.Fatalf("expected error for payload exceeding 8KB, got nil")
+		mapMax := map[string]any{
+			"k": strings.Repeat("A", fillLenMax),
+		}
+		err = realtime.PublishTx(ctx, tx, eventType, mapMax)
+		if err != nil {
+			t.Errorf("[%s] expected max-byte payload to be accepted, got error: %v", eventType, err)
+		}
+
+		// 8000+ bytes must be rejected
+		mapOversized := map[string]any{
+			"k": strings.Repeat("A", fillLenMax+1),
+		}
+		err = realtime.PublishTx(ctx, tx, eventType, mapOversized)
+		if err == nil {
+			t.Errorf("[%s] expected oversized payload to be rejected, got nil", eventType)
+		}
+
+		_ = tx.Rollback(ctx)
 	}
 }
 

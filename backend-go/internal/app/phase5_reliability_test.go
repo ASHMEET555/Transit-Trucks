@@ -59,6 +59,27 @@ func TestCompulsory_RequestTimeout_503(t *testing.T) {
 	if errResp.Error.Code != "REQUEST_TIMEOUT" {
 		t.Errorf("expected error code REQUEST_TIMEOUT, got %s", errResp.Error.Code)
 	}
+
+	// Confirm the slow test route is NOT registered in the production router (ENV=production)
+	prodCfg := Config{
+		Secret:         "a-very-long-and-secure-session-secret-key-32-bytes",
+		AllowedOrigins: []string{"http://localhost:3000"},
+		Env:            "production",
+		CookieDomain:   "transitops.com",
+	}
+	prodApp := New(db, prodCfg)
+	reqProd := httptest.NewRequest("GET", "/api/v1/test/slow", nil)
+	reqProd = reqProd.WithContext(middleware.WithUser(reqProd.Context(), &auth.SessionUser{
+		ID:       "test-admin",
+		Email:    "admin@transitops.com",
+		Role:     "Admin",
+		IsActive: true,
+	}))
+	wProd := httptest.NewRecorder()
+	prodApp.ServeHTTP(wProd, reqProd)
+	if wProd.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for /api/v1/test/slow in production environment, got %d", wProd.Code)
+	}
 }
 
 // 2. Test that a pg_sleep route returns 504 DB_TIMEOUT over HTTP
@@ -149,6 +170,21 @@ func TestCompulsory_GracefulShutdownInFlight(t *testing.T) {
 
 	app := setupTestApp(t, db, true)
 
+	inFlightStarted := make(chan struct{})
+	inFlightRelease := make(chan struct{})
+
+	// Custom handler wrapper that signals when in-flight request is inside handler
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/test-in-flight" {
+			close(inFlightStarted)
+			<-inFlightRelease
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+			return
+		}
+		app.ServeHTTP(w, r)
+	})
+
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to bind listener: %v", err)
@@ -156,7 +192,7 @@ func TestCompulsory_GracefulShutdownInFlight(t *testing.T) {
 	addr := listener.Addr().String()
 
 	server := &http.Server{
-		Handler: app,
+		Handler: handler,
 	}
 
 	serverErrCh := make(chan error, 1)
@@ -168,8 +204,7 @@ func TestCompulsory_GracefulShutdownInFlight(t *testing.T) {
 
 	inFlightCh := make(chan int, 1)
 	go func() {
-		// Hit /healthz or a small query route
-		resp, err := http.Get("http://" + addr + "/healthz")
+		resp, err := http.Get("http://" + addr + "/test-in-flight")
 		if err != nil {
 			inFlightCh <- 0
 			return
@@ -178,12 +213,29 @@ func TestCompulsory_GracefulShutdownInFlight(t *testing.T) {
 		inFlightCh <- resp.StatusCode
 	}()
 
-	// Wait briefly then invoke graceful shutdown
-	time.Sleep(10 * time.Millisecond)
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	// Wait for handler to explicitly signal request is in-flight (no sleeping)
+	<-inFlightStarted
 
-	if err := server.Shutdown(shutdownCtx); err != nil {
+	// Trigger Shutdown while request is actively running inside handler
+	shutdownDone := make(chan error, 1)
+	go func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		shutdownDone <- server.Shutdown(shutdownCtx)
+	}()
+
+	// Assert new requests started after Shutdown is called are refused
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	_, errNew := client.Get("http://" + addr + "/healthz")
+	if errNew == nil {
+		t.Fatal("expected new request after server.Shutdown to be refused, but succeeded")
+	}
+
+	// Release the in-flight request
+	close(inFlightRelease)
+
+	// Verify server.Shutdown completes cleanly
+	if err := <-shutdownDone; err != nil {
 		t.Fatalf("server.Shutdown failed: %v", err)
 	}
 
@@ -195,12 +247,5 @@ func TestCompulsory_GracefulShutdownInFlight(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for in-flight request")
-	}
-
-	// Verify new request is refused immediately after shutdown
-	client := &http.Client{Timeout: 1 * time.Second}
-	_, errNew := client.Get("http://" + addr + "/healthz")
-	if errNew == nil {
-		t.Fatal("expected new request after server.Shutdown to be refused, but succeeded")
 	}
 }

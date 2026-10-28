@@ -678,19 +678,85 @@ func TestCompulsory_MigrationUpDownUp(t *testing.T) {
 
 	// 4b. Insert cost-0 fuel expense and two fuel expenses on one trip across up, down, up
 	pool, err := pgxpool.New(context.Background(), dsn)
-	if err == nil {
-		defer pool.Close()
-		ctx := context.Background()
-		var tripID int64
-		_ = pool.QueryRow(ctx, `SELECT id FROM trips WHERE status = 'Completed' LIMIT 1`).Scan(&tripID)
-		if tripID > 0 {
-			// Cost-0 fuel expense
-			_, _ = pool.Exec(ctx, `INSERT INTO expenses (trip_id, type, cost, liters, date, created_at, updated_at)
-				VALUES ($1, 'Fuel', 0.0, 15.0, CURRENT_DATE, now(), now())`, tripID)
-			// Second fuel expense on same trip
-			_, _ = pool.Exec(ctx, `INSERT INTO expenses (trip_id, type, cost, liters, date, created_at, updated_at)
-				VALUES ($1, 'Fuel', 45.0, 20.0, CURRENT_DATE, now(), now())`, tripID)
-		}
+	if err != nil {
+		t.Fatalf("failed to connect pool: %v", err)
+	}
+	defer pool.Close()
+	ctx := context.Background()
+
+	var tripID int64
+	err = pool.QueryRow(ctx, `SELECT id FROM trips WHERE status = 'Completed' LIMIT 1`).Scan(&tripID)
+	if err != nil {
+		t.Fatalf("failed to find completed trip: %v", err)
+	}
+
+	// Cost-0 fuel expense (user-entered)
+	var exp0ID int64
+	err = pool.QueryRow(ctx, `INSERT INTO expenses (trip_id, type, cost, liters, date, created_at, updated_at, migrated_from_trip)
+		VALUES ($1, 'Fuel', 0.0, 15.0, CURRENT_DATE, now(), now(), false) RETURNING id`, tripID).Scan(&exp0ID)
+	if err != nil {
+		t.Fatalf("failed to insert cost-0 fuel expense: %v", err)
+	}
+
+	// Second fuel expense on same trip (user-entered)
+	var exp2ID int64
+	err = pool.QueryRow(ctx, `INSERT INTO expenses (trip_id, type, cost, liters, date, created_at, updated_at, migrated_from_trip)
+		VALUES ($1, 'Fuel', 45.0, 20.0, CURRENT_DATE, now(), now(), false) RETURNING id`, tripID).Scan(&exp2ID)
+	if err != nil {
+		t.Fatalf("failed to insert second fuel expense: %v", err)
+	}
+
+	// Mark one expense as migrated_from_trip = true to verify it is removed on down
+	var expMigratedID int64
+	err = pool.QueryRow(ctx, `INSERT INTO expenses (trip_id, type, cost, liters, date, created_at, updated_at, migrated_from_trip)
+		VALUES ($1, 'Fuel', 100.0, 40.0, CURRENT_DATE, now(), now(), true) RETURNING id`, tripID).Scan(&expMigratedID)
+	if err != nil {
+		t.Fatalf("failed to insert migrated_from_trip expense: %v", err)
+	}
+
+	// Step down to version 3 (reverting migration 000004)
+	cmdStepDown := exec.Command("go", "run", "./cmd/migrate", "-path", migPath, "force", "3")
+	cmdStepDown.Dir = filepath.Join(root, "backend-go")
+	cmdStepDown.Env = append(os.Environ(), "DATABASE_URL="+dsn, "CGO_ENABLED=0")
+	if out, err := cmdStepDown.CombinedOutput(); err != nil {
+		t.Fatalf("migrate down step 4 failed: %v: %s", err, string(out))
+	}
+	// Execute 000004 down sql
+	downSQLPath := filepath.Join(migPath, "000004_fuel_expenses.down.sql")
+	downSQL, err := os.ReadFile(downSQLPath)
+	if err != nil {
+		t.Fatalf("failed to read down sql: %v", err)
+	}
+	if _, err := pool.Exec(ctx, string(downSQL)); err != nil {
+		t.Fatalf("failed to execute 000004 down sql: %v", err)
+	}
+
+	// Assert migrated_from_trip=true rows are gone
+	var migCount int
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM expenses WHERE id = $1`, expMigratedID).Scan(&migCount)
+	if migCount != 0 {
+		t.Fatalf("expected migrated_from_trip=true row %d to be deleted on down, found %d", expMigratedID, migCount)
+	}
+
+	// Assert user-entered cost-0 and second fuel rows remain
+	var userExpCount int
+	err = pool.QueryRow(ctx, `SELECT count(*) FROM expenses WHERE id IN ($1, $2)`, exp0ID, exp2ID).Scan(&userExpCount)
+	if err != nil {
+		t.Fatalf("failed to query user-entered expenses after down: %v", err)
+	}
+	if userExpCount != 2 {
+		t.Fatalf("expected 2 user-entered fuel expenses to remain after down, found %d", userExpCount)
+	}
+
+	// Restore migration version to 5 and re-apply up
+	cmdForce5 := exec.Command("go", "run", "./cmd/migrate", "-path", migPath, "force", "5")
+	cmdForce5.Dir = filepath.Join(root, "backend-go")
+	cmdForce5.Env = append(os.Environ(), "DATABASE_URL="+dsn, "CGO_ENABLED=0")
+	if out, err := cmdForce5.CombinedOutput(); err != nil {
+		t.Fatalf("force version 5 failed: %v: %s", err, string(out))
+	}
+	if err := runMigrate("up"); err != nil {
+		t.Fatalf("migrate up after down failed: %v", err)
 	}
 
 	// 5. Down on seeded database
