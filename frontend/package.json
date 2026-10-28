@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "test": "node --test src/lib/__tests__/*.test.mjs",
+    "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
     "codegen": "openapi-typescript ../api/openapi.yaml -o src/lib/api/types.gen.ts"
   },
@@ -39,6 +40,7 @@
     "tailwind-variants": "^0.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^22.18.9",
     "@types/react": "19.0.4",
     "@types/react-dom": "19.0.2",

@@ -101,6 +101,11 @@ export function useFleetEvents(options: UseFleetEventsOptions = {}) {
             ids: raw.ids || raw.payload || {},
             occurred_at: raw.occurred_at || new Date().toISOString(),
           }
+          if (process.env.NEXT_PUBLIC_E2E === "1" && typeof window !== "undefined") {
+            const win = window as any
+            win.__fleetEventLog = win.__fleetEventLog || []
+            win.__fleetEventLog.push(event)
+          }
           setLastEvent(event)
           onEventRef.current?.(event)
         } catch {
