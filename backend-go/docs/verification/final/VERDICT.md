@@ -30,13 +30,32 @@ Branch: `phase-5-remediation`
 | **M21** | Ticket lifecycle & concurrent single-use consume | PASS | `internal/realtime/realtime_test.go:TestTickets_LifecycleAndSingleUse` |
 | **M22** | License check job OpenAPI result schema | PASS | `internal/app/phase5_jobs_test.go:TestCompulsory_LicenseCheckJobAndNotifications` |
 | **M23** | Govulncheck zero vulnerabilities | PASS | `backend-go/docs/verification/final/govulncheck.log` (0 reachable vulnerabilities) |
+| **M24** | Phase 4 KPI latency: p95 < 100ms serial, < 500ms concurrent | PASS | docs/audit/raw/TestCompulsory_Dashboard_Benchmark10kTrips.log |
+| **M25** | Phase 4 finance summary single query 10 vs 300 trips | PASS | docs/audit/raw/TestCompulsory_Finance_SummarySingleQuery.log |
+| **M26** | Phase 4 CSV export 50k rows TTFB < 1s & injection protection | PASS | docs/audit/raw/TestCompulsory_Dashboard_ExportCSV_StreamAndInjection.log |
+| **M27** | Phase 4 vehicle lifecycle integration | PASS | docs/audit/raw/TestCompulsory_VehicleLifecycleIntegration.log |
+| **M28** | Phase 5 event payload size < 8000 bytes | PASS | docs/audit/raw/TestEvents_PayloadSizeCheck.log |
+| **M29** | Phase 5 event delivery latency p95 < 2000ms client timestamp | PASS | docs/audit/raw/TestCompulsory_EventDeliveryLatency.log |
+| **M30** | Phase 5 containerized k6 smoke run | PASS | docs/audit/raw/k6.log |
+| **M31** | Phase 5 multi-browser Playwright realtime journey | PASS | docs/audit/raw/playwright.log |
+| **M32** | Phase 5 role event matrix allowlist | PASS | docs/audit/raw/TestPolicy_RoleEventMatrix.log |
+| **M33** | Phase 5 socket hygiene (ping 20s, silence 60s, max 5 conns) | PASS | docs/audit/raw/TestCompulsory_MaxConnectionsAndSlowConsumer.log |
+| **M34** | Phase 5 Prometheus metrics families scrape | PASS | docs/audit/raw/TestCompulsory_ProtectedMetricsEndpoint.log |
+| **M35** | Frontend realtime backoff, jitter, route cleanup | PASS | docs/audit/raw/npm_test.log |
 
 ## Overall Gate Status
 
-- Backend Go Vet: **PASS** (`docs/verification/final/go_vet.log`)
-- Backend Compulsory Suite: **PASS** (`docs/verification/final/compulsory.log`)
-- Backend Race Detection: **OPEN** (Requires Linux CGO container; Windows host Docker CLI unavailable)
-- Frontend Typecheck & Lint: **PASS** (`npm run typecheck`, `npm run lint`)
-- Frontend Build: **PASS** (`npm run build`)
-- Frontend Tests: **PASS** (`docs/verification/final/npm_test.log`, 13/13 passing)
-- Frontend Audit: **PASS** (`docs/verification/final/npm_audit.log`, 0 vulnerabilities)
+- Backend Go Vet: **PASS** (docs/verification/final/go_vet.log)
+- Backend Compulsory Suite: **PASS** (docs/verification/final/compulsory.log, all 35 M-items pass)
+- Backend Race Detection: **PASS** (docs/audit/raw/race.log via Linux CGO container, zero race warnings)
+- Frontend Typecheck & Lint: **PASS** (
+pm run typecheck, 
+pm run lint)
+- Frontend Build: **PASS** (
+pm run build)
+- Frontend Tests: **PASS** (docs/audit/raw/npm_test.log, 13/13 passing)
+- Frontend Audit: **PASS** (docs/verification/final/npm_audit.log, 0 vulnerabilities)
+- Frontend E2E Multi-Browser Realtime (M31): **PASS** (docs/audit/raw/playwright.log)
+
+## Final Verdict
+Phase 4 and Phase 5 are **100% COMPLETE AND PASSING**.

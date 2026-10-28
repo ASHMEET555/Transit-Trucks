@@ -572,9 +572,9 @@ flowchart TD
 - Audit rows exist for each audited action and roll back with a failed transaction.
 
 ### Exit gate
-- [ ] KPI numbers verified against an independent spreadsheet once
-- [ ] Latency target met with numbers saved in `docs/PERFORMANCE.md`
-- [ ] You ran a complete lifecycle: register → dispatch → complete with fuel → maintenance → dashboard
+- [x] KPI numbers verified against an independent spreadsheet once
+- [x] Latency target met with numbers saved in `docs/PERFORMANCE.md`
+- [x] You ran a complete lifecycle: register → dispatch → complete with fuel → maintenance → dashboard
 
 ---
 
@@ -618,9 +618,9 @@ flowchart TD
 - Load test meets SLOs for 10 minutes at the chosen load; a 3× spike degrades gracefully.
 
 ### Exit gate
-- [ ] Security regression suite (every item from section 2) is a permanent CI job
-- [ ] Load test results saved in `docs/PERFORMANCE.md`
-- [ ] You watched a live update cross two browser sessions with different roles
+- [x] Security regression suite (every item from section 2) is a permanent CI job
+- [x] Load test results saved in `docs/PERFORMANCE.md`
+- [x] You watched a live update cross two browser sessions with different roles
 
 ---
 
