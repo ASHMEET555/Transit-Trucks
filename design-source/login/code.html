@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>OmniFleet Telematics - Sign In</title>
+<!-- Tailwind CSS CDN with forms and container queries plugins -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+          },
+          colors: {
+            primary: '#111827',
+          }
+        }
+      }
+    }
+  </script>
+<!-- Google Fonts: Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<style data-purpose="custom-layout-patterns">
+    /* Subtle geometric dotted matrix grid pattern for left panel */
+    .telematics-grid-bg {
+      background-color: #ffffff;
+      background-image: radial-gradient(rgba(17, 24, 39, 0.12) 1px, transparent 1px);
+      background-size: 18px 18px;
+    }
+    
+    /* Watermark geometry inspired by the starburst emblem in source image */
+    .bg-watermark-glyph {
+      position: absolute;
+      top: -30px;
+      left: -30px;
+      width: 220px;
+      height: 220px;
+      opacity: 0.045;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    /* Carousel hide scrollbar for clean aesthetic */
+    .hide-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .hide-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="bg-neutral-100 min-h-screen flex items-center justify-center p-0 md:p-6 lg:p-10 font-sans text-neutral-900 antialiased selection:bg-neutral-900 selection:text-white">
+<!-- BEGIN: MainContainer -->
+<!-- Split screen desktop container with fixed aspect ratio mimicking the source frame -->
+<main class="w-full max-w-[1240px] h-screen md:h-[820px] max-h-[920px] bg-white md:rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row relative border border-neutral-200/80">
+<!-- BEGIN: LeftAuthenticationPane -->
+<section class="w-full md:w-1/2 h-full flex flex-col justify-between p-8 sm:p-12 lg:p-16 telematics-grid-bg relative z-10" data-purpose="auth-pane">
+<!-- Subtle Decorative Telematics Watermark Emblem -->
+<svg class="bg-watermark-glyph text-black" fill="currentColor" viewbox="0 0 100 100">
+<rect height="90" rx="3" width="6" x="47" y="5"></rect>
+<rect height="6" rx="3" width="90" x="5" y="47"></rect>
+<rect height="90" rx="3" transform="rotate(45 50 50)" width="6" x="47" y="5"></rect>
+<rect height="90" rx="3" transform="rotate(-45 50 50)" width="6" x="47" y="5"></rect>
+</svg>
+<!-- Top Spacing Anchor -->
+<div></div>
+<!-- Center Form Content Container -->
+<div class="w-full max-w-[340px] sm:max-w-[360px] mx-auto py-4">
+<!-- Header & Logo Section -->
+<div class="text-center mb-7">
+<!-- Eight-ray Geometric Telematics / Starburst Logo (exact emblem geometry) -->
+<div aria-label="OmniFleet Logo" class="inline-flex items-center justify-center w-11 h-11 mb-5 text-neutral-900 hover:scale-105 transition-transform duration-200">
+<svg class="w-9 h-9" fill="currentColor" viewbox="0 0 24 24">
+<!-- Radial multi-axis starburst glyph -->
+<rect height="20" rx="1" width="2" x="11" y="2"></rect>
+<rect height="2" rx="1" width="20" x="2" y="11"></rect>
+<rect height="20" rx="1" transform="rotate(45 12 12)" width="2" x="11" y="2"></rect>
+<rect height="20" rx="1" transform="rotate(-45 12 12)" width="2" x="11" y="2"></rect>
+</svg>
+</div>
+<h1 class="text-[22px] sm:text-[23px] font-bold tracking-tight text-neutral-900 mb-1.5" id="form-heading">
+            Sign into your account
+          </h1>
+<p class="text-xs sm:text-[13px] text-neutral-500 font-normal leading-relaxed max-w-[280px] mx-auto" id="form-subheading">
+            Real-time dispatch, fleet tracking, and telemetry are waiting.
+          </p>
+</div>
+<!-- Authentication Form -->
+<form aria-labelledby="form-heading" class="space-y-4" onsubmit="event.preventDefault();">
+<!-- Email Input Group -->
+<div class="space-y-1.5 text-left">
+<label class="block text-xs font-semibold text-neutral-800 tracking-wide" for="fleet-email">
+              Email
+            </label>
+<input autocomplete="email" class="w-full px-3.5 py-2.5 bg-white border border-neutral-300 rounded-lg text-sm text-neutral-900 placeholder:text-neutral-400 placeholder:text-xs sm:placeholder:text-sm focus:outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900 transition-all duration-150" id="fleet-email" name="email" placeholder="Enter your email" required="" type="email"/>
+</div>
+<!-- Password Input Group -->
+<div class="space-y-1.5 text-left">
+<label class="block text-xs font-semibold text-neutral-800 tracking-wide" for="fleet-password">
+              Password
+            </label>
+<input autocomplete="current-password" class="w-full px-3.5 py-2.5 bg-white border border-neutral-300 rounded-lg text-sm text-neutral-900 tracking-widest placeholder:tracking-widest placeholder:text-neutral-400 focus:outline-none focus:border-neutral-900 focus:ring-1 focus:ring-neutral-900 transition-all duration-150" id="fleet-password" name="password" placeholder="••••••••••" required="" type="password"/>
+<!-- Forgot Password Anchor -->
+<div class="pt-0.5">
+<a class="text-[11px] text-neutral-400 hover:text-neutral-700 underline decoration-neutral-300 transition-colors" href="#reset">
+                Forgot password?
+              </a>
+</div>
+</div>
+<!-- Primary Sign In Submit Button -->
+<div class="pt-2">
+<button class="w-full bg-[#151515] hover:bg-black text-white text-[13px] font-semibold py-3 px-4 rounded-xl shadow-md hover:shadow-lg transition-all duration-150 active:scale-[0.99] cursor-pointer" id="btn-submit" type="submit">
+              Sign in
+            </button>
+</div>
+<!-- Assistance Prompt -->
+<div class="pt-2 text-center">
+<p class="text-[11px] sm:text-xs text-neutral-500">
+              Can't sign in? 
+              <a class="font-semibold text-neutral-900 hover:underline" href="#reset-portal">
+                Reset password
+              </a>
+</p>
+</div>
+</form>
+</div>
+<!-- Footer Switcher Prompt -->
+<footer class="text-center pt-4 pb-2" data-purpose="auth-pane-footer">
+<p class="text-xs text-neutral-400">
+<span id="switcher-text">Don't have an account?</span>
+<button class="text-neutral-900 font-semibold underline decoration-neutral-900 underline-offset-2 ml-0.5 hover:text-neutral-600 transition-colors" id="toggle-auth-mode" type="button">
+            Sign up
+          </button>
+</p>
+</footer>
+</section>
+<!-- END: LeftAuthenticationPane -->
+<!-- BEGIN: RightShowcasePane -->
+<!-- Showcase gallery featuring aesthetic Japanese transit buses & telematics operations -->
+<section class="w-full md:w-1/2 h-[450px] md:h-full relative overflow-hidden bg-neutral-950 flex flex-col justify-end" data-purpose="transit-showcase">
+<!-- Slide Track Containers with dynamic backdrop -->
+<div class="absolute inset-0 w-full h-full z-0 overflow-hidden" id="slides-wrapper">
+<!-- Slide 1: Tokyo Shinjuku Night Transit Bus -->
+<article class="carousel-slide absolute inset-0 w-full h-full transition-opacity duration-700 ease-in-out opacity-100" data-author="Kenji T. / Fleet Operations Director" data-index="0" data-org="Tokyo &amp; Kyoto Transit Group" data-quote="“I've managed our regional dispatch and transit schedules through this platform, and every route has been seamless. The real-time telemetry makes all the difference!”">
+<img alt="Japanese night transit coach in Tokyo neon metropolitan corridor" class="w-full h-full object-cover object-center brightness-[0.78] contrast-[1.08] filter grayscale-[40%]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuANA_wQOiNVfpXXU_LeNza4SHE2PAprGCKwIZlMLxYrgQUG2iEsIKhIBmJEHhlo1nZ5DkCc47H4L5nI0QhdmC-jQPxZacKQhJXZ6v9gnBHx8-h74wfDMRUa9C4Z92Kw6ccCTxW3nm_QK8XEl1OqGNTYhVCN6NLaf-ai19vYx_twj7PA_eYZyKnewdD4WmOWZv-w4TYkooTJ9gX79f_SVjbFaFQLvqyaFiTaFbfiCDUdpHJjvDZwJ9wZ5Q"/>
+</article>
+<!-- Slide 2: Kyoto Heritage Green Transit Route -->
+<article class="carousel-slide absolute inset-0 w-full h-full transition-opacity duration-700 ease-in-out opacity-0 pointer-events-none" data-author="Ryotaro M. / Chief Telematics Engineer" data-index="1" data-org="Keihan Transit Systems Kansai" data-quote="“Tracking precision down to the second across Kyoto's tight avenues reduced our route latency by 28%. Drivers love the telemetry interface.”">
+<img alt="Kyoto traditional avenue with modern scheduled transit bus passing cherry blossom lanterns" class="w-full h-full object-cover object-center brightness-[0.75] contrast-[1.1] filter grayscale-[30%]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC8i_TL6D8X3e85sNTtjHS2udpkhkZR8W6iGtp0hZopz6HJY9PN4iRQD572Tc0GvvrBhXTt3jQ4_6tVsQoOdWGnA4MYt5Q0uL93YSQmW_hmV93_zczaA6NCDIaGO42uvuR4P94H3sUskl879n9Y2HWk2MUTzIJ6_K0CZwyR5XhvUNeWC85l5luFx-MTo5fSFd2aLqP70aitrtYPEFlftomTHDmzUqwEHrboH2Owt03QB3vW-WQ5JJ_k9g"/>
+</article>
+<!-- Slide 3: Express Highway Coach at Dusk -->
+<article class="carousel-slide absolute inset-0 w-full h-full transition-opacity duration-700 ease-in-out opacity-0 pointer-events-none" data-author="Emi S. / Dispatch Lead" data-index="2" data-org="Japan Highway Express Fleet" data-quote="“From Tokyo highway coaches to Hokkaido winter fleets, this telemetry system delivers uninterrupted live sensor data and GPS integrity.”">
+<img alt="Sleek silver highway coach terminal in Shinjuku at twilight" class="w-full h-full object-cover object-center brightness-[0.70] contrast-[1.15] filter grayscale-[35%]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBjFxyfS_7YRRRBeD-Qx8mQ2KrgdfGbxBZbChVQHv4dUQElmItsskwEiXoF3tqyOy4HfRiQ206Mms7FSi_DvtBa1C6NV_fkqtAwbBtP0ek9CoixBxr05NuN3-f9cTCSDYjXKFuRwcV88F5YXbvVqovt08k4ai5QZXq4ZhkCB2dwZ01RADxZ8WiiWcvIIYJmxpFDF19tJDgVPVQsBHvLcF98FCfY3rEUo-ILcqcTK6h7Mgx1AMU7JbUsbw"/>
+</article>
+</div>
+<!-- Vignette Overlay & Aesthetic Gradient for Legibility -->
+<div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent pointer-events-none z-10 opacity-90"></div>
+<!-- Top Fleet Status Badge -->
+<div class="absolute top-6 left-6 z-20 flex items-center gap-2 bg-black/45 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/15 text-white text-[11px] font-medium tracking-wide">
+<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+<span>Japan Fleet Grid: Live Telemetry</span>
+</div>
+<!-- Slide Indicator Badges -->
+<div class="absolute top-6 right-6 z-20 flex items-center space-x-1.5 bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10">
+<span class="slide-indicator w-2 h-2 rounded-full bg-white transition-all duration-300"></span>
+<span class="slide-indicator w-1.5 h-1.5 rounded-full bg-white/40 transition-all duration-300"></span>
+<span class="slide-indicator w-1.5 h-1.5 rounded-full bg-white/40 transition-all duration-300"></span>
+</div>
+<!-- Bottom Testimonial Overlay & Carousel Navigators -->
+<div class="relative z-20 px-8 pb-8 pt-4 text-white flex flex-col justify-end" data-purpose="testimonial-container">
+<!-- Large Quote Text (Direct representation of source typography) -->
+<blockquote class="mb-6 max-w-[480px] mx-auto text-center md:text-left">
+<p class="text-base sm:text-lg lg:text-[20px] font-normal leading-snug sm:leading-snug text-neutral-100 tracking-tight drop-shadow-sm transition-opacity duration-300" id="quote-display">
+            I've managed our regional dispatch and transit schedules through this platform, and every route has been seamless. The real-time telemetry makes all the difference!
+          </p>
+</blockquote>
+<!-- Footer Meta Row: Laurel Wreath Attribution + Left/Right Arrow Controls -->
+<div class="flex items-center justify-between pt-1">
+<!-- Left Arrow Navigation Button -->
+<button aria-label="Previous bus gallery photo" class="p-2.5 rounded-full hover:bg-white/20 active:bg-white/30 text-white/90 hover:text-white transition-all border border-white/20 hover:border-white/40 backdrop-blur-sm cursor-pointer" id="carousel-prev" type="button">
+<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewbox="0 0 24 24">
+<path d="M10 19l-7-7m0 0l7-7m-7 7h18" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+<!-- Laurel Wreath & Fleet Manager Attribution (Source Design Replication) -->
+<div class="flex items-center justify-center space-x-2 text-center">
+<!-- Left Laurel Branch -->
+<svg class="w-6 h-10 text-white/80 shrink-0" fill="currentColor" viewbox="0 0 24 40">
+<path d="M18 4C14 7 11 11 10 16C7 14 4 14 2 16C5 18 8 19 10 18C10 22 11 26 13 30C10 29 7 30 5 33C8 34 11 34 13 31C15 35 18 38 22 40C20 37 18 33 16 29C19 29 22 28 23 25C20 25 17 26 15 28C14 24 13 20 13 16C16 17 19 16 21 13C18 13 15 14 13 15C13 10 15 6 18 4Z"></path>
+</svg>
+<!-- Operational Director Credentials -->
+<div class="px-1 text-center">
+<p class="text-xs sm:text-[13px] font-semibold tracking-wide text-neutral-100" id="author-display">
+                Kenji T. <span class="text-white/60 mx-1">/</span> Fleet Operations Director
+              </p>
+<p class="text-[11px] text-white/70 font-medium" id="org-display">
+                Tokyo &amp; Kyoto Transit Group
+              </p>
+</div>
+<!-- Right Laurel Branch (Mirrored) -->
+<svg class="w-6 h-10 text-white/80 shrink-0 transform -scale-x-100" fill="currentColor" viewbox="0 0 24 40">
+<path d="M18 4C14 7 11 11 10 16C7 14 4 14 2 16C5 18 8 19 10 18C10 22 11 26 13 30C10 29 7 30 5 33C8 34 11 34 13 31C15 35 18 38 22 40C20 37 18 33 16 29C19 29 22 28 23 25C20 25 17 26 15 28C14 24 13 20 13 16C16 17 19 16 21 13C18 13 15 14 13 15C13 10 15 6 18 4Z"></path>
+</svg>
+</div>
+<!-- Right Arrow Navigation Button -->
+<button aria-label="Next bus gallery photo" class="p-2.5 rounded-full hover:bg-white/20 active:bg-white/30 text-white/90 hover:text-white transition-all border border-white/20 hover:border-white/40 backdrop-blur-sm cursor-pointer" id="carousel-next" type="button">
+<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewbox="0 0 24 24">
+<path d="M14 5l7 7m0 0l-7 7m7-7H3" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+</div>
+</div>
+</section>
+<!-- END: RightShowcasePane -->
+</main>
+<!-- END: MainContainer -->
+<!-- BEGIN: InteractiveScripts -->
+<!-- Script for managing auth switch state (Sign In vs Sign Up) -->
+<script data-purpose="auth-state-toggle">
+    const toggleBtn = document.getElementById('toggle-auth-mode');
+    const heading = document.getElementById('form-heading');
+    const subheading = document.getElementById('form-subheading');
+    const submitBtn = document.getElementById('btn-submit');
+    const switcherText = document.getElementById('switcher-text');
+
+    let isSignUp = false;
+
+    toggleBtn.addEventListener('click', () => {
+      isSignUp = !isSignUp;
+      if (isSignUp) {
+        heading.textContent = 'Create fleet account';
+        subheading.textContent = 'Register your transportation company to access the telemetry network.';
+        submitBtn.textContent = 'Create account';
+        switcherText.textContent = 'Already have an account?';
+        toggleBtn.textContent = 'Sign in';
+      } else {
+        heading.textContent = 'Sign into your account';
+        subheading.textContent = 'Real-time dispatch, fleet tracking, and telemetry are waiting.';
+        submitBtn.textContent = 'Sign in';
+        switcherText.textContent = "Don't have an account?";
+        toggleBtn.textContent = 'Sign up';
+      }
+    });
+  </script>
+<!-- Script for showcase carousel transitions & quote synchronization -->
+<script data-purpose="carousel-slider">
+    const slides = document.querySelectorAll('.carousel-slide');
+    const indicators = document.querySelectorAll('.slide-indicator');
+    const quoteDisplay = document.getElementById('quote-display');
+    const authorDisplay = document.getElementById('author-display');
+    const orgDisplay = document.getElementById('org-display');
+    const prevBtn = document.getElementById('carousel-prev');
+    const nextBtn = document.getElementById('carousel-next');
+
+    let currentSlide = 0;
+    const totalSlides = slides.length;
+
+    function updateSlide(index) {
+      currentSlide = (index + totalSlides) % totalSlides;
+
+      // Update slide visibilities
+      slides.forEach((slide, idx) => {
+        if (idx === currentSlide) {
+          slide.classList.remove('opacity-0', 'pointer-events-none');
+          slide.classList.add('opacity-100');
+
+          // Smoothly update quote and credentials
+          quoteDisplay.style.opacity = '0';
+          setTimeout(() => {
+            quoteDisplay.innerHTML = slide.dataset.quote;
+            authorDisplay.innerHTML = slide.dataset.author;
+            orgDisplay.innerHTML = slide.dataset.org;
+            quoteDisplay.style.opacity = '1';
+          }, 150);
+
+        } else {
+          slide.classList.remove('opacity-100');
+          slide.classList.add('opacity-0', 'pointer-events-none');
+        }
+      });
+
+      // Update dot indicators
+      indicators.forEach((dot, idx) => {
+        if (idx === currentSlide) {
+          dot.classList.remove('w-1.5', 'h-1.5', 'bg-white/40');
+          dot.classList.add('w-2.5', 'h-2.5', 'bg-white');
+        } else {
+          dot.classList.remove('w-2.5', 'h-2.5', 'bg-white');
+          dot.classList.add('w-1.5', 'h-1.5', 'bg-white/40');
+        }
+      });
+    }
+
+    // Navigation triggers
+    prevBtn.addEventListener('click', () => updateSlide(currentSlide - 1));
+    nextBtn.addEventListener('click', () => updateSlide(currentSlide + 1));
+
+    // Keyboard arrow support
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') updateSlide(currentSlide - 1);
+      if (e.key === 'ArrowRight') updateSlide(currentSlide + 1);
+    });
+
+    // Optional subtle auto-rotation every 7 seconds
+    setInterval(() => {
+      updateSlide(currentSlide + 1);
+    }, 7000);
+  </script>
+<!-- END: InteractiveScripts -->
+</body></html>
