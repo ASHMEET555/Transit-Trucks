@@ -422,23 +422,44 @@ func (a *App) getRemoteIP(r *http.Request) string {
 
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	var email, pw string
+	var workspace, company, expectedRole string
 	contentType := r.Header.Get("Content-Type")
-
 	if strings.Contains(contentType, "application/json") {
 		var body struct {
-			Email    string `json:"email"`
-			Username string `json:"username"`
-			Password string `json:"password"`
+			Email        string `json:"email"`
+			Username     string `json:"username"`
+			Password     string `json:"password"`
+			Workspace    string `json:"workspace"`
+			Company      string `json:"company"`
+			ExpectedRole string `json:"expected_role"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid JSON request body", nil)
+		if err := httpx.DecodeJSON(w, r, &body); err != nil {
 			return
+		}
+		if len(body.Workspace) > 64 {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "workspace must not exceed 64 characters", map[string]any{"field": "workspace"})
+			return
+		}
+		if len(body.Company) > 64 {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "company must not exceed 64 characters", map[string]any{"field": "company"})
+			return
+		}
+		if body.ExpectedRole != "" {
+			switch body.ExpectedRole {
+			case "Admin", "Fleet Manager", "Driver", "Safety Officer", "Financial Analyst":
+			default:
+				httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "invalid expected_role", map[string]any{"field": "expected_role"})
+				return
+			}
 		}
 		email = body.Email
 		if email == "" {
 			email = body.Username
 		}
 		pw = body.Password
+		workspace = body.Workspace
+		company = body.Company
+		expectedRole = body.ExpectedRole
 	} else {
 		if err := r.ParseForm(); err != nil {
 			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "Invalid form data", nil)
@@ -449,7 +470,28 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 			email = r.Form.Get("username")
 		}
 		pw = r.Form.Get("password")
+		workspace = r.Form.Get("workspace")
+		company = r.Form.Get("company")
+		expectedRole = r.Form.Get("expected_role")
+		if len(workspace) > 64 {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "workspace must not exceed 64 characters", map[string]any{"field": "workspace"})
+			return
+		}
+		if len(company) > 64 {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "company must not exceed 64 characters", map[string]any{"field": "company"})
+			return
+		}
+		if expectedRole != "" {
+			switch expectedRole {
+			case "Admin", "Fleet Manager", "Driver", "Safety Officer", "Financial Analyst":
+			default:
+				httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "invalid expected_role", map[string]any{"field": "expected_role"})
+				return
+			}
+		}
 	}
+	_ = workspace
+	_ = company
 
 	email = strings.TrimSpace(email)
 	ip := a.getRemoteIP(r)
@@ -488,6 +530,13 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 
 	if !isActive {
 		httpx.WriteError(w, r, http.StatusUnauthorized, "ACCOUNT_INACTIVE", "Your account has been deactivated.", nil)
+		return
+	}
+	if expectedRole != "" && expectedRole != role {
+		httpx.WriteError(w, r, http.StatusForbidden, "ROLE_MISMATCH", "This account is not a "+expectedRole+" account.", map[string]any{
+			"expected_role": expectedRole,
+			"actual_role":   role,
+		})
 		return
 	}
 

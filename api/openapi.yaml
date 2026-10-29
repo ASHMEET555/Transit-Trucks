@@ -64,6 +64,15 @@ paths:
                   type: string
                 password:
                   type: string
+                workspace:
+                  type: string
+                  maxLength: 64
+                company:
+                  type: string
+                  maxLength: 64
+                expected_role:
+                  type: string
+                  enum: [Admin, Fleet Manager, Driver, Safety Officer, Financial Analyst]
       responses:
         '200':
           description: Successful authentication
@@ -83,6 +92,8 @@ paths:
                   role:
                     type: string
         '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
           $ref: '#/components/responses/ErrorResponse'
         '429':
           $ref: '#/components/responses/ErrorResponse'

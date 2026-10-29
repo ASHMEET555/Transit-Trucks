@@ -117,6 +117,10 @@ export interface paths {
                         email?: string;
                         username?: string;
                         password: string;
+                        workspace?: string;
+                        company?: string;
+                        /** @enum {string} */
+                        expected_role?: "Admin" | "Fleet Manager" | "Driver" | "Safety Officer" | "Financial Analyst";
                     };
                 };
             };
@@ -136,6 +140,7 @@ export interface paths {
                     };
                 };
                 401: components["responses"]["ErrorResponse"];
+                403: components["responses"]["ErrorResponse"];
                 429: components["responses"]["ErrorResponse"];
             };
         };

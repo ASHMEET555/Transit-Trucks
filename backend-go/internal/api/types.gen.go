@@ -12,6 +12,15 @@ const (
 	CookieAuthScopes = "CookieAuth.Scopes"
 )
 
+// Defines values for PostApiV1AuthLoginJSONBodyExpectedRole.
+const (
+	PostApiV1AuthLoginJSONBodyExpectedRoleAdmin            PostApiV1AuthLoginJSONBodyExpectedRole = "Admin"
+	PostApiV1AuthLoginJSONBodyExpectedRoleDriver           PostApiV1AuthLoginJSONBodyExpectedRole = "Driver"
+	PostApiV1AuthLoginJSONBodyExpectedRoleFinancialAnalyst PostApiV1AuthLoginJSONBodyExpectedRole = "Financial Analyst"
+	PostApiV1AuthLoginJSONBodyExpectedRoleFleetManager     PostApiV1AuthLoginJSONBodyExpectedRole = "Fleet Manager"
+	PostApiV1AuthLoginJSONBodyExpectedRoleSafetyOfficer    PostApiV1AuthLoginJSONBodyExpectedRole = "Safety Officer"
+)
+
 // Defines values for PostApiV1UsersJSONBodyRole.
 const (
 	PostApiV1UsersJSONBodyRoleAdmin            PostApiV1UsersJSONBodyRole = "Admin"
@@ -253,10 +262,16 @@ type PostApiV1AuthChangePasswordJSONBody struct {
 
 // PostApiV1AuthLoginJSONBody defines parameters for PostApiV1AuthLogin.
 type PostApiV1AuthLoginJSONBody struct {
-	Email    *string `json:"email,omitempty"`
-	Password string  `json:"password"`
-	Username *string `json:"username,omitempty"`
+	Company      *string                                 `json:"company,omitempty"`
+	Email        *string                                 `json:"email,omitempty"`
+	ExpectedRole *PostApiV1AuthLoginJSONBodyExpectedRole `json:"expected_role,omitempty"`
+	Password     string                                  `json:"password"`
+	Username     *string                                 `json:"username,omitempty"`
+	Workspace    *string                                 `json:"workspace,omitempty"`
 }
+
+// PostApiV1AuthLoginJSONBodyExpectedRole defines parameters for PostApiV1AuthLogin.
+type PostApiV1AuthLoginJSONBodyExpectedRole string
 
 // GetApiV1DashboardExportCsvParams defines parameters for GetApiV1DashboardExportCsv.
 type GetApiV1DashboardExportCsvParams struct {
