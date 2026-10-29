@@ -1,0 +1,5 @@
+go test -count=1 ./...
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/api	0.950s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/config	0.037s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware	0.070s
+ok  	github.com/ASHMEET555/Transit-Trucks/backend-go/internal/auth	0.198s

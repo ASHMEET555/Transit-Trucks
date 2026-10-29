@@ -30,7 +30,7 @@ type ActiveTrip = {
   status: string
 }
 
-const TRIP_COLORS = ["#06b6d4", "#3b82f6", "#8b5cf6", "#f59e0b", "#10b981", "#ec4899"]
+const TRIP_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--signal)"]
 
 function createTruckIcon(color: string) {
   return L.divIcon({
@@ -281,7 +281,7 @@ export default function FleetMapInner({
                 center={[start.lat, start.lng]}
                 radius={6}
                 pathOptions={{
-                  color: "#fff",
+                  color: "var(--card)",
                   fillColor: trip.color,
                   fillOpacity: 1,
                   weight: 2,
@@ -291,8 +291,8 @@ export default function FleetMapInner({
                 center={[end.lat, end.lng]}
                 radius={6}
                 pathOptions={{
-                  color: "#fff",
-                  fillColor: "#22c55e",
+                  color: "var(--card)",
+                  fillColor: "var(--signal)",
                   fillOpacity: 1,
                   weight: 2,
                 }}

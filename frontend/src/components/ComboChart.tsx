@@ -925,7 +925,7 @@ const ComboChart = React.forwardRef<HTMLDivElement, ComboChartProps>(
               wrapperStyle={{ outline: "none" }}
               isAnimationActive={true}
               animationDuration={100}
-              cursor={{ stroke: "#d1d5db", strokeWidth: 1 }}
+              cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
               offset={20}
               position={{
                 y: 0,

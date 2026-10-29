@@ -4,7 +4,7 @@
 @layer base {
   :root {
     --background: oklch(0.985 0.005 160);
-    --foreground: oklch(0.2 0.02 160);
+    --foreground: oklch(0.12 0.02 160);
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.2 0.02 160);
     --popover: oklch(1 0 0);
@@ -29,9 +29,9 @@
     --canvas: oklch(0.96 0.01 160);
     --signal: oklch(0.65 0.18 145);
     --signal-foreground: oklch(0.15 0.04 145);
-    --sage: oklch(0.92 0.03 155);
-    --sand: oklch(0.93 0.03 85);
-    --mist: oklch(0.94 0.015 210);
+    --sage: oklch(0.95 0.02 155);
+    --sand: oklch(0.96 0.02 85);
+    --mist: oklch(0.96 0.01 210);
 
     /* Chart Palette */
     --chart-1: oklch(0.45 0.12 160);

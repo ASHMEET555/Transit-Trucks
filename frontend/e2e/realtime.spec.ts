@@ -1,4 +1,4 @@
-﻿import { test, expect, Page } from "@playwright/test"
+import { test, expect, Page } from "@playwright/test"
 import { execSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 
@@ -17,13 +17,20 @@ test.describe("M31: Multi-Browser Realtime Journey", () => {
     }
     // Reset the fixture. If this fails, stop: the test must not run against unknown state.
     execSync(
-      `docker exec transit-trucks-postgres-1 psql -U transitops -d transitops -c "UPDATE trips SET status = 'Cancelled' WHERE (vehicle_reg = 'VH-1005' OR driver_license = 'DL-1001') AND status = 'Dispatched'; UPDATE vehicles SET status = 'Available' WHERE registration_number = 'VH-1005'; UPDATE drivers SET status = 'Available' WHERE license_number = 'DL-1001';"`,
+      `docker exec transit-trucks-postgres-1 psql -U transitops -d transitops -c "UPDATE trips SET status = 'Cancelled' WHERE (vehicle_reg = 'VH-1005' OR driver_license = 'DL-1001') AND status = 'Dispatched'; UPDATE vehicles SET status = 'Available' WHERE registration_number = 'VH-1005'; UPDATE drivers SET status = 'Available', is_active = true WHERE license_number = 'DL-1001';"`,
       { stdio: "pipe" }
     )
   })
 
   async function login(page: Page, email: string, pass: string) {
     await page.goto("/login")
+    if (email.includes("driver")) {
+      await page.click('button:has-text("Driver")')
+    } else if (email.includes("finance")) {
+      await page.click('button:has-text("Financial Analyst")')
+    } else if (email.includes("fleet")) {
+      await page.click('button:has-text("Fleet Manager")')
+    }
     await page.fill('input[type="email"]', email)
     await page.fill('input[type="password"]', pass)
     await page.click('button[type="submit"]')

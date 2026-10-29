@@ -83,7 +83,7 @@ export async function apiRequest<T = unknown>(
     if (typeof window !== "undefined" && !window.location.pathname.includes("/login")) {
       window.location.href = "/login"
     }
-    throw new ApiError(401, "Unauthorized — please sign in again")
+    throw new ApiError(401, "Unauthorized - please sign in again")
   }
 
   if (!response.ok) {
@@ -119,14 +119,18 @@ export async function apiRequest<T = unknown>(
   return JSON.parse(text) as T
 }
 
-export async function loginRequest(email: string, password: string) {
+export async function loginRequest(
+  email: string,
+  password: string,
+  extra?: { workspace?: string; company?: string; expected_role?: string },
+) {
   return apiRequest<{
     token: string
     email: string
     role: string
   }>("/auth/login", {
     method: "POST",
-    body: { email, password },
+    body: { email, password, ...extra },
     auth: false,
   })
 }
@@ -146,5 +150,6 @@ export async function getMeRequest(): Promise<{
 }> {
   return apiRequest("/auth/me", {
     method: "GET",
+    auth: false,
   })
 }

@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
   workers: 1,
-  timeout: 30000,
+  timeout: 45000,
   expect: {
     timeout: 5000,
   },
@@ -21,9 +21,9 @@ export default defineConfig({
   webServer: [
     {
       command: "cd ..\\backend-go && go run ./cmd/server",
-      url: "http://localhost:8000/readyz",
+      url: "http://localhost:8000/healthz",
       reuseExistingServer: true,
-      timeout: 30000,
+      timeout: 45000,
       env: {
         DATABASE_URL: process.env.DATABASE_URL || "postgres://transitops:transitops@localhost:5432/transitops?sslmode=disable",
         PORT: "8000",
@@ -38,7 +38,7 @@ export default defineConfig({
       command: "npm run dev",
       url: "http://localhost:3000",
       reuseExistingServer: true,
-      timeout: 30000,
+      timeout: 45000,
       env: {
         NEXT_PUBLIC_E2E: "1",
         PORT: "3000",

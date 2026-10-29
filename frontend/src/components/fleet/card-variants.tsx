@@ -78,7 +78,7 @@ function CardTitle({ children, action }: { children: React.ReactNode; action?: s
     <header className="flex items-center justify-between gap-3">
       <h3 className="text-[15px] font-medium tracking-tight">{children}</h3>
       {action ? (
-        <a href="#" className="text-xs font-medium opacity-60 transition-opacity hover:opacity-100">
+        <a href="#" className="text-xs font-medium opacity-85 transition-opacity hover:opacity-100">
           {action}
         </a>
       ) : null}
@@ -102,7 +102,7 @@ export function StatCard({ label, value, delta, caption, icon }: StatCardData) {
         <span
           className={cn(
             'mb-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
-            positive ? 'bg-chart-1/25 text-current' : 'bg-destructive/12 text-destructive',
+            positive ? 'bg-chart-1/25 text-current' : 'bg-destructive text-destructive-foreground font-semibold',
           )}
         >
           {positive ? (
@@ -113,7 +113,7 @@ export function StatCard({ label, value, delta, caption, icon }: StatCardData) {
           {Math.abs(delta)}%
         </span>
       </div>
-      <p className="mt-1 text-xs opacity-60">{caption}</p>
+      <p className="mt-1 text-xs opacity-85">{caption}</p>
     </>
   )
 }
@@ -161,19 +161,19 @@ export function VehicleCard({
       <div className="mt-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="truncate text-[15px] font-medium tracking-tight">{name}</h3>
-          <p className="mt-0.5 flex items-center gap-1 truncate text-xs opacity-60">
+          <p className="mt-0.5 flex items-center gap-1 truncate text-xs opacity-85">
             <MapPin className="size-3 shrink-0" aria-hidden="true" />
             {location}
           </p>
         </div>
         <p className="text-right">
           <span className="text-xl font-semibold tabular-nums">{speed}</span>
-          <span className="ml-0.5 text-xs opacity-60">km/h</span>
+          <span className="ml-0.5 text-xs opacity-85">km/h</span>
         </p>
       </div>
       <div className="mt-4">
         <div className="flex items-center justify-between text-xs">
-          <span className="flex items-center gap-1 opacity-60">
+          <span className="flex items-center gap-1 opacity-85">
             <Fuel className="size-3" aria-hidden="true" /> Fuel
           </span>
           <span className="font-medium tabular-nums">{fuel}%</span>
@@ -193,7 +193,7 @@ export function VehicleCard({
         </div>
       </div>
       <footer className="mt-4 flex items-center justify-between border-t border-current/10 pt-3 text-xs">
-        <span className="opacity-60">Driver</span>
+        <span className="opacity-85">Driver</span>
         <span className="font-medium">{driver}</span>
       </footer>
     </>
@@ -215,12 +215,12 @@ export function RouteCard({ code, origin, destination, eta, progress, stops }: R
 
       <div className="mt-6 flex items-center gap-3 sm:gap-5">
         <p className="min-w-0 flex-1">
-          <span className="block text-[11px] uppercase tracking-[0.18em] opacity-60">From</span>
+          <span className="block text-[11px] uppercase tracking-[0.18em] opacity-85">From</span>
           <span className="block truncate font-serif text-3xl leading-tight sm:text-4xl">{origin}</span>
         </p>
-        <ArrowRight className="size-5 shrink-0 opacity-60" aria-hidden="true" />
+        <ArrowRight className="size-5 shrink-0 opacity-85" aria-hidden="true" />
         <p className="min-w-0 flex-1 text-right">
-          <span className="block text-[11px] uppercase tracking-[0.18em] opacity-60">To</span>
+          <span className="block text-[11px] uppercase tracking-[0.18em] opacity-85">To</span>
           <span className="block truncate font-serif text-3xl italic leading-tight sm:text-4xl">
             {destination}
           </span>
@@ -250,7 +250,7 @@ export function RouteCard({ code, origin, destination, eta, progress, stops }: R
             />
             <span className="min-w-0">
               <span className="block truncate text-sm font-medium">{stop.name}</span>
-              <span className="block text-xs opacity-60">
+              <span className="block text-xs opacity-85">
                 {stop.time}
                 <span className="sr-only">{stop.done ? ', completed' : ', upcoming'}</span>
               </span>
@@ -279,7 +279,7 @@ export function AlertCard({ severity, title, detail, vehicle, time }: AlertCardD
           {s.label}
         </span>
         <span className="relative flex size-2.5" aria-hidden="true">
-          <span className={cn('absolute inline-flex size-full animate-ping rounded-full opacity-60', s.ping)} />
+          <span className={cn('absolute inline-flex size-full animate-ping rounded-full opacity-85', s.ping)} />
           <span className={cn('relative inline-flex size-2.5 rounded-full', s.ping)} />
         </span>
       </header>
@@ -340,18 +340,18 @@ export function DriverCard({ name, initials, role, score, hours, trips, badges }
           </span>
           <div className="min-w-0">
             <h3 className="truncate text-[15px] font-medium tracking-tight">{name}</h3>
-            <p className="truncate text-xs opacity-60">{role}</p>
+            <p className="truncate text-xs opacity-85">{role}</p>
           </div>
         </div>
         <ScoreRing score={score} />
       </header>
       <dl className="mt-6 grid grid-cols-2 gap-3">
         <div className="rounded-2xl bg-current/5 p-3">
-          <dt className="text-[11px] uppercase tracking-wider opacity-60">Drive hrs</dt>
+          <dt className="text-[11px] uppercase tracking-wider opacity-85">Drive hrs</dt>
           <dd className="mt-1 text-xl font-semibold tabular-nums">{hours}</dd>
         </div>
         <div className="rounded-2xl bg-current/5 p-3">
-          <dt className="text-[11px] uppercase tracking-wider opacity-60">Trips</dt>
+          <dt className="text-[11px] uppercase tracking-wider opacity-85">Trips</dt>
           <dd className="mt-1 text-xl font-semibold tabular-nums">{trips}</dd>
         </div>
       </dl>
@@ -367,7 +367,7 @@ export function DriverCard({ name, initials, role, score, hours, trips, badges }
 }
 
 const priorityStyles = {
-  high: 'bg-destructive/12 text-destructive',
+  high: 'bg-destructive text-destructive-foreground font-semibold',
   medium: 'bg-sand text-foreground',
   low: 'bg-sage text-foreground',
 } as const
@@ -382,7 +382,7 @@ export function MaintenanceCard({ title, items }: MaintenanceCardData) {
             <IconBadge icon={item.icon} className="size-9" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{item.task}</p>
-              <p className="truncate text-xs opacity-60">
+              <p className="truncate text-xs opacity-85">
                 {item.vehicle} · {item.issue}
               </p>
             </div>
@@ -431,7 +431,7 @@ export function FuelCard({ title, total, segments }: FuelCardData) {
           <div className="absolute inset-0 grid place-items-center text-center">
             <p>
               <span className="block text-2xl font-semibold tabular-nums">{total}</span>
-              <span className="block text-[11px] opacity-60">this month</span>
+              <span className="block text-[11px] opacity-85">this month</span>
             </p>
           </div>
         </div>
@@ -479,7 +479,7 @@ export function UtilizationCard({ title, unit, highlight, days }: UtilizationCar
               >
                 <span className="sr-only">{`${d.label}: ${d.value}${unit}`}</span>
               </div>
-              <span className={cn('text-xs', active ? 'font-semibold' : 'opacity-60')}>{d.label}</span>
+              <span className={cn('text-xs', active ? 'font-semibold' : 'opacity-85')}>{d.label}</span>
             </div>
           )
         })}

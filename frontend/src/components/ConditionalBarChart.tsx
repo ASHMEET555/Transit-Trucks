@@ -574,7 +574,7 @@ const ConditionalBarChart = React.forwardRef<HTMLDivElement, BarChartProps>(
               wrapperStyle={{ outline: "none" }}
               isAnimationActive={true}
               animationDuration={100}
-              cursor={{ fill: "#d1d5db", opacity: "0.15" }}
+              cursor={{ fill: "var(--border)", opacity: "0.15" }}
               offset={20}
               position={{
                 y: layout === "horizontal" ? 0 : undefined,

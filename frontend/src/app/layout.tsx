@@ -1,24 +1,26 @@
 import { AppShell } from "@/components/AppShell"
 import { ProfileProvider } from "@/lib/ProfileContext"
 import { ThemeProvider } from "next-themes"
-import localFont from "next/font/local"
+import { Inter, Newsreader } from "next/font/google"
 import "./globals.css"
 import { siteConfig } from "./siteConfig"
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
 })
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
+
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  variable: "--font-newsreader",
+  style: ["normal", "italic"],
+  display: "swap",
 })
 
 export const metadata = {
-  title: siteConfig.name,
-  description: siteConfig.description,
+  title: "TransitOps Telematics & Fleet Intelligence",
+  description: "Enterprise fleet intelligence, real-time dispatch, and telemetry.",
 }
 
 export default function RootLayout({
@@ -29,10 +31,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} h-full bg-surface-0 antialiased text-gray-50`}
+        className={`${inter.variable} ${newsreader.variable} h-full bg-canvas font-sans text-foreground antialiased`}
       >
         <ThemeProvider
-          defaultTheme="system"
+          defaultTheme="light"
           disableTransitionOnChange
           attribute="class"
         >
