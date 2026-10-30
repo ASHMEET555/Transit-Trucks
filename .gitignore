@@ -10,3 +10,9 @@ backend/uv.lock
 
 optimise/
 *.pdf
+
+# design sources and reference screenshots (never push)
+/SiteDesign/
+/SiteDesign.zip
+/improve/
+/STEP2_HANDOFF_PLAN.md

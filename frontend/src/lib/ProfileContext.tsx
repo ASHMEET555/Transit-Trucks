@@ -24,7 +24,7 @@ interface ProfileContextType {
   token: string | null
   isAuthenticated: boolean
   isLoaded: boolean
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string, extra?: { workspace?: string; company?: string; expected_role?: string }) => Promise<void>
   logout: () => void
 }
 
@@ -59,8 +59,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       })
   }, [])
 
-  const login = useCallback(async (email: string, password: string) => {
-    await loginRequest(email.trim(), password)
+  const login = useCallback(async (email: string, password: string, extra?: { workspace?: string; company?: string; expected_role?: string }) => {
+    await loginRequest(email.trim(), password, extra)
     const user = await getMeRequest()
     setCurrentProfile(profileFromUser(user))
   }, [])

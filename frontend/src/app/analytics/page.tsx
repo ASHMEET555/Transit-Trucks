@@ -1,7 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Activity, Download, Fuel, TrendingUp } from "lucide-react"
+import Link from "next/link"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { BarChart } from "@/components/BarChart"
+import { Button } from "@/components/Button"
 import {
   Select,
   SelectContent,
@@ -9,584 +12,530 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/Select"
-import { ApiError, apiRequest, extractItems } from "@/lib/api"
+import { CardShell } from "@/components/fleet/card-shell"
+import { ApiError, apiRequest } from "@/lib/api"
+import { useProfile } from "@/lib/ProfileContext"
+import { hasRouteAccess } from "@/lib/rbacConfig"
+import { useFleetEvents } from "@/lib/realtime/useFleetEvents"
+import { RealtimeIndicator } from "@/components/RealtimeIndicator"
+import {
+  downloadClientCsv,
+  downloadDashboardCsv,
+} from "../dashboard/_components/export"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+} from "@/components/Table"
+import {
+  EmptyNote,
+  ErrorBlock,
+  ForbiddenBlock,
+  IconBadge,
+  LoadingBlock,
+  SectionHeading,
+} from "../dashboard/_components/states"
+import { ChartCard } from "./_components/chart-card"
+import { UtilizationBars } from "./_components/utilization-bars"
 
-type VehicleAnalytics = {
+type KpiVehicle = {
   registration_number: string
   model: string
   type: string
   status: string
-  fuel_efficiency: number | null
   roi: number | null
+  fuel_efficiency: number | null
+  operational_cost: number
 }
 
 type DashboardKPIs = {
-  vehicles: VehicleAnalytics[]
+  fleet_utilization: number
+  vehicles: KpiVehicle[]
 }
 
-type FleetVehicle = {
-  registration_number: string
-  model: string
-  type: string
-  odometer: number
-  status: string
-}
-
-type Driver = {
-  license_number: string
-  name: string
-  safety_score: number
-  status: string
-}
-
-type Trip = {
-  id: number
-  source_name: string
-  destination_name: string
-  cargo_weight: number
-  status: string
-}
-
-type RouteEdge = {
-  source: string
-  target: string
-  maxCargo: number
-  tripCount: number
-}
-
-function ChartCard({
-  title,
-  subtitle,
-  filters,
-  children,
-}: {
-  title: string
-  subtitle: string
-  filters?: React.ReactNode
-  children: React.ReactNode
-}) {
-  return (
-    <section className="w-full rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
-      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-50">
-            {title}
-          </h2>
-          <p className="mt-1.5 text-base text-gray-500">{subtitle}</p>
-        </div>
-        {filters ? <div className="flex flex-wrap gap-2">{filters}</div> : null}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-function TypeStatusFilters({
+function TypeFilter({
+  id,
+  value,
   types,
-  typeValue,
-  statusValue,
-  onType,
-  onStatus,
+  onChange,
 }: {
+  id: string
+  value: string
   types: string[]
-  typeValue: string
-  statusValue: string
-  onType: (v: string) => void
-  onStatus: (v: string) => void
+  onChange: (value: string) => void
 }) {
   return (
-    <>
-      <Select value={typeValue} onValueChange={onType}>
-        <SelectTrigger className="w-44">
-          <SelectValue placeholder="Type" />
+    <div className="flex items-center gap-2">
+      <label htmlFor={id} className="text-sm text-muted-foreground">
+        Vehicle type
+      </label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger id={id} className="w-44">
+          <SelectValue placeholder="All types" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All types</SelectItem>
-          {types.map((t) => (
-            <SelectItem key={t} value={t}>
-              {t}
+          {types.map((type) => (
+            <SelectItem key={type} value={type}>
+              {type}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
-      <Select value={statusValue} onValueChange={onStatus}>
-        <SelectTrigger className="w-44">
-          <SelectValue placeholder="Status" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All statuses</SelectItem>
-          <SelectItem value="Available">Available</SelectItem>
-          <SelectItem value="On Trip">On Trip</SelectItem>
-          <SelectItem value="In Shop">In Shop</SelectItem>
-          <SelectItem value="Retired">Retired</SelectItem>
-        </SelectContent>
-      </Select>
-    </>
-  )
-}
-
-/** Directed route graph: large circle, readable labels, small arrow tips */
-function RouteFlowMap({ edges }: { edges: RouteEdge[] }) {
-  const width = 1400
-  const height = 900
-  const cx = width / 2
-  const cy = height / 2
-  const radius = Math.min(width, height) * 0.4
-
-  const nodes = useMemo(() => {
-    const names = Array.from(
-      new Set(edges.flatMap((e) => [e.source, e.target])),
-    ).sort((a, b) => a.localeCompare(b))
-    const n = Math.max(names.length, 1)
-    return names.map((name, i) => {
-      const angle = (2 * Math.PI * i) / n - Math.PI / 2
-      return {
-        name,
-        short: name.length > 26 ? `${name.slice(0, 24)}…` : name,
-        x: cx + radius * Math.cos(angle),
-        y: cy + radius * Math.sin(angle),
-        lx: cx + (radius + 70) * Math.cos(angle),
-        ly: cy + (radius + 70) * Math.sin(angle),
-      }
-    })
-  }, [edges, cx, cy, radius])
-
-  const nodeMap = useMemo(
-    () => new Map(nodes.map((n) => [n.name, n])),
-    [nodes],
-  )
-
-  const maxCargo = Math.max(...edges.map((e) => e.maxCargo), 1)
-
-  if (edges.length === 0) {
-    return (
-      <p className="py-16 text-center text-base text-gray-500">
-        No route data available
-      </p>
-    )
-  }
-
-  return (
-    <div className="w-full overflow-x-auto">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        className="mx-auto h-[720px] w-full min-w-[960px]"
-        role="img"
-        aria-label="Route capacity map"
-      >
-        <defs>
-          <marker
-            id="route-arrow-sm"
-            viewBox="0 0 10 10"
-            refX="8"
-            refY="5"
-            markerWidth="5"
-            markerHeight="5"
-            markerUnits="userSpaceOnUse"
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 1.5 L 8 5 L 0 8.5 Z" fill="#2563eb" />
-          </marker>
-        </defs>
-
-        {edges.map((edge) => {
-          const from = nodeMap.get(edge.source)
-          const to = nodeMap.get(edge.target)
-          if (!from || !to) return null
-
-          const dx = to.x - from.x
-          const dy = to.y - from.y
-          const len = Math.hypot(dx, dy) || 1
-          const pad = 18
-          const x1 = from.x + (dx / len) * pad
-          const y1 = from.y + (dy / len) * pad
-          const x2 = to.x - (dx / len) * (pad + 6)
-          const y2 = to.y - (dy / len) * (pad + 6)
-          const mx = (x1 + x2) / 2 - dy * 0.1
-          const my = (y1 + y2) / 2 + dx * 0.1
-          const strokeW = 2 + (edge.maxCargo / maxCargo) * 10
-
-          return (
-            <g key={`${edge.source}->${edge.target}`}>
-              <title>
-                {`${edge.source} → ${edge.target}\nMax cargo: ${edge.maxCargo.toLocaleString()} kg\nTrips: ${edge.tripCount}`}
-              </title>
-              <path
-                d={`M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`}
-                fill="none"
-                stroke="#2563eb"
-                strokeOpacity={0.7}
-                strokeWidth={strokeW}
-                strokeLinecap="round"
-                markerEnd="url(#route-arrow-sm)"
-              />
-            </g>
-          )
-        })}
-
-        {nodes.map((node) => (
-          <g key={node.name}>
-            <circle
-              cx={node.x}
-              cy={node.y}
-              r={7}
-              fill="#0f172a"
-              stroke="#cbd5e1"
-              strokeWidth={2}
-            />
-            <text
-              x={node.lx}
-              y={node.ly}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill="#334155"
-              fontSize={13}
-              fontWeight={500}
-            >
-              {node.short}
-            </text>
-          </g>
-        ))}
-      </svg>
-      <p className="mt-3 text-center text-sm text-gray-500">
-        Line thickness = max cargo · small arrows show direction (source →
-        destination)
-      </p>
     </div>
   )
 }
 
 export default function AnalyticsPage() {
+  const { currentProfile, isLoaded } = useProfile()
+  const allowed = !isLoaded || hasRouteAccess(currentProfile?.role ?? "", "analytics")
+
   const [kpis, setKpis] = useState<DashboardKPIs | null>(null)
-  const [vehicles, setVehicles] = useState<FleetVehicle[]>([])
-  const [drivers, setDrivers] = useState<Driver[]>([])
-  const [trips, setTrips] = useState<Trip[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [forbidden, setForbidden] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  // Independent filters per chart
   const [roiType, setRoiType] = useState("all")
-  const [roiStatus, setRoiStatus] = useState("all")
   const [fuelType, setFuelType] = useState("all")
-  const [fuelStatus, setFuelStatus] = useState("all")
-  const [driverStatus, setDriverStatus] = useState("all")
-  const [odoType, setOdoType] = useState("all")
-  const [odoStatus, setOdoStatus] = useState("all")
-  const [tripStatusFilter, setTripStatusFilter] = useState("all")
 
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        setError(null)
-        const [kpiData, fleet, driverList, tripList] = await Promise.all([
-          apiRequest<DashboardKPIs>("/dashboard/kpis"),
-          apiRequest<any>("/fleet/vehicles"),
-          apiRequest<any>("/fleet/drivers"),
-          apiRequest<any>("/trips/"),
-        ])
-        if (cancelled) return
-        setKpis(kpiData)
-        setVehicles(extractItems<FleetVehicle>(fleet))
-        setDrivers(extractItems<Driver>(driverList))
-        setTrips(extractItems<Trip>(tripList))
-      } catch (err) {
-        if (!cancelled) {
+  const [from, setFrom] = useState("")
+  const [to, setTo] = useState("")
+  const [vehicleReg, setVehicleReg] = useState("")
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+  const [selectedVehicle, setSelectedVehicle] = useState<string | null>(null)
+
+  const load = useCallback(() => {
+    if (!isLoaded || !currentProfile) return
+    if (!hasRouteAccess(currentProfile.role, "analytics")) {
+      setForbidden(true)
+      setLoading(false)
+      return
+    }
+    setForbidden(false)
+    setLoading(true)
+    setError(null)
+    apiRequest<DashboardKPIs>("/dashboard/kpis")
+      .then(setKpis)
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 403) {
+          setForbidden(true)
+        } else {
           setError(
             err instanceof ApiError ? err.detail : "Failed to load analytics",
           )
         }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
+      })
+      .finally(() => setLoading(false))
+  }, [isLoaded, currentProfile])
+
+  useEffect(() => {
     load()
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  }, [load])
+
+  const { status: realtimeStatus } = useFleetEvents({
+    onEvent: load,
+    onReconnect: load,
+  })
 
   const vehicleTypes = useMemo(
     () =>
       Array.from(
-        new Set(
-          (kpis?.vehicles ?? [])
-            .map((v) => v.type)
-            .concat(vehicles.map((v) => v.type)),
-        ),
+        new Set((kpis?.vehicles ?? []).map((vehicle) => vehicle.type)),
       ).sort(),
-    [kpis, vehicles],
+    [kpis],
   )
 
-  const roiChart = useMemo(() => {
+  const roiRows = useMemo(() => {
     if (!kpis) return []
     return kpis.vehicles
-      .filter((v) => {
-        if (roiType !== "all" && v.type !== roiType) return false
-        if (roiStatus !== "all" && v.status !== roiStatus) return false
-        return v.roi != null
-      })
+      .filter((vehicle) => roiType === "all" || vehicle.type === roiType)
+      .filter((vehicle) => vehicle.roi != null)
       .sort((a, b) => (b.roi ?? 0) - (a.roi ?? 0))
       .slice(0, 35)
-      .map((v) => ({
-        vehicle: v.registration_number,
-        ROI: Number(((v.roi ?? 0) * 100).toFixed(1)),
+      .map((vehicle) => ({
+        vehicle: vehicle.registration_number,
+        ROI: Number((((vehicle.roi ?? 0) * 100) as number).toFixed(1)),
       }))
-  }, [kpis, roiType, roiStatus])
+  }, [kpis, roiType])
 
-  const fuelChart = useMemo(() => {
+  const fuelRows = useMemo(() => {
     if (!kpis) return []
     return kpis.vehicles
-      .filter((v) => {
-        if (fuelType !== "all" && v.type !== fuelType) return false
-        if (fuelStatus !== "all" && v.status !== fuelStatus) return false
-        return v.fuel_efficiency != null && v.fuel_efficiency > 0
-      })
+      .filter((vehicle) => fuelType === "all" || vehicle.type === fuelType)
+      .filter(
+        (vehicle) =>
+          vehicle.fuel_efficiency != null && vehicle.fuel_efficiency > 0,
+      )
       .sort((a, b) => (b.fuel_efficiency ?? 0) - (a.fuel_efficiency ?? 0))
       .slice(0, 35)
-      .map((v) => ({
-        vehicle: v.registration_number,
-        "Fuel Efficiency": Number((v.fuel_efficiency ?? 0).toFixed(2)),
+      .map((vehicle) => ({
+        vehicle: vehicle.registration_number,
+        efficiency: Number((vehicle.fuel_efficiency ?? 0).toFixed(2)),
       }))
-  }, [kpis, fuelType, fuelStatus])
+  }, [kpis, fuelType])
 
-  const safetyChart = useMemo(() => {
-    return [...drivers]
-      .filter((d) => driverStatus === "all" || d.status === driverStatus)
-      .sort((a, b) => b.safety_score - a.safety_score)
-      .slice(0, 35)
-      .map((d) => ({
-        driver: `${d.name} (${d.license_number.slice(-4)})`,
-        "Safety Rating": Number(d.safety_score.toFixed(1)),
-      }))
-  }, [drivers, driverStatus])
-
-  const odometerChart = useMemo(() => {
-    return [...vehicles]
-      .filter((v) => {
-        if (odoType !== "all" && v.type !== odoType) return false
-        if (odoStatus !== "all" && v.status !== odoStatus) return false
-        return true
+  const exportServerCsv = useCallback(async () => {
+    setExporting(true)
+    setExportError(null)
+    try {
+      await downloadDashboardCsv({
+        from: from || undefined,
+        to: to || undefined,
+        vehicle_reg: vehicleReg || undefined,
       })
-      .sort((a, b) => b.odometer - a.odometer)
-      .slice(0, 35)
-      .map((v) => ({
-        vehicle: v.registration_number,
-        Odometer: Number(v.odometer.toFixed(0)),
-      }))
-  }, [vehicles, odoType, odoStatus])
-
-  const routeEdges = useMemo(() => {
-    const map = new Map<string, RouteEdge>()
-    for (const t of trips) {
-      if (tripStatusFilter !== "all" && t.status !== tripStatusFilter) continue
-      if (t.source_name === t.destination_name) continue
-      const key = `${t.source_name}||${t.destination_name}`
-      const existing = map.get(key)
-      if (!existing) {
-        map.set(key, {
-          source: t.source_name,
-          target: t.destination_name,
-          maxCargo: t.cargo_weight,
-          tripCount: 1,
-        })
-      } else {
-        existing.maxCargo = Math.max(existing.maxCargo, t.cargo_weight)
-        existing.tripCount += 1
-      }
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed")
+    } finally {
+      setExporting(false)
     }
-    return Array.from(map.values())
-      .sort((a, b) => b.maxCargo - a.maxCargo)
-      .slice(0, 16)
-  }, [trips, tripStatusFilter])
+  }, [from, to, vehicleReg])
 
-  if (loading) {
+  const handleChartSelect = useCallback((value: unknown) => {
+    if (value && typeof value === "object" && "vehicle" in value) {
+      const reg = (value as { vehicle?: unknown }).vehicle
+      setSelectedVehicle(typeof reg === "string" && reg ? reg : null)
+    } else {
+      setSelectedVehicle(null)
+    }
+  }, [])
+
+  const vehicleRegs = useMemo(
+    () =>
+      Array.from(
+        new Set((kpis?.vehicles ?? []).map((vehicle) => vehicle.registration_number)),
+      ).sort(),
+    [kpis],
+  )
+
+  const vehicleRows = useMemo(() => {
+    const rows = (kpis?.vehicles ?? []).map((vehicle) => ({
+      reg: vehicle.registration_number,
+      type: vehicle.type,
+      status: vehicle.status,
+      roi: vehicle.roi != null ? Number(((vehicle.roi * 100) as number).toFixed(1)) : null,
+      efficiency:
+        vehicle.fuel_efficiency != null
+          ? Number(vehicle.fuel_efficiency.toFixed(2))
+          : null,
+      cost: vehicle.operational_cost,
+    }))
+    const filtered =
+      selectedVehicle != null
+        ? rows.filter((row) => row.reg === selectedVehicle)
+        : rows
+    return filtered.sort((a, b) => a.reg.localeCompare(b.reg))
+  }, [kpis, selectedVehicle])
+
+  if (!isLoaded || loading) {
     return (
-      <div className="p-8 text-base text-gray-500">Loading analytics...</div>
+      <div className="space-y-6 p-6 lg:p-8" aria-busy="true">
+        <LoadingBlock label="Loading analytics" />
+      </div>
     )
   }
 
-  if (error) {
-    return <div className="p-8 text-base text-red-600">{error}</div>
+  if (!allowed || forbidden) {
+    return (
+      <div className="p-6 lg:p-8">
+        <ForbiddenBlock message="Your role does not have access to analytics." />
+      </div>
+    )
+  }
+
+  if (error && !kpis) {
+    return (
+      <div className="p-6 lg:p-8">
+        <ErrorBlock message={error} onRetry={load} />
+      </div>
+    )
+  }
+
+  if (!kpis) {
+    return (
+      <div className="p-6 lg:p-8">
+        <EmptyNote message="No analytics data available." />
+      </div>
+    )
   }
 
   return (
-    <div className="flex w-full flex-col gap-10 p-6 lg:p-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
-        <p className="mt-2 text-base text-gray-600 dark:text-gray-400">
-          Full-width charts stacked top to bottom. Each chart has its own
-          filters.
-        </p>
+    <div className="space-y-6 p-6 lg:p-8">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-muted-foreground">Trends and exports</p>
+            <RealtimeIndicator status={realtimeStatus} />
+          </div>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight">Analytics</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Longer-term trends and data exports. Live figures stay on the
+            dashboard.
+          </p>
+        </div>
       </div>
 
+      <UtilizationBars vehicles={kpis.vehicles} />
+
+      <CardShell
+        as="section"
+        aria-label="Utilization trend"
+        tone="paper"
+        className="motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+      >
+        <SectionHeading
+          icon={Activity}
+          title="Utilization trend"
+          description="Fleet utilization over time."
+        />
+        <EmptyNote message="Not tracked — no utilization history endpoint is available, only the current snapshot." />
+      </CardShell>
+
       <ChartCard
-        title="1. Vehicle ROI (%)"
-        subtitle="X: vehicle · Y: ROI — filters apply only to this chart"
+        icon={TrendingUp}
+        title="Vehicle return on investment"
+        description="Return per vehicle, highest first. Select a bar to filter the vehicle table below."
         filters={
-          <TypeStatusFilters
+          <TypeFilter
+            id="roi-type"
+            value={roiType}
             types={vehicleTypes}
-            typeValue={roiType}
-            statusValue={roiStatus}
-            onType={setRoiType}
-            onStatus={setRoiStatus}
+            onChange={setRoiType}
           />
         }
+        onDownload={() =>
+          downloadClientCsv(
+            "vehicle-roi.csv",
+            ["vehicle", "roi_percent"],
+            roiRows.map((row) => [row.vehicle, row.ROI]),
+          )
+        }
       >
-        {roiChart.length > 0 ? (
+        {roiRows.length > 0 ? (
           <BarChart
-            className="h-[520px]"
-            data={roiChart}
+            className="h-80"
+            data={roiRows}
             index="vehicle"
             categories={["ROI"]}
-            colors={["violet"]}
             showLegend={false}
-            layout="vertical"
-            valueFormatter={(v) => `${v}%`}
-            yAxisWidth={88}
+            valueFormatter={(value) => `${value}%`}
+            yAxisWidth={72}
+            onValueChange={handleChartSelect}
           />
         ) : (
-          <p className="py-12 text-center text-base text-gray-500">
-            No ROI data for current filters
-          </p>
+          <EmptyNote message="No ROI data for the current filter." />
         )}
       </ChartCard>
 
       <ChartCard
-        title="2. Fuel Efficiency per Truck"
-        subtitle="X: vehicle · Y: km/L — independent filters"
+        icon={Fuel}
+        title="Fuel efficiency per vehicle"
+        description="Kilometres per litre, highest first. Select a bar to filter the vehicle table below."
         filters={
-          <TypeStatusFilters
+          <TypeFilter
+            id="fuel-type"
+            value={fuelType}
             types={vehicleTypes}
-            typeValue={fuelType}
-            statusValue={fuelStatus}
-            onType={setFuelType}
-            onStatus={setFuelStatus}
+            onChange={setFuelType}
           />
         }
+        onDownload={() =>
+          downloadClientCsv(
+            "fuel-efficiency.csv",
+            ["vehicle", "km_per_litre"],
+            fuelRows.map((row) => [row.vehicle, row.efficiency]),
+          )
+        }
       >
-        {fuelChart.length > 0 ? (
+        {fuelRows.length > 0 ? (
           <BarChart
-            className="h-[520px]"
-            data={fuelChart}
+            className="h-80"
+            data={fuelRows}
             index="vehicle"
-            categories={["Fuel Efficiency"]}
-            colors={["blue"]}
+            categories={["efficiency"]}
             showLegend={false}
-            layout="vertical"
-            valueFormatter={(v) => `${v} km/L`}
-            yAxisWidth={88}
+            valueFormatter={(value) => `${value} km/L`}
+            yAxisWidth={72}
+            onValueChange={handleChartSelect}
           />
         ) : (
-          <p className="py-12 text-center text-base text-gray-500">
-            No fuel efficiency data for current filters
-          </p>
+          <EmptyNote message="No fuel efficiency data for the current filter." />
         )}
       </ChartCard>
 
-      <ChartCard
-        title="3. Driver vs Safety Rating"
-        subtitle="X: driver · Y: safety score — filter by driver status only"
-        filters={
-          <Select value={driverStatus} onValueChange={setDriverStatus}>
-            <SelectTrigger className="w-44">
-              <SelectValue placeholder="Driver status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="Available">Available</SelectItem>
-              <SelectItem value="On Trip">On Trip</SelectItem>
-              <SelectItem value="Off Duty">Off Duty</SelectItem>
-              <SelectItem value="Suspended">Suspended</SelectItem>
-            </SelectContent>
-          </Select>
-        }
+      <CardShell
+        as="section"
+        aria-label="Vehicles"
+        tone="paper"
+        className="motion-reduce:transition-none motion-reduce:hover:translate-y-0"
       >
-        {safetyChart.length > 0 ? (
-          <BarChart
-            className="h-[520px]"
-            data={safetyChart}
-            index="driver"
-            categories={["Safety Rating"]}
-            colors={["emerald"]}
-            showLegend={false}
-            layout="vertical"
-            valueFormatter={(v) => `${v}`}
-            yAxisWidth={140}
-            maxValue={100}
-          />
-        ) : (
-          <p className="py-12 text-center text-base text-gray-500">
-            No drivers for current filters
-          </p>
-        )}
-      </ChartCard>
-
-      <ChartCard
-        title="4. Vehicle vs Odometer"
-        subtitle="X: vehicle · Y: odometer km — independent filters"
-        filters={
-          <TypeStatusFilters
-            types={vehicleTypes}
-            typeValue={odoType}
-            statusValue={odoStatus}
-            onType={setOdoType}
-            onStatus={setOdoStatus}
-          />
-        }
-      >
-        {odometerChart.length > 0 ? (
-          <BarChart
-            className="h-[520px]"
-            data={odometerChart}
-            index="vehicle"
-            categories={["Odometer"]}
-            colors={["amber"]}
-            showLegend={false}
-            layout="vertical"
-            valueFormatter={(v) => `${v.toLocaleString()} km`}
-            yAxisWidth={88}
-          />
-        ) : (
-          <p className="py-12 text-center text-base text-gray-500">
-            No vehicles for current filters
-          </p>
-        )}
-      </ChartCard>
-
-      <ChartCard
-        title="5. Route Capacity Map"
-        subtitle="Larger circle · destinations as vertices · small direction arrows · thicker edges = more cargo"
-        filters={
-          <Select value={tripStatusFilter} onValueChange={setTripStatusFilter}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Trip status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All trips</SelectItem>
-              <SelectItem value="Dispatched">Dispatched</SelectItem>
-              <SelectItem value="Completed">Completed</SelectItem>
-              <SelectItem value="Cancelled">Cancelled</SelectItem>
-              <SelectItem value="Draft">Draft</SelectItem>
-            </SelectContent>
-          </Select>
-        }
-      >
-        <div className="mb-3 flex flex-wrap gap-6 text-sm text-gray-500">
-          <span>
-            Top corridors: <strong className="text-gray-800">{routeEdges.length}</strong>
-          </span>
-          <span>
-            Max cargo:{" "}
-            <strong className="text-gray-800">
-              {routeEdges[0]
-                ? `${routeEdges[0].maxCargo.toLocaleString()} kg`
-                : "—"}
-            </strong>
-          </span>
+        <SectionHeading
+          title="Vehicles"
+          description={
+            selectedVehicle
+              ? `Filtered to ${selectedVehicle}. Select another bar or clear the filter.`
+              : "All vehicles in the current dataset. Select a chart bar above to narrow this table."
+          }
+          action={
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                value={selectedVehicle ?? "all"}
+                onValueChange={(value) =>
+                  setSelectedVehicle(value === "all" ? null : value)
+                }
+              >
+                <SelectTrigger id="vehicle-table-filter" className="w-48" aria-label="Filter vehicle table">
+                  <SelectValue placeholder="All vehicles" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All vehicles</SelectItem>
+                  {vehicleRegs.map((reg) => (
+                    <SelectItem key={reg} value={reg}>
+                      {reg}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedVehicle && (
+                <Button variant="secondary" onClick={() => setSelectedVehicle(null)}>
+                  Clear filter
+                </Button>
+              )}
+            </div>
+          }
+        />
+        <p className="sr-only" role="status">
+          {selectedVehicle
+            ? `Vehicle table filtered to ${selectedVehicle}.`
+            : "Vehicle table shows all vehicles."}
+        </p>
+        <div className="overflow-x-auto">
+          <Table aria-label="Per-vehicle performance">
+            <TableHead>
+              <TableRow>
+                <TableHeaderCell scope="col">Vehicle</TableHeaderCell>
+                <TableHeaderCell scope="col">Type</TableHeaderCell>
+                <TableHeaderCell scope="col">Status</TableHeaderCell>
+                <TableHeaderCell scope="col">ROI</TableHeaderCell>
+                <TableHeaderCell scope="col">Efficiency</TableHeaderCell>
+                <TableHeaderCell scope="col">Operational cost</TableHeaderCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {vehicleRows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <EmptyNote message="No vehicles match the current filter." />
+                  </TableCell>
+                </TableRow>
+              ) : (
+                vehicleRows.map((row) => (
+                  <TableRow
+                    key={row.reg}
+                    aria-selected={selectedVehicle === row.reg}
+                    className={
+                      selectedVehicle === row.reg
+                        ? "bg-primary/8"
+                        : undefined
+                    }
+                  >
+                    <TableCell className="font-medium text-foreground">
+                      {row.reg}
+                    </TableCell>
+                    <TableCell>{row.type}</TableCell>
+                    <TableCell>{row.status}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {row.roi != null ? `${row.roi}%` : "Not tracked"}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {row.efficiency != null ? `${row.efficiency} km/L` : "Not tracked"}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      ${row.cost.toLocaleString()}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
-        <RouteFlowMap edges={routeEdges} />
-      </ChartCard>
+      </CardShell>
+
+      <CardShell
+        as="section"
+        aria-label="Exports"
+        tone="paper"
+        className="motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+      >
+        <div className="flex items-center gap-3">
+          <IconBadge icon={Download} />
+          <div>
+            <h2 className="text-[15px] font-medium tracking-tight">Exports</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Download the dashboard dataset as CSV, optionally narrowed by
+              date or vehicle.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1">
+            <label htmlFor="export-from" className="text-sm text-muted-foreground">
+              From
+            </label>
+            <input
+              id="export-from"
+              type="date"
+              value={from}
+              onChange={(event) => setFrom(event.target.value)}
+              className="h-9 rounded-md border border-border bg-card px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="export-to" className="text-sm text-muted-foreground">
+              To
+            </label>
+            <input
+              id="export-to"
+              type="date"
+              value={to}
+              onChange={(event) => setTo(event.target.value)}
+              className="h-9 rounded-md border border-border bg-card px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="export-vehicle" className="text-sm text-muted-foreground">
+              Vehicle registration
+            </label>
+            <input
+              id="export-vehicle"
+              type="text"
+              value={vehicleReg}
+              onChange={(event) => setVehicleReg(event.target.value)}
+              placeholder="Optional"
+              className="h-9 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            />
+          </div>
+          <Button
+            variant="secondary"
+            onClick={exportServerCsv}
+            isLoading={exporting}
+            loadingText="Exporting…"
+          >
+            Export dashboard CSV
+          </Button>
+          <Button variant="link" asChild>
+            <Link href="/reports">Open daily trip report</Link>
+          </Button>
+        </div>
+        {exportError && (
+          <p role="alert" className="mt-3 text-sm text-destructive">
+            {exportError}
+          </p>
+        )}
+      </CardShell>
     </div>
   )
 }

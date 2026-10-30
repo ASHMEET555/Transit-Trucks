@@ -1,8 +1,10 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/Button"
-import { Input } from "@/components/Input"
+import { CardShell } from "@/components/fleet/card-shell"
+import { Pagination } from "@/components/Pagination"
+import { RealtimeIndicator } from "@/components/RealtimeIndicator"
 import {
   Select,
   SelectContent,
@@ -10,423 +12,255 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/Select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-} from "@/components/Table"
-import { ApiError, apiRequest, extractItems } from "@/lib/api"
+import { Skeleton } from "@/components/Skeleton"
+import { ApiError, apiRequest } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
-import { canWrite } from "@/lib/rbacConfig"
-
-type DriverRow = {
-  license_number: string
-  name: string
-  license_category: string
-  license_expiry_date: string
-  contact_number: string
-  safety_score: number
-  status: string
-}
-
-const emptyForm = {
-  license_number: "",
-  name: "",
-  license_category: "Light Transport",
-  license_expiry_date: "",
-  contact_number: "",
-  safety_score: 100,
-  status: "Available",
-}
+import { canWrite, hasRouteAccess } from "@/lib/rbacConfig"
+import { CardHead } from "./_components/chrome"
+import { ComplianceSection } from "./_components/complianceSection"
+import { DriverFormDrawer, saveDriver, type DriverFormState } from "./_components/driverFormDrawer"
+import { DriversTable } from "./_components/driversTable"
+import { useDrivers } from "./_components/useDrivers"
+import type { DriverRow } from "./_components/driverTypes"
 
 export default function DriversPage() {
-  const { currentProfile } = useProfile()
-  const [drivers, setDrivers] = useState<DriverRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [statusFilter, setStatusFilter] = useState<string>("All")
-  const [sortSafetyScore, setSortSafetyScore] = useState<"asc" | "desc" | "none">(
-    "none",
-  )
-  const [formData, setFormData] = useState(emptyForm)
+  const { currentProfile, isLoaded } = useProfile()
+  const { drivers, loading, error, reload, realtimeStatus } = useDrivers()
 
-  const canAddDriver = canWrite(currentProfile?.role || "", "drivers")
-  const canDeleteDriver =
-    currentProfile?.role === "Fleet Manager" || currentProfile?.role === "Admin"
+  const PAGE_SIZE = 10
+  const [page, setPage] = useState(1)
+
+  const [statusFilter, setStatusFilter] = useState("All")
+  const [sortSafetyScore, setSortSafetyScore] = useState<"asc" | "desc" | "none">("none")
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [editing, setEditing] = useState<DriverRow | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [deletingLicense, setDeletingLicense] = useState<string | null>(null)
+
+  const role = currentProfile?.role || ""
+  const hasAccess = hasRouteAccess(role, "drivers")
+  const canEdit = canWrite(role, "drivers")
+  const canDelete = role === "Fleet Manager" || role === "Admin"
+
+  const visibleDrivers = useMemo(() => {
+    const filtered = drivers.filter((d) => statusFilter === "All" || d.status === statusFilter)
+    if (sortSafetyScore === "asc") return [...filtered].sort((a, b) => a.safety_score - b.safety_score)
+    if (sortSafetyScore === "desc") return [...filtered].sort((a, b) => b.safety_score - a.safety_score)
+    return filtered
+  }, [drivers, statusFilter, sortSafetyScore])
 
   useEffect(() => {
-    fetchDrivers()
-  }, [])
+    setPage(1)
+  }, [statusFilter, sortSafetyScore, drivers.length])
 
-  const fetchDrivers = async () => {
+  const pagedDrivers = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return visibleDrivers.slice(start, start + PAGE_SIZE)
+  }, [visibleDrivers, page])
+
+  async function handleSave(form: DriverFormState, target: DriverRow | null) {
+    setSaving(true)
+    setFormError(null)
     try {
-      setError(null)
-      const res = await apiRequest<any>("/fleet/drivers")
-      setDrivers(extractItems<DriverRow>(res))
+      await saveDriver(form, target)
+      setDrawerOpen(false)
+      setEditing(null)
+      reload()
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to fetch drivers")
+      setFormError(err instanceof Error ? `${err.message} Check the details and try again.` : "Failed to save driver")
     } finally {
-      setLoading(false)
+      setSaving(false)
     }
   }
 
-  const handleAddDriver = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!canAddDriver) return
+  async function handleDelete(license: string) {
+    if (!window.confirm(`Delete driver ${license}? This cannot be undone.`)) return
+    setDeletingLicense(license)
+    setFormError(null)
     try {
-      setError(null)
-      await apiRequest("/fleet/drivers", { method: "POST", body: formData })
-      await fetchDrivers()
-      setShowAddForm(false)
-      setFormData(emptyForm)
+      await apiRequest(`/fleet/drivers/${encodeURIComponent(license)}`, { method: "DELETE" })
+      reload()
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to add driver")
+      setFormError(
+        `${err instanceof ApiError ? err.detail : "Failed to delete driver"} Check the record and try again.`,
+      )
+    } finally {
+      setDeletingLicense(null)
     }
   }
 
-  const handleDeleteDriver = async (licenseNum: string) => {
-    if (!canDeleteDriver) return
-    if (!confirm("Are you sure you want to delete this driver?")) return
-    try {
-      setError(null)
-      await apiRequest(`/fleet/drivers/${encodeURIComponent(licenseNum)}`, {
-        method: "DELETE",
-      })
-      await fetchDrivers()
-    } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Failed to delete driver")
-    }
-  }
-
-  const filteredAndSortedDrivers = drivers
-    .filter((driver) => {
-      if (statusFilter !== "All" && driver.status !== statusFilter) return false
-      return true
-    })
-    .sort((a, b) => {
-      if (sortSafetyScore === "asc") return a.safety_score - b.safety_score
-      if (sortSafetyScore === "desc") return b.safety_score - a.safety_score
-      return 0
-    })
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Available":
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-      case "On Trip":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-      case "Off Duty":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-      case "Suspended":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
-    }
-  }
-
-  const getSafetyScoreColor = (score: number) => {
-    if (score >= 90) return "text-green-600 dark:text-green-400"
-    if (score >= 70) return "text-yellow-600 dark:text-yellow-400"
-    if (score >= 50) return "text-orange-600 dark:text-orange-400"
-    return "text-red-600 dark:text-red-400"
+  if (isLoaded && !hasAccess) {
+    return (
+      <div className="mx-auto max-w-xl px-4 py-16 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Drivers</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Your role does not have access to driver records. Contact an administrator if you need access.
+        </p>
+      </div>
+    )
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="space-y-4 p-6">
+      <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Drivers Management</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
-            Manage your drivers here.
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Drivers</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Driver records and licence compliance.
           </p>
         </div>
-        {canAddDriver && (
-          <Button onClick={() => setShowAddForm(!showAddForm)}>
-            {showAddForm ? "Cancel" : "Add Driver"}
-          </Button>
-        )}
-      </div>
-
-      {error && (
-        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <span className="mr-2 text-red-600 dark:text-red-400">⚠</span>
-              <p className="text-sm font-medium text-red-900 dark:text-red-100">
-                {error}
-              </p>
-            </div>
-            <button
-              onClick={() => setError(null)}
-              className="text-sm font-medium text-red-700 hover:text-red-900 dark:text-red-300 dark:hover:text-red-100"
+        <div className="flex items-center gap-3">
+          <RealtimeIndicator status={realtimeStatus} />
+          {canEdit && (
+            <Button
+              onClick={() => {
+                setEditing(null)
+                setFormError(null)
+                setDrawerOpen(true)
+              }}
             >
-              Dismiss
-            </button>
-          </div>
+              Add driver
+            </Button>
+          )}
         </div>
+      </header>
+
+      {formError && (
+        <p role="alert" className="rounded-2xl border border-destructive/30 bg-destructive/12 px-4 py-3 text-sm text-foreground">
+          {formError}
+        </p>
       )}
 
-      <div className="mb-6 flex flex-wrap gap-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">
-        <div className="min-w-[200px] flex-1">
-          <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-50">
+      <div className="grid grid-cols-1 gap-3 rounded-2xl border border-border bg-muted p-3 sm:grid-cols-2 sm:p-4">
+        <div>
+          <label htmlFor="status-filter" className="mb-1.5 block text-sm font-medium">
             Status
           </label>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger>
+          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1) }}>
+            <SelectTrigger id="status-filter">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="All">All Statuses</SelectItem>
-              <SelectItem value="Available">Available</SelectItem>
-              <SelectItem value="On Trip">On Trip</SelectItem>
-              <SelectItem value="Off Duty">Off Duty</SelectItem>
-              <SelectItem value="Suspended">Suspended</SelectItem>
+              {["All", "Available", "On Trip", "Off Duty", "Suspended"].map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s === "All" ? "All statuses" : s}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
-
-        <div className="min-w-[200px] flex-1">
-          <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-50">
-            Sort by Safety Score
+        <div>
+          <label htmlFor="score-sort" className="mb-1.5 block text-sm font-medium">
+            Sort by safety score
           </label>
-          <Select
-            value={sortSafetyScore}
-            onValueChange={(value) =>
-              setSortSafetyScore(value as "asc" | "desc" | "none")
-            }
-          >
-            <SelectTrigger>
+          <Select value={sortSafetyScore} onValueChange={(v) => { setSortSafetyScore(v as "asc" | "desc" | "none"); setPage(1) }}>
+            <SelectTrigger id="score-sort">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">No sorting</SelectItem>
-              <SelectItem value="asc">Low to High</SelectItem>
-              <SelectItem value="desc">High to Low</SelectItem>
+              <SelectItem value="asc">Low to high</SelectItem>
+              <SelectItem value="desc">High to low</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </div>
 
-      {showAddForm && canAddDriver && (
-        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
-          <h2 className="mb-4 text-lg font-semibold">Add New Driver</h2>
-          <form
-            onSubmit={handleAddDriver}
-            className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
-          >
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-50">
-                License Number *
-              </label>
-              <Input
-                required
-                value={formData.license_number}
-                onChange={(e) =>
-                  setFormData({ ...formData, license_number: e.target.value })
-                }
-                placeholder="e.g., DL123456789"
-              />
-            </div>
+      <CardShell as="section" aria-label="Driver registry">
+        <CardHead
+          title="Driver registry"
+          meta={
+            loading
+              ? "Loading…"
+              : `${visibleDrivers.length} ${visibleDrivers.length === 1 ? "driver" : "drivers"}`
+          }
+        />
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-50">
-                Name *
-              </label>
-              <Input
-                required
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                placeholder="e.g., John Doe"
-              />
+        <div className="mt-4">
+          {loading ? (
+            <div role="status" aria-label="Loading drivers">
+              <Skeleton className="mb-2 h-10 w-full motion-reduce:animate-none" />
+              <Skeleton className="mb-2 h-10 w-full motion-reduce:animate-none" />
+              <Skeleton className="h-10 w-full motion-reduce:animate-none" />
+              <span className="sr-only">Loading drivers…</span>
             </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-50">
-                License Category *
-              </label>
-              <Select
-                value={formData.license_category}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, license_category: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Light Transport">Light Transport</SelectItem>
-                  <SelectItem value="Heavy Transport">Heavy Transport</SelectItem>
-                  <SelectItem value="Commercial">Commercial</SelectItem>
-                  <SelectItem value="Hazardous Materials">
-                    Hazardous Materials
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+          ) : error && drivers.length === 0 ? (
+            <div role="alert" className="rounded-2xl border border-destructive/30 bg-destructive/12 px-4 py-3 text-sm text-foreground">
+              <p>{error}</p>
+              <p className="mt-1 text-muted-foreground">Check your connection, then try again.</p>
+              <Button variant="secondary" className="mt-3" onClick={reload}>
+                Try again
+              </Button>
             </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-50">
-                License Expiry Date *
-              </label>
-              <Input
-                required
-                type="date"
-                value={formData.license_expiry_date}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    license_expiry_date: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-50">
-                Contact Number *
-              </label>
-              <Input
-                required
-                value={formData.contact_number}
-                onChange={(e) =>
-                  setFormData({ ...formData, contact_number: e.target.value })
-                }
-                placeholder="e.g., +1234567890"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-50">
-                Safety Score *
-              </label>
-              <Input
-                required
-                type="number"
-                min="0"
-                max="100"
-                step="0.1"
-                value={formData.safety_score || ""}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    safety_score: parseFloat(e.target.value) || 0,
-                  })
-                }
-                placeholder="0-100"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-900 dark:text-gray-50">
-                Status *
-              </label>
-              <Select
-                value={formData.status}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, status: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Available">Available</SelectItem>
-                  <SelectItem value="On Trip">On Trip</SelectItem>
-                  <SelectItem value="Off Duty">Off Duty</SelectItem>
-                  <SelectItem value="Suspended">Suspended</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex items-end md:col-span-2 lg:col-span-3">
-              <div className="flex gap-2">
-                <Button type="submit">Add Driver</Button>
+          ) : visibleDrivers.length === 0 && drivers.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-sm font-medium text-foreground">No drivers yet.</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Add your first driver to start building the registry.
+              </p>
+              {canEdit && (
                 <Button
-                  variant="secondary"
-                  type="button"
-                  onClick={() => setShowAddForm(false)}
+                  className="mt-4"
+                  onClick={() => {
+                    setEditing(null)
+                    setDrawerOpen(true)
+                  }}
                 >
-                  Cancel
+                  Add driver
                 </Button>
-              </div>
+              )}
             </div>
-          </form>
+          ) : visibleDrivers.length === 0 ? (
+            <div className="py-8 text-center">
+              <p className="text-sm font-medium text-foreground">No drivers match this filter.</p>
+              <Button variant="secondary" className="mt-4" onClick={() => { setStatusFilter("All"); setPage(1) }}>
+                Clear filter
+              </Button>
+            </div>
+          ) : (
+            <>
+            <div className="overflow-x-auto">
+              <DriversTable
+                drivers={pagedDrivers}
+                canEdit={canEdit}
+                canDelete={canDelete}
+                deletingLicense={deletingLicense}
+                onEdit={(d) => {
+                  setEditing(d)
+                  setFormError(null)
+                  setDrawerOpen(true)
+                }}
+                onDelete={handleDelete}
+              />
+            </div>
+            <Pagination
+              page={page}
+              pageSize={PAGE_SIZE}
+              total={visibleDrivers.length}
+              onPageChange={setPage}
+              id="drivers-registry-pagination"
+            />
+            </>
+          )}
         </div>
-      )}
+      </CardShell>
 
-      <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>License Number</TableHeaderCell>
-              <TableHeaderCell>Name</TableHeaderCell>
-              <TableHeaderCell>License Category</TableHeaderCell>
-              <TableHeaderCell>Expiry Date</TableHeaderCell>
-              <TableHeaderCell>Contact Number</TableHeaderCell>
-              <TableHeaderCell>Safety Score</TableHeaderCell>
-              <TableHeaderCell>Status</TableHeaderCell>
-              {canDeleteDriver && <TableHeaderCell>Actions</TableHeaderCell>}
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center">
-                  Loading drivers...
-                </TableCell>
-              </TableRow>
-            ) : filteredAndSortedDrivers.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center">
-                  No drivers found
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredAndSortedDrivers.map((driver) => (
-                <TableRow key={driver.license_number}>
-                  <TableCell className="font-medium">
-                    {driver.license_number}
-                  </TableCell>
-                  <TableCell>{driver.name}</TableCell>
-                  <TableCell>{driver.license_category}</TableCell>
-                  <TableCell>{driver.license_expiry_date}</TableCell>
-                  <TableCell>{driver.contact_number}</TableCell>
-                  <TableCell
-                    className={`font-medium ${getSafetyScoreColor(driver.safety_score)}`}
-                  >
-                    {Number(driver.safety_score).toFixed(1)}
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusColor(driver.status)}`}
-                    >
-                      {driver.status}
-                    </span>
-                  </TableCell>
-                  {canDeleteDriver && (
-                    <TableCell>
-                      <Button
-                        variant="destructive"
-                        onClick={() =>
-                          handleDeleteDriver(driver.license_number)
-                        }
-                      >
-                        Delete
-                      </Button>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <ComplianceSection
+        drivers={drivers}
+        loading={loading}
+        error={error}
+        realtimeStatus={realtimeStatus}
+        onReload={reload}
+      />
+
+      <DriverFormDrawer
+        open={drawerOpen}
+        driver={editing}
+        saving={saving}
+        onOpenChange={setDrawerOpen}
+        onSubmit={handleSave}
+      />
     </div>
   )
 }

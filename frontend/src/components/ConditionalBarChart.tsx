@@ -108,7 +108,7 @@ const LegendItem = ({ name, color, onClick }: LegendItemProps) => {
         // base
         "group inline-flex flex-nowrap items-center gap-2 whitespace-nowrap rounded px-2 py-1 transition",
         hasOnValueChange
-          ? "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+          ? "cursor-pointer hover:bg-muted"
           : "cursor-default",
       )}
       onClick={(e) => {
@@ -116,14 +116,14 @@ const LegendItem = ({ name, color, onClick }: LegendItemProps) => {
         onClick?.(name, color)
       }}
     >
-      <span className="text-xs text-gray-700 dark:text-gray-300">Low</span>
+      <span className="text-xs text-muted-foreground">Low</span>
       <span
         className={cx(
           getGradientColorClassName(color),
           "h-1.5 w-14 rounded-full bg-gradient-to-r",
         )}
       />
-      <span className="text-xs text-gray-700 dark:text-gray-300">High</span>
+      <span className="text-xs text-muted-foreground">High</span>
     </div>
   )
 }
@@ -246,9 +246,9 @@ const ChartTooltip = ({
           // base
           "rounded-md border text-sm shadow-md",
           // border color
-          "border-gray-200 dark:border-gray-800",
+          "border-border",
           // background color
-          "bg-white dark:bg-gray-950",
+          "bg-card",
         )}
       >
         <div className={cx("border-b border-inherit px-4 py-2")}>
@@ -257,7 +257,7 @@ const ChartTooltip = ({
               // base
               "font-medium",
               // text color
-              "text-gray-900 dark:text-gray-50",
+              "text-foreground",
             )}
           >
             {label}
@@ -282,7 +282,7 @@ const ChartTooltip = ({
                     // base
                     "whitespace-nowrap text-right",
                     // text color
-                    "text-gray-700 dark:text-gray-300",
+                    "text-muted-foreground",
                   )}
                 >
                   {category}
@@ -293,7 +293,7 @@ const ChartTooltip = ({
                   // base
                   "whitespace-nowrap text-right font-medium tabular-nums",
                   // text color
-                  "text-gray-900 dark:text-gray-50",
+                  "text-foreground",
                 )}
               >
                 {valueFormatter(value)}
@@ -469,7 +469,7 @@ const ConditionalBarChart = React.forwardRef<HTMLDivElement, BarChartProps>(
           >
             {showGridLines ? (
               <CartesianGrid
-                className={cx("stroke-gray-200 stroke-1 dark:stroke-gray-800")}
+                className={cx("stroke-border stroke-1")}
                 horizontal={layout !== "vertical"}
                 vertical={layout === "vertical"}
               />
@@ -486,7 +486,7 @@ const ConditionalBarChart = React.forwardRef<HTMLDivElement, BarChartProps>(
                 // base
                 "text-xs",
                 // text fill
-                "fill-gray-500 dark:fill-gray-500",
+                "fill-muted-foreground",
                 { "mt-4": layout !== "vertical" },
               )}
               tickLine={false}
@@ -516,7 +516,7 @@ const ConditionalBarChart = React.forwardRef<HTMLDivElement, BarChartProps>(
                 <Label
                   position="insideBottom"
                   offset={-20}
-                  className="fill-gray-800 text-sm font-medium dark:fill-gray-200"
+                  className="fill-foreground text-sm font-medium"
                 >
                   {xAxisLabel}
                 </Label>
@@ -533,7 +533,7 @@ const ConditionalBarChart = React.forwardRef<HTMLDivElement, BarChartProps>(
                 // base
                 "text-xs",
                 // text fill
-                "fill-gray-500 dark:fill-gray-500",
+                "fill-muted-foreground",
               )}
               tick={{
                 transform:
@@ -564,7 +564,7 @@ const ConditionalBarChart = React.forwardRef<HTMLDivElement, BarChartProps>(
                   style={{ textAnchor: "middle" }}
                   angle={-90}
                   offset={-10}
-                  className="fill-gray-500 text-xs font-normal dark:fill-gray-500"
+                  className="fill-muted-foreground text-xs font-normal"
                 >
                   {yAxisLabel}
                 </Label>

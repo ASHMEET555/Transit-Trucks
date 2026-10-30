@@ -33,8 +33,8 @@ export function RealtimeIndicator({ status, className = "" }: RealtimeIndicatorP
       default:
         return {
           label: "Offline",
-          badgeClass: "bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-900 dark:text-gray-400 dark:border-gray-700",
-          dotClass: "bg-gray-400",
+          badgeClass: "bg-muted text-muted-foreground border-border",
+          dotClass: "bg-muted-foreground",
         }
     }
   }

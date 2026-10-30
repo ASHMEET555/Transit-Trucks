@@ -22,7 +22,7 @@ export const CustomTooltip = ({ payload, active }: TooltipProps) => {
   const percentageDiff = calculatePercentageDiff()
 
   return (
-    <div className="flex w-56 items-start justify-between rounded-md border border-gray-200 bg-white p-2 text-sm shadow-md dark:border-gray-800 dark:bg-gray-950">
+    <div className="flex w-56 items-start justify-between rounded-md border border-border bg-card p-2 text-sm shadow-md">
       <div className="space-y-2">
         {payload.map((category, index) => (
           <div key={index} className="flex space-x-2.5">
@@ -34,10 +34,10 @@ export const CustomTooltip = ({ payload, active }: TooltipProps) => {
               aria-hidden="true"
             />
             <div className="space-y-0.5">
-              <p className="text-xs text-gray-500 dark:text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 {category.category}
               </p>
-              <p className="font-medium text-gray-900 dark:text-gray-50">
+              <p className="font-medium text-foreground">
                 {category.value}
               </p>
             </div>
@@ -73,7 +73,7 @@ export const CustomTooltip2 = ({
   const categoriesToShow = ["Quotes", "Total deal size"]
 
   return (
-    <div className="w-56 rounded-md border border-gray-200 bg-white text-sm shadow-md dark:border-gray-800 dark:bg-gray-950">
+    <div className="w-56 rounded-md border border-border bg-card text-sm shadow-md">
       <ul role="list" className="grid grid-cols-2 gap-x-4 p-2">
         {categoriesToShow.map((category, index) => (
           <li key={index} className="flex space-x-2.5">
@@ -87,10 +87,10 @@ export const CustomTooltip2 = ({
               aria-hidden="true"
             />
             <div className="space-y-0.5">
-              <p className="whitespace-nowrap text-xs text-gray-500 dark:text-gray-500">
+              <p className="whitespace-nowrap text-xs text-muted-foreground">
                 {category}
               </p>
-              <p className="font-medium text-gray-900 dark:text-gray-50">
+              <p className="font-medium text-foreground">
                 {category === "Quotes"
                   ? formatters.unit(data[category])
                   : formatters.currency({
@@ -102,8 +102,8 @@ export const CustomTooltip2 = ({
           </li>
         ))}
       </ul>
-      <div className="border-t border-gray-200 p-2 dark:border-gray-800">
-        <p className="inline-flex w-full justify-center rounded bg-gray-100 px-1.5 py-1 text-xs text-gray-600 dark:bg-gray-400/20 dark:text-gray-400">
+      <div className="border-t border-border p-2">
+        <p className="inline-flex w-full justify-center rounded bg-muted px-1.5 py-1 text-xs text-muted-foreground dark:text-muted-foreground">
           {ratio > 0.3
             ? "Critical ratio"
             : ratio > 0.25
@@ -131,7 +131,7 @@ export const CustomTooltip3 = ({ payload, active }: TooltipProps) => {
   const cappedValue = Math.min(Math.max(percentageDiff, -100), 100)
 
   return (
-    <div className="w-56 rounded-md border border-gray-200 bg-white text-sm shadow-md dark:border-gray-800 dark:bg-gray-950">
+    <div className="w-56 rounded-md border border-border bg-card text-sm shadow-md">
       <ul role="list" className="grid grid-cols-2 gap-x-4 p-2">
         {payload.map((category, index) => (
           <li key={index} className="flex space-x-2.5">
@@ -140,18 +140,18 @@ export const CustomTooltip3 = ({ payload, active }: TooltipProps) => {
               aria-hidden="true"
             />
             <div className="space-y-0.5">
-              <p className="text-xs text-gray-500 dark:text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 {category.category}
               </p>
-              <p className="font-medium text-gray-900 dark:text-gray-50">
+              <p className="font-medium text-foreground">
                 {category.value}
               </p>
             </div>
           </li>
         ))}
       </ul>
-      <div className="border-t border-gray-200 p-2 dark:border-gray-800">
-        <div className="relative mt-0.5 h-1.5 w-full rounded-full bg-gray-200 dark:bg-gray-800">
+      <div className="border-t border-border p-2">
+        <div className="relative mt-0.5 h-1.5 w-full rounded-full bg-muted">
           <span className="absolute left-1/2 top-1/2 z-30 h-2.5 w-0.5 -translate-y-1/2 rounded-full bg-gray-500 dark:bg-gray-500" />
           {percentageDiff >= 0 ? (
             <span className="absolute left-1/2 top-1/2 z-10 h-1.5 w-1/2 -translate-y-1/2">
@@ -181,11 +181,11 @@ export const CustomTooltip3 = ({ payload, active }: TooltipProps) => {
               className="mr-1 h-0.5 w-2.5 rounded-full bg-gray-500 dark:bg-gray-500"
               aria-hidden="true"
             />
-            <span className="text-xs text-gray-500 dark:text-gray-500">
+            <span className="text-xs text-muted-foreground">
               Peer avg.
             </span>
           </div>
-          <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+          <span className="text-xs font-medium text-muted-foreground">
             {formattedDiff}
           </span>
         </div>
@@ -211,7 +211,7 @@ export const CustomTooltip4 = ({ payload, active }: TooltipProps) => {
   const peerDifference = calculateDiff()
 
   return (
-    <div className="w-56 rounded-md border border-gray-200 bg-white text-sm shadow-md dark:border-gray-800 dark:bg-gray-950">
+    <div className="w-56 rounded-md border border-border bg-card text-sm shadow-md">
       <ul role="list" className="grid grid-cols-2 gap-x-4 p-2">
         <li className="flex space-x-2.5">
           <span
@@ -222,10 +222,10 @@ export const CustomTooltip4 = ({ payload, active }: TooltipProps) => {
             aria-hidden="true"
           />
           <div className="space-y-0.5">
-            <p className="whitespace-nowrap text-xs text-gray-500 dark:text-gray-500">
+            <p className="whitespace-nowrap text-xs text-muted-foreground">
               {payload[0].category}
             </p>
-            <p className="font-medium text-gray-900 dark:text-gray-50">
+            <p className="font-medium text-foreground">
               {formatters.percentage({ number: payload[0].value })}
             </p>
           </div>
@@ -236,17 +236,17 @@ export const CustomTooltip4 = ({ payload, active }: TooltipProps) => {
             aria-hidden="true"
           />
           <div className="space-y-0.5">
-            <p className="whitespace-nowrap text-xs text-gray-500 dark:text-gray-500">
+            <p className="whitespace-nowrap text-xs text-muted-foreground">
               Benchmark
             </p>
-            <p className="font-medium text-gray-900 dark:text-gray-50">
+            <p className="font-medium text-foreground">
               {formatters.percentage({ number: PEER_AVERAGE })}
             </p>
           </div>
         </li>
       </ul>
-      <div className="border-t border-gray-200 p-2 dark:border-gray-800">
-        <p className="inline-flex w-full justify-center rounded bg-gray-100 px-1.5 py-1 text-xs text-gray-600 dark:bg-gray-400/20 dark:text-gray-400">
+      <div className="border-t border-border p-2">
+        <p className="inline-flex w-full justify-center rounded bg-muted px-1.5 py-1 text-xs text-muted-foreground dark:text-muted-foreground">
           <span className="mr-1">{peerDifference}</span>
           {parseFloat(peerDifference) > 0
             ? "above benchmark"

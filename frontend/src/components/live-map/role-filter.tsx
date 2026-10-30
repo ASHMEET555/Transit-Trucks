@@ -1,12 +1,13 @@
 "use client"
 
 import { Building2, Navigation as SteeringWheel } from "lucide-react"
-import type { ViewerRole } from "@/lib/data/transit-data"
 import { cn } from "@/lib/utils"
 
+export type ViewerRole = "operator" | "driver"
+
 const roles: { value: ViewerRole; label: string; icon: typeof Building2 }[] = [
-  { value: "operator", label: "Operator View", icon: Building2 },
-  { value: "driver", label: "Driver View", icon: SteeringWheel },
+  { value: "operator", label: "Operator view", icon: Building2 },
+  { value: "driver", label: "Driver view", icon: SteeringWheel },
 ]
 
 export function RoleFilter({ value, onChange }: { value: ViewerRole; onChange: (r: ViewerRole) => void }) {
@@ -21,7 +22,7 @@ export function RoleFilter({ value, onChange }: { value: ViewerRole; onChange: (
             aria-pressed={active}
             onClick={() => onChange(v)}
             className={cn(
-              "flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
+              "flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
               active ? "bg-signal text-signal-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground",
             )}
           >

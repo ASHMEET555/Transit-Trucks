@@ -11,17 +11,21 @@ type MapControlsProps = {
   onRecenter: () => void
 }
 
+const focusRing =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+
 export function MapControls({ showRoutes, onShowRoutesChange, onZoomIn, onZoomOut, onRecenter }: MapControlsProps) {
   return (
     <div className="pointer-events-none absolute bottom-8 right-4 z-[500] flex items-end gap-3">
-      <label className="pointer-events-auto flex cursor-pointer items-center gap-3 rounded-2xl border border-border bg-card px-4 py-2.5 text-sm font-medium shadow-lg">
+      <label className="pointer-events-auto flex cursor-pointer items-center gap-3 rounded-2xl border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground shadow-lg">
         Routes
         <button
           type="button"
           role="switch"
           aria-checked={showRoutes}
+          aria-label="Show trip lines"
           onClick={() => onShowRoutesChange(!showRoutes)}
-          className={cn('relative h-6 w-11 rounded-full transition-colors', showRoutes ? 'bg-signal' : 'bg-border')}
+          className={cn('relative h-6 w-11 rounded-full transition-colors', focusRing, showRoutes ? 'bg-signal' : 'bg-border')}
         >
           <span
             className={cn(
@@ -33,7 +37,7 @@ export function MapControls({ showRoutes, onShowRoutesChange, onZoomIn, onZoomOu
       </label>
 
       <div className="pointer-events-auto flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-lg">
-        <IconButton label="Fit to routes" onClick={onRecenter}>
+        <IconButton label="Fit to trip lines" onClick={onRecenter}>
           <LocateFixed className="size-4" aria-hidden="true" />
         </IconButton>
         <IconButton label="Zoom in" onClick={onZoomIn}>
@@ -53,13 +57,13 @@ export function LiveBadge({ paused, onToggle }: { paused: boolean; onToggle: () 
       type="button"
       onClick={onToggle}
       aria-pressed={!paused}
-      className="absolute right-4 top-4 z-[500] flex items-center gap-2 rounded-full border border-border bg-card py-2 pl-3 pr-4 text-xs font-semibold shadow-lg"
+      className="absolute right-4 top-4 z-[500] flex items-center gap-2 rounded-full border border-border bg-card py-2 pl-3 pr-4 text-xs font-semibold text-foreground shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       <span className="relative flex size-2.5">
         {!paused && <span className="absolute inset-0 animate-ping rounded-full bg-signal opacity-60 motion-reduce:hidden" />}
         <span className={cn('relative size-2.5 rounded-full', paused ? 'bg-muted-foreground' : 'bg-signal')} />
       </span>
-      {paused ? 'Paused' : 'Live tracking'}
+      {paused ? 'Paused' : 'Live updates'}
       {paused ? <Play className="size-3.5" aria-hidden="true" /> : <Pause className="size-3.5" aria-hidden="true" />}
       <span className="sr-only">{paused ? 'Resume live updates' : 'Pause live updates'}</span>
     </button>
@@ -72,7 +76,7 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="grid size-10 place-items-center border-b border-border text-foreground transition-colors last:border-b-0 hover:bg-muted"
+      className="grid size-10 place-items-center border-b border-border text-foreground transition-colors last:border-b-0 hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
     >
       {children}
     </button>

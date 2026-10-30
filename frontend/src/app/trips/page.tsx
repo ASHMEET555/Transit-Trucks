@@ -1,8 +1,11 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { CheckCircle2, FileText, Truck, XCircle } from "lucide-react"
+import { RiAddLine, RiErrorWarningLine, RiLockLine } from "@remixicon/react"
 import { Button } from "@/components/Button"
 import { Input } from "@/components/Input"
+import { StatPills } from "@/components/live-map/stat-pills"
 import {
   Select,
   SelectContent,
@@ -10,804 +13,429 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/Select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-} from "@/components/Table"
+import { RealtimeIndicator } from "@/components/RealtimeIndicator"
 import { ApiError, apiRequest, extractItems } from "@/lib/api"
 import { useProfile } from "@/lib/ProfileContext"
-import { canWrite } from "@/lib/rbacConfig"
+import { canWrite, hasRouteAccess } from "@/lib/rbacConfig"
 import { useFleetEvents } from "@/lib/realtime/useFleetEvents"
-import { RealtimeIndicator } from "@/components/RealtimeIndicator"
+import { CompleteDialog } from "./_components/CompleteDialog"
+import { CreateTripDialog } from "./_components/CreateTripDialog"
+import { DispatchDialog } from "./_components/DispatchDialog"
+import { TripBoard } from "./_components/TripBoard"
+import { TripDetailDrawer } from "./_components/TripDetailDrawer"
+import { TripTable } from "./_components/TripTable"
+import {
+  TRIP_STATUSES,
+  type DestinationOption,
+  type DriverOption,
+  type Trip,
+  type VehicleOption,
+} from "./_components/types"
 
-function generateUUID(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID()
-  }
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0
-    const v = c === "x" ? r : (r & 0x3) | 0x8
-    return v.toString(16)
-  })
-}
-
-type Destination = { name: string; region: string }
-type Vehicle = {
-  registration_number: string
-  model: string
-  max_load_capacity: number
-  status: string
-  odometer: number
-}
-type Driver = {
-  license_number: string
-  name: string
-  status: string
-  license_expiry_date: string
-}
-type Trip = {
-  id: number
-  source_name: string
-  destination_name: string
-  vehicle_reg: string
-  driver_license: string
-  cargo_weight: number
-  planned_distance: number
-  revenue: number
-  status: string
-  start_odometer?: number
-  final_odometer?: number
-  fuel_liters?: number
-  fuel_cost?: number
-}
-
-type TripSuggestion = {
-  suggested_vehicle_reg: string
-  suggested_driver_license: string
-  suggested_driver_name: string
-  capacity_utilization: number
-  heuristic_score: number
+function listErrorMessage(err: unknown): string {
+  const detail =
+    err instanceof ApiError
+      ? `${err.code ? `[${err.code}] ` : ""}${err.detail}`
+      : "Trips failed to load."
+  return `${detail} Check your connection, then try again.`
 }
 
 export default function TripsPage() {
-  const { currentProfile } = useProfile()
-  const canManage = canWrite(currentProfile?.role || "", "trips")
+  const { currentProfile, isLoaded } = useProfile()
+  const role = currentProfile?.role ?? ""
+  const canManage = canWrite(role, "trips")
+  const canAccess = hasRouteAccess(role, "trips")
+
   const [trips, setTrips] = useState<Trip[]>([])
-  const [vehicles, setVehicles] = useState<Vehicle[]>([])
-  const [drivers, setDrivers] = useState<Driver[]>([])
-  const [destinations, setDestinations] = useState<Destination[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [showForm, setShowForm] = useState(false)
-  const [dispatchImmediately, setDispatchImmediately] = useState(true)
-  const [createIdempotencyKey, setCreateIdempotencyKey] = useState(generateUUID)
+  const [vehicles, setVehicles] = useState<VehicleOption[]>([])
+  const [drivers, setDrivers] = useState<DriverOption[]>([])
+  const [destinations, setDestinations] = useState<DestinationOption[]>([])
+  const [listState, setListState] = useState<"loading" | "ready" | "error">("loading")
+  const [listError, setListError] = useState<string | null>(null)
 
-  const [odometer, setOdometer] = useState("")
-  const [fuelLiters, setFuelLiters] = useState("")
-  const [fuelCost, setFuelCost] = useState("")
-  const [completeId, setCompleteId] = useState<number | null>(null)
-  const [completeIdempotencyKey, setCompleteIdempotencyKey] = useState<string | null>(null)
+  const [view, setView] = useState<"board" | "table">("table")
+  const [search, setSearch] = useState("")
+  const [statusFilter, setStatusFilter] = useState<string>("All")
 
-  const actionKeysRef = useRef<Record<string, string>>({})
-  function getActionKey(action: string, id: number): string {
-    const keyName = `${action}-${id}`
-    if (!actionKeysRef.current[keyName]) {
-      actionKeysRef.current[keyName] = generateUUID()
+  const [createOpen, setCreateOpen] = useState(false)
+  const [dispatchTrip, setDispatchTrip] = useState<Trip | null>(null)
+  const [completeTrip, setCompleteTrip] = useState<Trip | null>(null)
+  const [detailId, setDetailId] = useState<number | null>(null)
+  const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null)
+  const [cancellingId, setCancellingId] = useState<number | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [lastTripEvent, setLastTripEvent] = useState<string | null>(null)
+
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) {
+      setListState("loading")
     }
-    return actionKeysRef.current[keyName]
-  }
-  function clearActionKey(action: string, id: number) {
-    delete actionKeysRef.current[`${action}-${id}`]
-  }
-
-  const [sourceFilter, setSourceFilter] = useState("All")
-  const [destinationFilter, setDestinationFilter] = useState("All")
-  const [vehicleFilter, setVehicleFilter] = useState("All")
-  const [driverFilter, setDriverFilter] = useState("All")
-  const [liveEvent, setLiveEvent] = useState<string | null>(null)
-  const [suggestion, setSuggestion] = useState<TripSuggestion | null>(null)
-  const [suggesting, setSuggesting] = useState(false)
-  const [form, setForm] = useState({
-    source_name: "",
-    destination_name: "",
-    vehicle_reg: "",
-    driver_license: "",
-    cargo_weight: "",
-    planned_distance: "",
-    revenue: "0",
-  })
-
-  async function load() {
+    setListError(null)
     try {
-      setError(null)
-      const [t, v, d, dest] = await Promise.all([
-        apiRequest<any>("/trips/"),
-        apiRequest<any>("/fleet/vehicles"),
-        apiRequest<any>("/fleet/drivers"),
-        apiRequest<any>("/destinations/"),
+      const [tripData, vehicleData, driverData, destinationData] = await Promise.all([
+        apiRequest<unknown>("/trips/"),
+        apiRequest<unknown>("/fleet/vehicles"),
+        apiRequest<unknown>("/fleet/drivers"),
+        apiRequest<unknown>("/destinations/"),
       ])
-      setTrips(extractItems<Trip>(t))
-      setVehicles(extractItems<Vehicle>(v))
-      setDrivers(extractItems<Driver>(d))
-      setDestinations(extractItems<Destination>(dest))
+      setTrips(extractItems<Trip>(tripData))
+      setVehicles(extractItems<VehicleOption>(vehicleData))
+      setDrivers(extractItems<DriverOption>(driverData))
+      setDestinations(extractItems<DestinationOption>(destinationData))
+      setListState("ready")
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.code ? `[${err.code}] ${err.detail}` : err.detail)
-      } else {
-        setError("Failed to load trips")
+      if (!silent) {
+        setListError(listErrorMessage(err))
+        setListState("error")
       }
     }
-  }
-
-  useEffect(() => {
-    load()
   }, [])
 
-  const { status } = useFleetEvents({
+  useEffect(() => {
+    load(false)
+  }, [load])
+
+  useEffect(() => {
+    return () => {
+      if (reloadTimer.current) clearTimeout(reloadTimer.current)
+    }
+  }, [])
+
+  const scheduleReload = useCallback(() => {
+    if (reloadTimer.current) clearTimeout(reloadTimer.current)
+    reloadTimer.current = setTimeout(() => load(true), 500)
+  }, [load])
+
+  const { status: realtimeStatus } = useFleetEvents({
     onEvent: (event) => {
-      setLiveEvent(event.type)
-      load()
+      if (event.type.startsWith("trip.")) {
+        setLastTripEvent(event.type)
+        scheduleReload()
+      }
     },
-    onReconnect: () => {
-      load()
-    },
+    onReconnect: () => scheduleReload(),
   })
 
-  const availableVehicles = useMemo(
-    () => vehicles.filter((v) => v.status === "Available"),
-    [vehicles],
+  const canActOnTrip = useCallback(
+    (trip: Trip) =>
+      canManage ||
+      (role === "Driver" &&
+        Boolean(currentProfile?.driver_license) &&
+        currentProfile?.driver_license === trip.driver_license),
+    [canManage, role, currentProfile?.driver_license],
   )
-  const availableDrivers = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10)
-    return drivers.filter(
-      (d) => d.status === "Available" && d.license_expiry_date > today,
-    )
-  }, [drivers])
 
-  const sourceOptions = useMemo(
-    () =>
-      Array.from(new Set(trips.map((t) => t.source_name))).sort((a, b) =>
-        a.localeCompare(b),
-      ),
-    [trips],
-  )
-  const destinationOptions = useMemo(
-    () =>
-      Array.from(new Set(trips.map((t) => t.destination_name))).sort((a, b) =>
-        a.localeCompare(b),
-      ),
-    [trips],
-  )
-  const vehicleOptions = useMemo(
-    () =>
-      Array.from(new Set(trips.map((t) => t.vehicle_reg))).sort((a, b) =>
-        a.localeCompare(b),
-      ),
-    [trips],
-  )
-  const driverOptions = useMemo(
-    () =>
-      Array.from(new Set(trips.map((t) => t.driver_license))).sort((a, b) =>
-        a.localeCompare(b),
-      ),
-    [trips],
-  )
+  const scopedTrips = useMemo(() => {
+    if (role === "Driver" && currentProfile?.driver_license) {
+      return trips.filter((trip) => trip.driver_license === currentProfile.driver_license)
+    }
+    return trips
+  }, [trips, role, currentProfile?.driver_license])
 
   const filteredTrips = useMemo(() => {
-    return trips.filter((t) => {
-      if (sourceFilter !== "All" && t.source_name !== sourceFilter) return false
-      if (
-        destinationFilter !== "All" &&
-        t.destination_name !== destinationFilter
+    const query = search.trim().toLowerCase()
+    return scopedTrips.filter((trip) => {
+      if (statusFilter !== "All" && trip.status !== statusFilter) return false
+      if (!query) return true
+      return (
+        String(trip.id).includes(query) ||
+        trip.source_name.toLowerCase().includes(query) ||
+        trip.destination_name.toLowerCase().includes(query) ||
+        trip.vehicle_reg.toLowerCase().includes(query) ||
+        trip.driver_license.toLowerCase().includes(query)
       )
-        return false
-      if (vehicleFilter !== "All" && t.vehicle_reg !== vehicleFilter)
-        return false
-      if (driverFilter !== "All" && t.driver_license !== driverFilter)
-        return false
-      return true
     })
-  }, [trips, sourceFilter, destinationFilter, vehicleFilter, driverFilter])
+  }, [scopedTrips, search, statusFilter])
 
-  const selectedVehicle = vehicles.find(
-    (v) => v.registration_number === form.vehicle_reg,
-  )
-  const overload =
-    selectedVehicle && form.cargo_weight
-      ? Number(form.cargo_weight) > selectedVehicle.max_load_capacity
-      : false
-
-  const canActOnTrip = (t: Trip) =>
-    canManage || (currentProfile?.role === "Driver" && currentProfile?.driver_license === t.driver_license)
-
-  async function createTrip(e: React.FormEvent) {
-    e.preventDefault()
-    try {
-      await apiRequest("/trips/", {
-        method: "POST",
-        headers: { "Idempotency-Key": createIdempotencyKey },
-        body: {
-          source_name: form.source_name,
-          destination_name: form.destination_name,
-          vehicle_reg: form.vehicle_reg,
-          driver_license: form.driver_license,
-          cargo_weight: Number(form.cargo_weight),
-          planned_distance: Number(form.planned_distance),
-          revenue: Number(form.revenue),
-          dispatch: dispatchImmediately,
-        },
-      })
-      setShowForm(false)
-      setForm({
-        source_name: "",
-        destination_name: "",
-        vehicle_reg: "",
-        driver_license: "",
-        cargo_weight: "",
-        planned_distance: "",
-        revenue: "0",
-      })
-      setSuggestion(null)
-      setCreateIdempotencyKey(generateUUID())
-      await load()
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.code ? `[${err.code}] ${err.detail}` : err.detail)
-      } else {
-        setError("Failed to create trip")
-      }
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { Draft: 0, Dispatched: 0, Completed: 0, Cancelled: 0 }
+    for (const trip of scopedTrips) {
+      if (trip.status in counts) counts[trip.status] += 1
     }
-  }
-
-  async function suggestTripAssignment() {
-    if (
-      !form.source_name ||
-      !form.destination_name ||
-      !form.cargo_weight ||
-      !form.planned_distance
-    ) {
-      setError("Select source, destination, cargo weight and planned distance first.")
-      return
-    }
-    setSuggesting(true)
-    try {
-      const suggested = await apiRequest<TripSuggestion>("/trips/suggest", {
-        method: "POST",
-        body: {
-          source_name: form.source_name,
-          destination_name: form.destination_name,
-          vehicle_reg: form.vehicle_reg || "pending",
-          driver_license: form.driver_license || "pending",
-          cargo_weight: Number(form.cargo_weight),
-          planned_distance: Number(form.planned_distance),
-          revenue: Number(form.revenue || "0"),
-        },
-      })
-      setSuggestion(suggested)
-      setForm((prev) => ({
-        ...prev,
-        vehicle_reg: suggested.suggested_vehicle_reg,
-        driver_license: suggested.suggested_driver_license,
-      }))
-      setError(null)
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.code ? `[${err.code}] ${err.detail}` : err.detail)
-      } else {
-        setError("Failed to suggest assignment")
-      }
-    } finally {
-      setSuggesting(false)
-    }
-  }
-
-  function startComplete(id: number) {
-    setCompleteId(id)
-    setOdometer("")
-    setFuelLiters("")
-    setFuelCost("")
-    setCompleteIdempotencyKey(generateUUID())
-  }
-
-  async function completeTrip() {
-    if (completeId == null) return
-    const key = completeIdempotencyKey || generateUUID()
-    const body: { final_odometer: number; fuel_liters?: number; fuel_cost?: number } = {
-      final_odometer: Number(odometer),
-    }
-    if (fuelLiters.trim() !== "" && fuelCost.trim() !== "") {
-      body.fuel_liters = Number(fuelLiters)
-      body.fuel_cost = Number(fuelCost)
-    }
-
-    try {
-      await apiRequest(`/trips/${completeId}/complete`, {
-        method: "POST",
-        headers: { "Idempotency-Key": key },
-        body,
-      })
-      setCompleteId(null)
-      setOdometer("")
-      setFuelLiters("")
-      setFuelCost("")
-      setCompleteIdempotencyKey(null)
-      await load()
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.code ? `[${err.code}] ${err.detail}` : err.detail)
-      } else {
-        setError("Failed to complete trip")
-      }
-    }
-  }
-
-  async function dispatchTrip(id: number) {
-    const key = getActionKey("dispatch", id)
-    try {
-      await apiRequest(`/trips/${id}/dispatch`, {
-        method: "POST",
-        headers: { "Idempotency-Key": key },
-      })
-      clearActionKey("dispatch", id)
-      await load()
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.code ? `[${err.code}] ${err.detail}` : err.detail)
-      } else {
-        setError("Failed to dispatch trip")
-      }
-    }
-  }
+    return counts
+  }, [scopedTrips])
 
   async function cancelTrip(id: number) {
-    if (!confirm("Cancel this trip?")) return
-    const key = getActionKey("cancel", id)
+    setCancellingId(id)
+    setActionError(null)
     try {
       await apiRequest(`/trips/${id}/cancel`, {
         method: "POST",
-        headers: { "Idempotency-Key": key },
+        actionId: `cancel-${id}`,
       })
-      clearActionKey("cancel", id)
-      await load()
+      setConfirmCancelId(null)
+      await load(true)
     } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.code ? `[${err.code}] ${err.detail}` : err.detail)
-      } else {
-        setError("Failed to cancel trip")
-      }
+      setActionError(
+        `${listErrorMessage(err)} The trip was not cancelled.`,
+      )
+    } finally {
+      setCancellingId(null)
     }
   }
 
-  const statusColor = (status: string) => {
-    switch (status) {
-      case "Draft":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-      case "Dispatched":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-      case "Completed":
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-      case "Cancelled":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-      default:
-        return "bg-gray-100 text-gray-800"
-    }
-  }
-
-  return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">Trips</h1>
-            <RealtimeIndicator status={status} />
-          </div>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
-            Dispatch and trip lifecycle
-          </p>
-        </div>
-        {canManage && (
-          <Button onClick={() => setShowForm(!showForm)}>
-            {showForm ? "Cancel" : "Create Trip"}
+  function renderActions(trip: Trip) {
+    if (!canActOnTrip(trip)) return null
+    if (trip.status === "Draft") {
+      return (
+        <>
+          <Button variant="secondary" onClick={() => setDispatchTrip(trip)}>
+            Dispatch
           </Button>
-        )}
-      </div>
-
-      {error && (
-        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
-          {error}
-        </div>
-      )}
-      {liveEvent && (
-        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
-          Live update: <span className="font-medium">{liveEvent}</span>
-        </div>
-      )}
-
-      {showForm && canManage && (
-        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
-          <h2 className="mb-4 text-lg font-semibold">Create New Trip</h2>
-          <form
-            onSubmit={createTrip}
-            className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
-          >
-            <div>
-              <label className="mb-2 block text-sm font-medium">Source *</label>
-              <Select
-                value={form.source_name}
-                onValueChange={(v) => setForm({ ...form, source_name: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select source" />
-                </SelectTrigger>
-                <SelectContent>
-                  {destinations.map((d) => (
-                    <SelectItem key={d.name} value={d.name}>
-                      {d.name} ({d.region})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Destination *
-              </label>
-              <Select
-                value={form.destination_name}
-                onValueChange={(v) => setForm({ ...form, destination_name: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select destination" />
-                </SelectTrigger>
-                <SelectContent>
-                  {destinations.map((d) => (
-                    <SelectItem key={d.name} value={d.name}>
-                      {d.name} ({d.region})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Available Vehicle *
-              </label>
-              <Select
-                value={form.vehicle_reg}
-                onValueChange={(v) => setForm({ ...form, vehicle_reg: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select vehicle" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableVehicles.map((v) => (
-                    <SelectItem
-                      key={v.registration_number}
-                      value={v.registration_number}
-                    >
-                      {v.registration_number} · {v.model} (
-                      {v.max_load_capacity.toLocaleString()} kg)
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Available Driver *
-              </label>
-              <Select
-                value={form.driver_license}
-                onValueChange={(v) => setForm({ ...form, driver_license: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select driver" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableDrivers.map((d) => (
-                    <SelectItem key={d.license_number} value={d.license_number}>
-                      {d.name} ({d.license_number})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Cargo Weight (kg) *
-              </label>
-              <Input
-                required
-                type="number"
-                min="0"
-                placeholder="e.g., 450"
-                value={form.cargo_weight}
-                onChange={(e) =>
-                  setForm({ ...form, cargo_weight: e.target.value })
-                }
-              />
-              {selectedVehicle && (
-                <p className="mt-1 text-xs text-gray-500">
-                  Max capacity:{" "}
-                  {selectedVehicle.max_load_capacity.toLocaleString()} kg
-                </p>
-              )}
-              {overload && (
-                <p className="mt-1 text-xs font-medium text-amber-600">
-                  Cargo exceeds vehicle capacity
-                </p>
-              )}
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Planned Distance (km) *
-              </label>
-              <Input
-                required
-                type="number"
-                min="0"
-                placeholder="e.g., 120"
-                value={form.planned_distance}
-                onChange={(e) =>
-                  setForm({ ...form, planned_distance: e.target.value })
-                }
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium">Revenue</label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.revenue}
-                onChange={(e) => setForm({ ...form, revenue: e.target.value })}
-              />
-            </div>
-            <div className="flex items-center gap-2 md:col-span-2 lg:col-span-3">
-              <input
-                id="dispatch-toggle"
-                type="checkbox"
-                checked={dispatchImmediately}
-                onChange={(e) => setDispatchImmediately(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <label htmlFor="dispatch-toggle" className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                Dispatch immediately (uncheck to save as Draft)
-              </label>
-            </div>
-            <div className="flex items-end gap-2 md:col-span-2 lg:col-span-3">
+          {confirmCancelId === trip.id ? (
+            <>
               <Button
-                type="button"
-                variant="secondary"
-                onClick={suggestTripAssignment}
-                disabled={suggesting}
+                variant="destructive"
+                onClick={() => cancelTrip(trip.id)}
+                disabled={cancellingId === trip.id}
               >
-                {suggesting ? "Suggesting..." : "Suggest Vehicle & Driver"}
+                {cancellingId === trip.id ? "Cancelling…" : "Confirm cancel"}
               </Button>
-              <Button type="submit" disabled={overload}>
-                {dispatchImmediately ? "Dispatch Trip" : "Create Draft"}
+              <Button variant="ghost" onClick={() => setConfirmCancelId(null)}>
+                Keep
               </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setShowForm(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-            {suggestion && (
-              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 md:col-span-2 lg:col-span-3">
-                Suggested: {suggestion.suggested_vehicle_reg} +{" "}
-                {suggestion.suggested_driver_name} ({suggestion.suggested_driver_license}) ·
-                Capacity utilization {(suggestion.capacity_utilization * 100).toFixed(1)}%
-              </div>
-            )}
-          </form>
-        </div>
-      )}
-
-      {completeId != null && (
-        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
-          <h2 className="mb-4 text-lg font-semibold">
-            Complete Trip #{completeId}
-          </h2>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Final Odometer *
-              </label>
-              <Input
-                type="number"
-                placeholder="Must be higher than current"
-                value={odometer}
-                onChange={(e) => setOdometer(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Fuel Liters (Optional)
-              </label>
-              <Input
-                type="number"
-                placeholder="e.g. 45.5"
-                value={fuelLiters}
-                onChange={(e) => setFuelLiters(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium">
-                Fuel Cost (Optional)
-              </label>
-              <Input
-                type="number"
-                placeholder="e.g. 110.0"
-                value={fuelCost}
-                onChange={(e) => setFuelCost(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="mt-4 flex gap-2">
-            <Button onClick={completeTrip}>Confirm Complete</Button>
-            <Button variant="secondary" onClick={() => setCompleteId(null)}>
+            </>
+          ) : (
+            <Button variant="ghost" onClick={() => setConfirmCancelId(trip.id)}>
               Cancel
             </Button>
+          )}
+        </>
+      )
+    }
+    if (trip.status === "Dispatched") {
+      return (
+        <>
+          <Button variant="secondary" onClick={() => setCompleteTrip(trip)}>
+            Complete
+          </Button>
+          {confirmCancelId === trip.id ? (
+            <>
+              <Button
+                variant="destructive"
+                onClick={() => cancelTrip(trip.id)}
+                disabled={cancellingId === trip.id}
+              >
+                {cancellingId === trip.id ? "Cancelling…" : "Confirm cancel"}
+              </Button>
+              <Button variant="ghost" onClick={() => setConfirmCancelId(null)}>
+                Keep
+              </Button>
+            </>
+          ) : (
+            <Button variant="ghost" onClick={() => setConfirmCancelId(trip.id)}>
+              Cancel
+            </Button>
+          )}
+        </>
+      )
+    }
+    return null
+  }
+
+  if (!isLoaded) {
+    return (
+      <div className="p-6" aria-label="Loading trips page">
+        <TripTable
+          trips={[]}
+          loading
+          onOpen={() => {}}
+          renderActions={() => null}
+          emptyAction={null}
+        />
+      </div>
+    )
+  }
+
+  if (!currentProfile) {
+    return (
+      <div className="flex min-h-96 flex-col items-center justify-center gap-3 p-6 text-center">
+        <RiLockLine className="size-8 text-muted-foreground" aria-hidden="true" />
+        <h1 className="text-xl font-semibold text-foreground">
+          Sign in required
+        </h1>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          Your session expired. Sign in again to view trips.
+        </p>
+        <Button asChild>
+          <a href="/login">Go to sign in</a>
+        </Button>
+      </div>
+    )
+  }
+
+  if (!canAccess) {
+    return (
+      <div className="flex min-h-96 flex-col items-center justify-center gap-3 p-6 text-center">
+        <RiLockLine className="size-8 text-muted-foreground" aria-hidden="true" />
+        <h1 className="text-xl font-semibold text-foreground">
+          Trips are unavailable for your role
+        </h1>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          Your role ({role || "unknown"}) has no access to trips. Ask an
+          administrator to update your permissions.
+        </p>
+      </div>
+    )
+  }
+
+  const newTripAction = canManage ? (
+    <Button onClick={() => setCreateOpen(true)}>
+      <RiAddLine className="size-4" aria-hidden="true" />
+      New trip
+    </Button>
+  ) : null
+
+  return (
+    <div className="space-y-4 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Trips</h1>
+            <RealtimeIndicator status={realtimeStatus} />
           </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Dispatch and trip lifecycle
+            {role === "Driver" && " · Showing only trips assigned to your license"}
+          </p>
+          <span className="sr-only" role="status">
+            {lastTripEvent ? `Updated after ${lastTripEvent}.` : ""}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="Change layout" className="inline-flex rounded-full border border-border bg-muted p-1">
+            <button
+              type="button"
+              aria-pressed={view === "board"}
+              onClick={() => setView("board")}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+                view === "board"
+                  ? "bg-card text-foreground shadow-sm ring-1 ring-foreground/5"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Board
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === "table"}
+              onClick={() => setView("table")}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+                view === "table"
+                  ? "bg-card text-foreground shadow-sm ring-1 ring-foreground/5"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Table
+            </button>
+          </div>
+          {newTripAction}
+        </div>
+      </div>
+
+      <StatPills
+        items={[
+          { label: "Draft", value: statusCounts.Draft, icon: FileText, tone: "mist" },
+          { label: "Dispatched", value: statusCounts.Dispatched, icon: Truck, tone: "sage" },
+          { label: "Completed", value: statusCounts.Completed, icon: CheckCircle2, tone: "primary" },
+          { label: "Cancelled", value: statusCounts.Cancelled, icon: XCircle, tone: "signal" },
+        ]}
+      />
+
+      {(listError || actionError) && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-destructive/30 bg-destructive/12 p-4 text-sm text-foreground"
+        >
+          <p className="flex items-start gap-2 font-medium">
+            <RiErrorWarningLine className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>{listError || actionError}</span>
+          </p>
+          <Button variant="secondary" onClick={() => load(false)} className="mt-2">
+            Retry
+          </Button>
         </div>
       )}
 
-      <div className="mb-6 grid grid-cols-1 gap-4 rounded-lg border border-gray-200 bg-white p-4 md:grid-cols-2 lg:grid-cols-4 dark:border-gray-800 dark:bg-gray-950">
-        <div>
-          <label className="mb-2 block text-sm font-medium">Source</label>
-          <Select value={sourceFilter} onValueChange={setSourceFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All sources" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All</SelectItem>
-              {sourceOptions.map((name) => (
-                <SelectItem key={name} value={name}>
-                  {name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-medium">Destination</label>
-          <Select
-            value={destinationFilter}
-            onValueChange={setDestinationFilter}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All destinations" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All</SelectItem>
-              {destinationOptions.map((name) => (
-                <SelectItem key={name} value={name}>
-                  {name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-medium">Vehicle</label>
-          <Select value={vehicleFilter} onValueChange={setVehicleFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All vehicles" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All</SelectItem>
-              {vehicleOptions.map((reg) => (
-                <SelectItem key={reg} value={reg}>
-                  {reg}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-medium">Driver</label>
-          <Select value={driverFilter} onValueChange={setDriverFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All drivers" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="All">All</SelectItem>
-              {driverOptions.map((license) => {
-                const driver = drivers.find((d) => d.license_number === license)
-                return (
-                  <SelectItem key={license} value={license}>
-                    {driver ? `${driver.name} (${license})` : license}
-                  </SelectItem>
-                )
-              })}
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="grid grid-cols-1 gap-3 rounded-2xl border border-border bg-muted p-3 sm:grid-cols-[1fr_220px] sm:p-4">
+        <Input
+          type="search"
+          aria-label="Search trips"
+          placeholder="Search by id, route, plate, or license"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger aria-label="Filter by status">
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="All">All statuses</SelectItem>
+            {TRIP_STATUSES.map((status) => (
+              <SelectItem key={status} value={status}>
+                {status}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableHeaderCell>ID</TableHeaderCell>
-              <TableHeaderCell>Route</TableHeaderCell>
-              <TableHeaderCell>Vehicle</TableHeaderCell>
-              <TableHeaderCell>Driver</TableHeaderCell>
-              <TableHeaderCell>Cargo</TableHeaderCell>
-              <TableHeaderCell>Status</TableHeaderCell>
-              <TableHeaderCell>Actions</TableHeaderCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredTrips.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center">
-                  No trips found
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredTrips.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="font-medium">#{t.id}</TableCell>
-                  <TableCell>
-                    {t.source_name} → {t.destination_name}
-                  </TableCell>
-                  <TableCell>{t.vehicle_reg}</TableCell>
-                  <TableCell>{t.driver_license}</TableCell>
-                  <TableCell>{t.cargo_weight} kg</TableCell>
-                  <TableCell>
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColor(t.status)}`}
-                    >
-                      {t.status}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    {t.status === "Draft" && canActOnTrip(t) && (
-                      <div className="flex gap-2">
-                        <Button
-                          variant="secondary"
-                          onClick={() => dispatchTrip(t.id)}
-                        >
-                          Dispatch
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          onClick={() => cancelTrip(t.id)}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    )}
-                    {t.status === "Dispatched" && canActOnTrip(t) && (
-                      <div className="flex gap-2">
-                        <Button
-                          variant="secondary"
-                          onClick={() => startComplete(t.id)}
-                        >
-                          Complete
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          onClick={() => cancelTrip(t.id)}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <p className="text-sm tabular-nums text-muted-foreground" role="status">
+        {listState === "loading"
+          ? "Loading trips…"
+          : `${filteredTrips.length} ${filteredTrips.length === 1 ? "trip" : "trips"}`}
+      </p>
+
+      {listState === "error" && !listError ? (
+        <div className="rounded-2xl border border-border bg-card p-8 text-center">
+          <p className="text-sm text-muted-foreground">
+            Trips failed to load. Check your connection, then retry.
+          </p>
+          <Button variant="secondary" onClick={() => load(false)} className="mt-3">
+            Retry
+          </Button>
+        </div>
+      ) : view === "board" ? (
+        <TripBoard
+          trips={filteredTrips}
+          loading={listState === "loading"}
+          visibleStatuses={statusFilter === "All" ? [...TRIP_STATUSES] : [statusFilter]}
+          onOpen={(trip) => setDetailId(trip.id)}
+          renderActions={renderActions}
+          draftEmptyAction={newTripAction}
+        />
+      ) : (
+        <TripTable
+          trips={filteredTrips}
+          loading={listState === "loading"}
+          onOpen={(trip) => setDetailId(trip.id)}
+          renderActions={renderActions}
+          emptyAction={newTripAction}
+        />
+      )}
+
+      <CreateTripDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={() => load(true)}
+        destinations={destinations}
+        vehicles={vehicles}
+        drivers={drivers}
+        refsLoading={listState === "loading"}
+      />
+      <DispatchDialog
+        trip={dispatchTrip}
+        onClose={() => setDispatchTrip(null)}
+        onDispatched={() => load(true)}
+      />
+      <CompleteDialog
+        trip={completeTrip}
+        onClose={() => setCompleteTrip(null)}
+        onCompleted={() => load(true)}
+      />
+      <TripDetailDrawer tripId={detailId} role={role} onClose={() => setDetailId(null)} />
     </div>
   )
 }

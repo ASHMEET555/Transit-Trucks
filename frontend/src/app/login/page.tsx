@@ -3,7 +3,8 @@
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { FormEvent, useEffect, useState } from "react"
-import { ApiError, getMeRequest, loginRequest } from "@/lib/api"
+import { ApiError, getMeRequest } from "@/lib/api"
+import { useProfile } from "@/lib/ProfileContext"
 import { COMPANIES, WORKSPACES } from "@/config/workspaces"
 
 const ROLES = [
@@ -36,6 +37,7 @@ const SLIDES = [
 
 export default function LoginPage() {
   const router = useRouter()
+  const { login } = useProfile()
   const [workspace, setWorkspace] = useState(WORKSPACES[0].id)
   const [company, setCompany] = useState(COMPANIES[0].id)
   const [expectedRole, setExpectedRole] = useState<RoleType>("Fleet Manager")
@@ -59,7 +61,7 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      await loginRequest(email.trim(), password, {
+      await login(email.trim(), password, {
         workspace,
         company,
         expected_role: expectedRole,
@@ -67,6 +69,9 @@ export default function LoginPage() {
 
       // Always redirect according to the verified role from /api/v1/auth/me
       const me = await getMeRequest()
+      // Session display metadata only (not an access boundary)
+      sessionStorage.setItem("transitops.workspace", workspace)
+      sessionStorage.setItem("transitops.company", company)
       if (me.role === "Driver") {
         router.push("/trips")
       } else {
@@ -92,15 +97,15 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-100 p-0 font-sans text-neutral-900 antialiased md:p-6 lg:p-10 selection:bg-neutral-900 selection:text-white">
-      <main className="relative flex h-screen max-h-[960px] w-full max-w-[1240px] flex-col overflow-hidden border border-neutral-200/80 bg-white shadow-2xl md:h-[840px] md:flex-row md:rounded-2xl">
+    <div className="flex min-h-screen items-center justify-center bg-muted p-0 font-sans text-foreground antialiased md:p-6 lg:p-10 selection:bg-foreground selection:text-background">
+      <main className="relative flex h-screen max-h-[960px] w-full max-w-[1240px] flex-col overflow-hidden border border-border bg-card shadow-2xl md:h-[840px] md:flex-row md:rounded-2xl">
         {/* Left Auth Form Pane */}
         <section
           data-purpose="auth-pane"
           className="telematics-grid-bg relative z-10 flex h-full w-full flex-col justify-between overflow-y-auto p-6 sm:p-10 md:w-1/2 lg:p-12"
         >
           {/* Subtle decorative watermark */}
-          <svg className="bg-watermark-glyph text-neutral-900" fill="currentColor" viewBox="0 0 100 100" aria-hidden="true">
+          <svg className="bg-watermark-glyph text-foreground" fill="currentColor" viewBox="0 0 100 100" aria-hidden="true">
             <rect height="90" rx="3" width="6" x="47" y="5" />
             <rect height="6" rx="3" width="90" x="5" y="47" />
             <rect height="90" rx="3" transform="rotate(45 50 50)" width="6" x="47" y="5" />
@@ -119,10 +124,10 @@ export default function LoginPage() {
                   <path d="M4 7l8 10 8-10" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
-              <h1 id="form-heading" className="text-[22px] font-bold tracking-tight text-neutral-900 sm:text-[24px]">
+              <h1 id="form-heading" className="text-[22px] font-bold tracking-tight text-foreground sm:text-[24px]">
                 Sign in to TransitOps
               </h1>
-              <p id="form-subheading" className="mx-auto mt-1 max-w-[300px] text-xs leading-relaxed text-neutral-500 sm:text-[13px]">
+              <p id="form-subheading" className="mx-auto mt-1 max-w-[300px] text-xs leading-relaxed text-muted-foreground sm:text-[13px]">
                 Enterprise dispatch, realtime operations, and compliance telemetry.
               </p>
             </div>
@@ -139,7 +144,7 @@ export default function LoginPage() {
             <form aria-labelledby="form-heading" onSubmit={handleSubmit} className="space-y-4">
               {/* 1. Workspace Select */}
               <div className="space-y-1.5 text-left">
-                <label htmlFor="workspace-select" className="block text-xs font-semibold tracking-wide text-neutral-800">
+                <label htmlFor="workspace-select" className="block text-xs font-semibold tracking-wide text-foreground">
                   Workspace
                 </label>
                 <select
@@ -147,7 +152,7 @@ export default function LoginPage() {
                   name="workspace"
                   value={workspace}
                   onChange={(e) => setWorkspace(e.target.value)}
-                  className="w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2 text-sm text-neutral-900 transition-all focus:border-neutral-900 focus:outline-none focus:ring-1 focus:ring-neutral-900"
+                  className="w-full rounded-lg border border-input bg-background px-3.5 py-2 text-sm text-foreground transition-all focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 >
                   {WORKSPACES.map((w) => (
                     <option key={w.id} value={w.id}>
@@ -159,7 +164,7 @@ export default function LoginPage() {
 
               {/* 2. Company Select */}
               <div className="space-y-1.5 text-left">
-                <label htmlFor="company-select" className="block text-xs font-semibold tracking-wide text-neutral-800">
+                <label htmlFor="company-select" className="block text-xs font-semibold tracking-wide text-foreground">
                   Company
                 </label>
                 <select
@@ -167,7 +172,7 @@ export default function LoginPage() {
                   name="company"
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
-                  className="w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2 text-sm text-neutral-900 transition-all focus:border-neutral-900 focus:outline-none focus:ring-1 focus:ring-neutral-900"
+                  className="w-full rounded-lg border border-input bg-background px-3.5 py-2 text-sm text-foreground transition-all focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 >
                   {COMPANIES.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -179,7 +184,7 @@ export default function LoginPage() {
 
               {/* 3. Role Segmented Buttons */}
               <div className="space-y-1.5 text-left">
-                <span id="role-group-label" className="block text-xs font-semibold tracking-wide text-neutral-800">
+                <span id="role-group-label" className="block text-xs font-semibold tracking-wide text-foreground">
                   Expected Role
                 </span>
                 <div
@@ -198,7 +203,7 @@ export default function LoginPage() {
                         className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all ${
                           isSelected
                             ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                            : "border-neutral-200 bg-neutral-50 text-neutral-700 hover:border-neutral-300 hover:bg-neutral-100"
+                            : "border-border bg-muted text-muted-foreground hover:bg-muted/70"
                         }`}
                       >
                         {r}
@@ -210,7 +215,7 @@ export default function LoginPage() {
 
               {/* 4. Email */}
               <div className="space-y-1.5 text-left">
-                <label htmlFor="fleet-email" className="block text-xs font-semibold tracking-wide text-neutral-800">
+                <label htmlFor="fleet-email" className="block text-xs font-semibold tracking-wide text-foreground">
                   Email
                 </label>
                 <input
@@ -222,17 +227,17 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@transitops.com"
-                  className="w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-900 focus:outline-none focus:ring-1 focus:ring-neutral-900"
+                  className="w-full rounded-lg border border-input bg-background px-3.5 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 />
               </div>
 
               {/* 5. Password */}
               <div className="space-y-1.5 text-left">
                 <div className="flex items-center justify-between">
-                  <label htmlFor="fleet-password" className="block text-xs font-semibold tracking-wide text-neutral-800">
+                  <label htmlFor="fleet-password" className="block text-xs font-semibold tracking-wide text-foreground">
                     Password
                   </label>
-                  <span className="text-[11px] text-neutral-400">
+                  <span className="text-[11px] text-muted-foreground">
                     Contact your administrator
                   </span>
                 </div>
@@ -245,7 +250,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••"
-                  className="w-full rounded-lg border border-neutral-300 bg-white px-3.5 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-900 focus:outline-none focus:ring-1 focus:ring-neutral-900"
+                  className="w-full rounded-lg border border-input bg-background px-3.5 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
                 />
               </div>
 
@@ -265,7 +270,7 @@ export default function LoginPage() {
 
           {/* Footer note: D4 */}
           <footer className="pt-4 pb-2 text-center" data-purpose="auth-pane-footer">
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-muted-foreground">
               Accounts are created by your administrator.
             </p>
           </footer>
@@ -274,7 +279,7 @@ export default function LoginPage() {
         {/* Right Slideshow Pane */}
         <section
           data-purpose="transit-showcase"
-          className="relative hidden h-full w-1/2 flex-col justify-end overflow-hidden bg-neutral-950 p-8 md:flex"
+          className="relative hidden h-full w-1/2 flex-col justify-end overflow-hidden bg-foreground p-8 md:flex"
         >
           <div className="absolute inset-0 z-0 size-full overflow-hidden" id="slides-wrapper">
             {SLIDES.map((slide, index) => (
@@ -300,11 +305,11 @@ export default function LoginPage() {
 
           {/* Slide Caption Box */}
           <div className="relative z-10 max-w-md">
-            <div className="rounded-2xl border border-white/10 bg-black/40 p-6 backdrop-blur-md">
+            <div className="rounded-2xl border border-background/10 bg-foreground/40 p-6 backdrop-blur-md">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-signal px-2.5 py-0.5 text-[11px] font-semibold text-signal-foreground">
                 TransitOps Fleet
               </span>
-              <p className="mt-3 text-sm font-medium leading-relaxed text-white/90">
+              <p className="mt-3 text-sm font-medium leading-relaxed text-background/90">
                 {SLIDES[currentSlide].caption}
               </p>
               <div className="mt-4 flex gap-1.5">
@@ -315,7 +320,7 @@ export default function LoginPage() {
                     aria-label={`Go to slide ${i + 1}`}
                     onClick={() => setCurrentSlide(i)}
                     className={`h-1.5 rounded-full transition-all ${
-                      i === currentSlide ? "w-6 bg-signal" : "w-1.5 bg-white/30"
+                      i === currentSlide ? "w-6 bg-signal" : "w-1.5 bg-background/30"
                     }`}
                   />
                 ))}

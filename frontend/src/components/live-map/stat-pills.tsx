@@ -17,7 +17,7 @@ const toneClasses: Record<StatPill['tone'], { icon: string; value: string }> = {
 
 export function StatPills({ items }: { items: StatPill[] }) {
   return (
-    <ul className="flex flex-wrap gap-3">
+    <ul className="flex flex-wrap gap-3" aria-label="Trip summary">
       {items.map(({ label, value, icon: Icon, tone }) => (
         <li key={label} className="flex items-center gap-3 rounded-2xl border border-border bg-card py-2 pl-2 pr-5 shadow-sm">
           <span className={cn('grid size-10 place-items-center rounded-full shadow-sm', toneClasses[tone].icon)}>

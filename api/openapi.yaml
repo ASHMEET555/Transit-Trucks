@@ -394,6 +394,13 @@ paths:
       summary: List drivers
       security:
         - CookieAuth: []
+      parameters:
+        - name: license_expiring_within_days
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Only drivers whose license expires within N days
       responses:
         '200':
           content:
@@ -487,6 +494,56 @@ paths:
                   message:
                     type: string
         '404':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/fleet/drivers/{license}/suspend:
+    post:
+      summary: Suspend driver (Safety Officer, Admin)
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: license
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/fleet/drivers/{license}/reinstate:
+    post:
+      summary: Reinstate suspended driver (Safety Officer, Admin)
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: license
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
           $ref: '#/components/responses/ErrorResponse'
 
   /api/v1/destinations/:

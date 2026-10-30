@@ -1,316 +1,238 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, Fragment } from "react"
+import { useEffect, useMemo } from "react"
+import L, { type Map as LeafletMap } from "leaflet"
 import {
-  MapContainer,
-  TileLayer,
-  Polyline,
   CircleMarker,
+  MapContainer,
+  Marker,
+  Polyline,
+  TileLayer,
+  Tooltip,
   useMap,
 } from "react-leaflet"
-import L from "leaflet"
-import {
-  DEMO_ROUTES,
-  estimateAnimationDurationMs,
-  fetchRoadRoute,
-  getDestinationCoords,
-  interpolateAlongRoute,
-  type LatLng,
-} from "@/lib/geo"
+import { getDestinationCoords, type LatLng } from "@/lib/geo"
 import type { Destination, Trip } from "@/lib/tripTypes"
 import "leaflet/dist/leaflet.css"
 
-type ActiveTrip = {
-  id: number
-  label: string
-  path: LatLng[]
-  color: string
-  startedAt: number
-  durationMs: number
-  status: string
+export const ESTIMATED_POSITION_LABEL = "Estimated position, no GPS"
+
+export const ACTIVE_STATUSES = ["Dispatched"]
+
+export function isActiveTrip(status: string): boolean {
+  return status !== "Completed" && status !== "Cancelled"
 }
 
-const TRIP_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--signal)"]
+function midpoint(a: LatLng, b: LatLng): LatLng {
+  return { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 }
+}
 
-function createTruckIcon(color: string) {
+function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return true
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches
+}
+
+function estimatedIcon(label: string, selected: boolean): L.DivIcon {
   return L.divIcon({
-    className: "truck-marker-icon",
-    html: `<div class="truck-marker" style="--bearing:0deg;--accent:${color}">
-      <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-        <path d="M3 6h11v8H3V6zm11 0h3l3 4v4h-6V6zM6 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm9 0a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>
-      </svg>
-    </div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
+    className: "",
+    html: `<div class="bus-marker${selected ? " bus-marker--selected" : ""}"><span class="bus-marker__label">${label}</span></div>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
   })
 }
 
-function smoothBearing(current: number, target: number, factor = 0.12): number {
-  let diff = target - current
-  while (diff > 180) diff -= 360
-  while (diff < -180) diff += 360
-  return current + diff * factor
-}
-
-function updateMarkerVisual(
-  marker: L.Marker,
-  bearing: number,
-  color: string,
-) {
-  const el = marker.getElement()
-  if (!el) return
-  const inner = el.querySelector(".truck-marker") as HTMLElement | null
-  if (!inner) return
-  inner.style.setProperty("--bearing", `${bearing}deg`)
-  inner.style.setProperty("--accent", color)
-}
-
-function FitBounds({ points }: { points: LatLng[] }) {
-  const map = useMap()
-  useEffect(() => {
-    if (points.length < 2) return
-    const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lng]))
-    map.fitBounds(bounds, { padding: [48, 48], maxZoom: 8 })
-  }, [map, points])
-  return null
-}
-
-function AnimatedTrucks({ trips }: { trips: ActiveTrip[] }) {
-  const map = useMap()
-  const markersRef = useRef<Map<number, L.Marker>>(new Map())
-  const bearingsRef = useRef<Map<number, number>>(new Map())
-
-  useEffect(() => {
-    let frame = 0
-    const tick = () => {
-      const now = Date.now()
-      for (const trip of trips) {
-        const elapsed = now - trip.startedAt
-        const progress = Math.min(1, elapsed / trip.durationMs)
-        const { position, bearing: targetBearing } = interpolateAlongRoute(
-          trip.path,
-          progress,
-        )
-
-        let marker = markersRef.current.get(trip.id)
-        if (!marker) {
-          marker = L.marker([position.lat, position.lng], {
-            icon: createTruckIcon(trip.color),
-            zIndexOffset: 1000,
-          })
-          marker.bindTooltip(trip.label, { direction: "top", offset: [0, -12] })
-          marker.addTo(map)
-          markersRef.current.set(trip.id, marker)
-          bearingsRef.current.set(trip.id, targetBearing)
-        }
-
-        marker.setLatLng([position.lat, position.lng])
-        const prevBearing = bearingsRef.current.get(trip.id) ?? targetBearing
-        const bearing = smoothBearing(prevBearing, targetBearing)
-        bearingsRef.current.set(trip.id, bearing)
-        updateMarkerVisual(marker, bearing, trip.color)
-      }
-
-      for (const [id, marker] of markersRef.current) {
-        if (!trips.find((t) => t.id === id)) {
-          marker.remove()
-          markersRef.current.delete(id)
-          bearingsRef.current.delete(id)
-        }
-      }
-
-      frame = requestAnimationFrame(tick)
-    }
-
-    frame = requestAnimationFrame(tick)
-    const markers = markersRef.current
-    const bearings = bearingsRef.current
-    return () => {
-      cancelAnimationFrame(frame)
-      for (const marker of markers.values()) marker.remove()
-      markers.clear()
-      bearings.clear()
-    }
-  }, [map, trips])
-
-  return null
-}
-
 export type FleetMapInnerProps = {
-  trips?: Trip[]
-  destinations?: Destination[]
-  demoMode?: boolean
-  className?: string
-  height?: string
+  trips: Trip[]
+  destinations: Destination[]
+  selectedTripId: number | null
+  showRoutes: boolean
+  focusKey: string
+  onSelectTrip: (id: number | null) => void
+  onReady: (map: LeafletMap) => void
 }
 
-export default function FleetMapInner({
-  trips = [],
-  destinations = [],
-  demoMode = false,
-  className = "",
-  height = "100%",
+type PlottedTrip = {
+  trip: Trip
+  from: LatLng
+  to: LatLng
+  at: LatLng
+}
+
+function FitController({ points, focusKey }: { points: LatLng[]; focusKey: string }) {
+  const map = useMap()
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return
+    const container = map.getContainer()
+    const observer = new ResizeObserver(() => {
+      map.invalidateSize()
+    })
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [map])
+  useEffect(() => {
+    map.invalidateSize()
+    if (points.length === 0) return
+    const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lng] as [number, number]))
+    if (prefersReducedMotion()) {
+      map.fitBounds(bounds, { padding: [48, 48], animate: false, maxZoom: 8 })
+    } else {
+      map.flyToBounds(bounds, { padding: [48, 48], duration: 0.8, maxZoom: 8 })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusKey])
+  return null
+}
+
+export function FleetMapInner({
+  trips,
+  destinations,
+  selectedTripId,
+  showRoutes,
+  focusKey,
+  onSelectTrip,
+  onReady,
 }: FleetMapInnerProps) {
-  const [activeTrips, setActiveTrips] = useState<ActiveTrip[]>([])
-  const tripStartTimesRef = useRef<Map<number, number>>(new Map())
-  const destMap = useMemo(() => {
+  const regionByName = useMemo(() => {
     const m = new Map<string, string>()
     for (const d of destinations) m.set(d.name, d.region)
     return m
   }, [destinations])
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadRoutes() {
-      if (demoMode) {
-        const demoActive: ActiveTrip[] = []
-        for (const route of DEMO_ROUTES) {
-          const path = await fetchRoadRoute(route.from, route.to)
-          if (cancelled) return
-          demoActive.push({
-            id: route.id,
-            label: route.label,
-            path,
-            color: route.color,
-            startedAt: Date.now(),
-            durationMs: estimateAnimationDurationMs(path),
-            status: "Dispatched",
-          })
-        }
-        setActiveTrips(demoActive)
-        return
-      }
-
-      const dispatched = trips.filter((t) => t.status === "Dispatched")
-      const loaded: ActiveTrip[] = []
-
-      for (let i = 0; i < dispatched.length; i += 1) {
-        const trip = dispatched[i]
-        const from = getDestinationCoords(
-          trip.source_name,
-          destMap.get(trip.source_name),
-        )
+  const plotted = useMemo<PlottedTrip[]>(
+    () =>
+      trips.filter((t) => isActiveTrip(t.status)).map((trip) => {
+        const from = getDestinationCoords(trip.source_name, regionByName.get(trip.source_name))
         const to = getDestinationCoords(
           trip.destination_name,
-          destMap.get(trip.destination_name),
+          regionByName.get(trip.destination_name),
         )
-        const path = await fetchRoadRoute(from, to)
-        if (cancelled) return
-        let startedAt = tripStartTimesRef.current.get(trip.id)
-        if (!startedAt) {
-          startedAt = Date.now()
-          tripStartTimesRef.current.set(trip.id, startedAt)
-        }
-        loaded.push({
-          id: trip.id,
-          label: `${trip.vehicle_reg} → ${trip.destination_name}`,
-          path,
-          color: TRIP_COLORS[i % TRIP_COLORS.length],
-          startedAt,
-          durationMs: estimateAnimationDurationMs(path, trip.planned_distance),
-          status: trip.status,
-        })
-      }
+        return { trip, from, to, at: midpoint(from, to) }
+      }),
+    [trips, regionByName],
+  )
 
-      const activeIds = new Set(dispatched.map((t) => t.id))
-      for (const id of tripStartTimesRef.current.keys()) {
-        if (!activeIds.has(id)) tripStartTimesRef.current.delete(id)
-      }
-      setActiveTrips(loaded)
-    }
-
-    loadRoutes()
-    return () => {
-      cancelled = true
-    }
-  }, [trips, destinations, demoMode, destMap])
-
-  const hubPoints = useMemo(() => {
-    if (demoMode) {
-      return DEMO_ROUTES.flatMap((r) => [r.from, r.to])
-    }
-    const names = new Set<string>()
+  const hubPoints = useMemo<LatLng[]>(() => {
+    const seen = new Set<string>()
+    const pts: LatLng[] = []
     for (const t of trips) {
-      names.add(t.source_name)
-      names.add(t.destination_name)
+      for (const name of [t.source_name, t.destination_name]) {
+        if (seen.has(name)) continue
+        seen.add(name)
+        pts.push(getDestinationCoords(name, regionByName.get(name)))
+      }
     }
-    return Array.from(names).map((name) =>
-      getDestinationCoords(name, destMap.get(name)),
-    )
-  }, [trips, demoMode, destMap])
+    return pts
+  }, [trips, regionByName])
 
-  const allPoints = useMemo(
-    () => [...hubPoints, ...activeTrips.flatMap((t) => t.path)],
-    [hubPoints, activeTrips],
+  const fitPoints = useMemo(
+    () => [...hubPoints, ...plotted.flatMap((p) => [p.from, p.to, p.at])],
+    [hubPoints, plotted],
   )
 
   return (
-    <div className={`fleet-map-shell ${className}`} style={{ height }}>
+    <>
       <MapContainer
         center={[39.5, -98.35]}
         zoom={4}
-        className="fleet-map-canvas"
         zoomControl={false}
-        attributionControl={false}
+        scrollWheelZoom
+        ref={(map) => {
+          if (map) onReady(map)
+        }}
+        className="size-full"
       >
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          className="map-tiles"
         />
-        <FitBounds points={allPoints} />
-        {activeTrips.map((trip) => (
-          <Polyline
-            key={`route-${trip.id}`}
-            positions={trip.path.map((p) => [p.lat, p.lng] as [number, number])}
+        <FitController points={fitPoints} focusKey={focusKey} />
+
+        {showRoutes &&
+          plotted.map(({ trip, from, to }) => {
+            const selected = trip.id === selectedTripId
+            return (
+              <Polyline
+                key={`route-${trip.id}`}
+                positions={[
+                  [from.lat, from.lng],
+                  [to.lat, to.lng],
+                ]}
+                pathOptions={{
+                  color: selected ? "var(--primary)" : "var(--chart-5)",
+                  weight: selected ? 5 : 3,
+                  opacity: selected ? 1 : 0.65,
+                  lineCap: "round",
+                }}
+                interactive={false}
+              />
+            )
+          })}
+
+        {plotted.map(({ trip, from, to }) => (
+          <CircleMarker
+            key={`origin-${trip.id}`}
+            center={[from.lat, from.lng]}
+            radius={6}
             pathOptions={{
-              color: trip.color,
-              weight: 5,
-              opacity: 0.85,
-              lineCap: "round",
-              lineJoin: "round",
+              color: "var(--card)",
+              fillColor: "var(--chart-5)",
+              fillOpacity: 1,
+              weight: 2,
             }}
-          />
+          >
+            <Tooltip direction="top" offset={[0, -4]}>
+              Origin: {trip.source_name}
+            </Tooltip>
+          </CircleMarker>
         ))}
-        {activeTrips.map((trip) => {
-          const start = trip.path[0]
-          const end = trip.path[trip.path.length - 1]
-          return (
-            <Fragment key={`hubs-${trip.id}`}>
-              <CircleMarker
-                center={[start.lat, start.lng]}
-                radius={6}
-                pathOptions={{
-                  color: "var(--card)",
-                  fillColor: trip.color,
-                  fillOpacity: 1,
-                  weight: 2,
-                }}
-              />
-              <CircleMarker
-                center={[end.lat, end.lng]}
-                radius={6}
-                pathOptions={{
-                  color: "var(--card)",
-                  fillColor: "var(--signal)",
-                  fillOpacity: 1,
-                  weight: 2,
-                }}
-              />
-            </Fragment>
-          )
-        })}
-        <AnimatedTrucks trips={activeTrips} />
+
+        {plotted.map(({ trip, from, to }) => (
+          <CircleMarker
+            key={`destination-${trip.id}`}
+            center={[to.lat, to.lng]}
+            radius={6}
+            pathOptions={{
+              color: "var(--card)",
+              fillColor: "var(--signal)",
+              fillOpacity: 1,
+              weight: 2,
+            }}
+          >
+            <Tooltip direction="top" offset={[0, -4]}>
+              Destination: {trip.destination_name}
+            </Tooltip>
+          </CircleMarker>
+        ))}
+
+        {plotted.map(({ trip, at }) => (
+          <Marker
+            key={`estimated-${trip.id}`}
+            position={[at.lat, at.lng]}
+            icon={estimatedIcon(trip.vehicle_reg || `Trip ${trip.id}`, trip.id === selectedTripId)}
+            zIndexOffset={trip.id === selectedTripId ? 1000 : 0}
+            eventHandlers={{
+              click: () =>
+                onSelectTrip(trip.id === selectedTripId ? null : trip.id),
+            }}
+            title={`${trip.vehicle_reg || `Trip ${trip.id}`}. ${ESTIMATED_POSITION_LABEL}.`}
+            keyboard
+          >
+            <Tooltip direction="top" offset={[0, -12]}>
+              {trip.vehicle_reg || `Trip ${trip.id}`}. {ESTIMATED_POSITION_LABEL}.
+            </Tooltip>
+          </Marker>
+        ))}
       </MapContainer>
-      <div className="fleet-map-overlay">
-        <div className="fleet-map-pill">
-          <span className="fleet-map-live-dot" />
-          Live fleet tracking
-        </div>
-        <div className="fleet-map-pill muted">
-          {activeTrips.length} active route{activeTrips.length === 1 ? "" : "s"}
-        </div>
-      </div>
-    </div>
+
+      <ul className="sr-only" aria-label="Map markers as a list">
+        {plotted.map(({ trip }) => (
+          <li key={`marker-text-${trip.id}`}>
+            Trip {trip.id} ({trip.vehicle_reg || "no vehicle"}): origin {trip.source_name},
+            destination {trip.destination_name}. {ESTIMATED_POSITION_LABEL}.
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }

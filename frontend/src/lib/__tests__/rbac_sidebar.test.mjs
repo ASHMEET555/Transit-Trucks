@@ -15,7 +15,7 @@ const { hasRouteAccess, getAccessibleRoutes } = scope.exports
 
 test("RBAC - Admin role has access to all routes", () => {
   const routes = getAccessibleRoutes("Admin")
-  assert.equal(routes.length, 9)
+  assert.equal(routes.length, 11)
   assert.ok(hasRouteAccess("Admin", "dashboard"))
   assert.ok(hasRouteAccess("Admin", "fleet"))
   assert.ok(hasRouteAccess("Admin", "drivers"))
@@ -29,7 +29,7 @@ test("RBAC - Admin role has access to all routes", () => {
 
 test("RBAC - Fleet Manager role has access to operational routes", () => {
   const routes = getAccessibleRoutes("Fleet Manager")
-  assert.equal(routes.length, 9)
+  assert.equal(routes.length, 10)
   assert.ok(hasRouteAccess("Fleet Manager", "maintenance"))
 })
 

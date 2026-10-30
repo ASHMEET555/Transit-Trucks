@@ -11,7 +11,7 @@ import {
   SidebarMenu,
   SidebarMenuItem,
 } from "@/components/Sidebar"
-import { Gauge, Truck, PersonStanding, Route, Wrench, Fuel, ChartColumn, Settings, Map } from "lucide-react"
+import { Gauge, Truck, PersonStanding, Route, Wrench, Fuel, ChartColumn, Settings, Map, ShieldCheck, ScrollText } from "lucide-react"
 import * as React from "react"
 import { usePathname } from "next/navigation"
 import { Logo } from "../../../../public/Logo"
@@ -70,6 +70,20 @@ const navigation2 = [
     routeKey: "fuelAndExpenses" as const
   },
   {
+    name: "Safety",
+    href: "/safety",
+    icon: ShieldCheck,
+    active: false,
+    routeKey: "safety" as const
+  },
+  {
+    name: "Audit",
+    href: "/audit",
+    icon: ScrollText,
+    active: false,
+    routeKey: "audit" as const
+  },
+  {
     name: "Analytics",
     href: "/analytics",
     icon: ChartColumn,
@@ -97,14 +111,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }, [currentProfile])
 
   return (
-    <Sidebar {...props} className="app-sidebar bg-gray-50 dark:bg-gray-925">
+    <Sidebar {...props} className="app-sidebar bg-card">
       <SidebarHeader className="px-3 py-4">
         <div className="flex items-center gap-3">
-          <span className="flex size-9 items-center justify-center rounded-md bg-white p-1.5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-800">
-            <Logo className="size-6 text-blue-500 dark:text-blue-500" />
+          <span className="flex size-9 items-center justify-center rounded-md bg-card p-1.5 shadow-sm ring-1 ring-border">
+            <Logo className="size-6 text-primary dark:text-primary" />
           </span>
           <div>
-            <span className="block text-sm font-semibold text-gray-900 dark:text-gray-50">
+            <span className="block text-sm font-semibold text-foreground">
               TransitOps
             </span>
           </div>
@@ -133,7 +147,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <div className="border-t border-gray-200 dark:border-gray-800" />
+        <div className="border-t border-border" />
         <UserProfile />
       </SidebarFooter>
     </Sidebar>

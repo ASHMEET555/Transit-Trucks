@@ -8,6 +8,8 @@ export interface RoutePermissions {
   trips: PermissionLevel
   maintenance: PermissionLevel
   fuelAndExpenses: PermissionLevel
+  safety: PermissionLevel
+  audit: PermissionLevel
   analytics: PermissionLevel
   settings: PermissionLevel
 }
@@ -29,6 +31,8 @@ export const RBAC_CONFIG: Record<string, RoleConfig> = {
       trips: "admin",
       maintenance: "admin",
       fuelAndExpenses: "admin",
+      safety: "admin",
+      audit: "admin",
       analytics: "admin",
       settings: "admin",
     },
@@ -43,6 +47,8 @@ export const RBAC_CONFIG: Record<string, RoleConfig> = {
       trips: "read_write",
       maintenance: "read_write",
       fuelAndExpenses: "read_write",
+      safety: "read_only",
+      audit: "no_access",
       analytics: "read_write",
       settings: "read_only",
     },
@@ -57,6 +63,8 @@ export const RBAC_CONFIG: Record<string, RoleConfig> = {
       trips: "read_write",
       maintenance: "no_access",
       fuelAndExpenses: "no_access",
+      safety: "no_access",
+      audit: "no_access",
       analytics: "no_access",
       settings: "no_access",
     },
@@ -71,6 +79,8 @@ export const RBAC_CONFIG: Record<string, RoleConfig> = {
       trips: "read_only",
       maintenance: "no_access",
       fuelAndExpenses: "no_access",
+      safety: "read_write",
+      audit: "no_access",
       analytics: "no_access",
       settings: "no_access",
     },
@@ -85,6 +95,8 @@ export const RBAC_CONFIG: Record<string, RoleConfig> = {
       trips: "read_only",
       maintenance: "no_access",
       fuelAndExpenses: "read_write",
+      safety: "no_access",
+      audit: "no_access",
       analytics: "read_write",
       settings: "no_access",
     },

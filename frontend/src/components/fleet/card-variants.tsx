@@ -263,7 +263,7 @@ export function RouteCard({ code, origin, destination, eta, progress, stops }: R
 }
 
 const severityStyles = {
-  critical: { icon: TriangleAlert, label: 'Critical', chip: 'bg-destructive text-white', ping: 'bg-destructive' },
+  critical: { icon: TriangleAlert, label: 'Critical', chip: 'bg-destructive text-destructive-foreground', ping: 'bg-destructive' },
   warning: { icon: TriangleAlert, label: 'Warning', chip: 'bg-amber-200 text-amber-950', ping: 'bg-amber-500' },
   info: { icon: Info, label: 'Notice', chip: 'bg-mist text-foreground', ping: 'bg-sky-500' },
 } as const

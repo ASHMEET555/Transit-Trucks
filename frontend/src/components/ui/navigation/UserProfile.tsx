@@ -16,23 +16,23 @@ export function UserProfile() {
         aria-label="User settings"
         variant="ghost"
         className={cx(
-          "group flex w-full items-center justify-between rounded-md px-1 py-2 text-sm font-medium text-gray-900 hover:bg-gray-200/50 data-[state=open]:bg-gray-200/50 hover:dark:bg-gray-800/50 data-[state=open]:dark:bg-gray-900",
+          "group flex w-full items-center justify-between rounded-md px-1 py-2 text-sm font-medium text-foreground hover:bg-muted data-[state=open]:bg-muted",
           focusRing,
         )}
       >
         <span className="flex items-center gap-3">
           <span
-            className="flex size-8 shrink-0 items-center justify-center rounded-full border border-gray-300 bg-white text-xs font-semibold text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-card text-xs font-semibold text-muted-foreground"
             aria-hidden="true"
           >
             {currentProfile.initials}
           </span>
-          <span className="truncate text-left text-sm font-semibold text-gray-900 dark:text-gray-50">
+          <span className="truncate text-left text-sm font-semibold text-foreground">
             {currentProfile.role}
           </span>
         </span>
         <ChevronsUpDown
-          className="size-4 shrink-0 text-gray-500 group-hover:text-gray-700 group-hover:dark:text-gray-400"
+          className="size-4 shrink-0 text-muted-foreground group-hover:text-muted-foreground group-hover:dark:text-muted-foreground"
           aria-hidden="true"
         />
       </Button>

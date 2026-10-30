@@ -1,5 +1,3 @@
-// Tremor Table [v0.0.3]
-
 import React from "react"
 
 import { cx } from "@/lib/utils"
@@ -10,9 +8,10 @@ const TableRoot = React.forwardRef<
 >(({ className, children, ...props }, forwardedRef) => (
   <div
     ref={forwardedRef}
-    // Activate if table is used in a float environment
-    // className="flow-root"
-    className="overflow-x-auto"
+    className={cx(
+      "overflow-x-auto rounded-2xl bg-card ring-1 ring-foreground/5",
+      className,
+    )}
   >
     <div
       // make table scrollable on mobile
@@ -37,7 +36,7 @@ const Table = React.forwardRef<
       // base
       "w-full caption-bottom border-b",
       // border color
-      "border-gray-200 dark:border-gray-800",
+      "border-border",
       className,
     )}
     {...props}
@@ -63,11 +62,11 @@ const TableHeaderCell = React.forwardRef<
     ref={forwardedRef}
     className={cx(
       // base
-      "whitespace-nowrap border-b px-4 py-3.5 text-left text-sm font-semibold",
+      "whitespace-nowrap border-b px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.14em]",
       // text color
-      "text-gray-900 dark:text-gray-50",
+      "text-muted-foreground",
       // border color
-      "border-gray-200 dark:border-gray-800",
+      "border-border",
       className,
     )}
     {...props}
@@ -86,7 +85,7 @@ const TableBody = React.forwardRef<
       // base
       "divide-y",
       // divide color
-      "divide-gray-200 dark:divide-gray-800",
+      "divide-border",
       className,
     )}
     {...props}
@@ -102,6 +101,7 @@ const TableRow = React.forwardRef<
   <tr
     ref={forwardedRef}
     className={cx(
+      "hover:bg-muted/60",
       "sm:[&_td:last-child]:pr-6 sm:[&_th:last-child]:pr-6",
       "sm:[&_td:first-child]:pl-6 sm:[&_th:first-child]:pl-6",
       className,
@@ -122,7 +122,7 @@ const TableCell = React.forwardRef<
       // base
       "whitespace-nowrap p-4 text-sm",
       // text color
-      "text-gray-600 dark:text-gray-400",
+      "text-muted-foreground",
       className,
     )}
     {...props}
@@ -142,9 +142,9 @@ const TableFoot = React.forwardRef<
         // base
         "border-t text-left font-medium",
         // text color
-        "text-gray-900 dark:text-gray-50",
+        "text-foreground",
         // border color
-        "border-gray-200 dark:border-gray-800",
+        "border-border",
         className,
       )}
       {...props}
@@ -164,7 +164,7 @@ const TableCaption = React.forwardRef<
       // base
       "mt-3 px-3 text-center text-sm",
       // text color
-      "text-gray-500 dark:text-gray-500",
+      "text-muted-foreground",
       className,
     )}
     {...props}

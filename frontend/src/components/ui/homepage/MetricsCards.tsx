@@ -26,7 +26,7 @@ const categoryConfig = {
     bars: 3,
   },
   gray: {
-    activeClass: "bg-gray-300 dark:bg-gray-800",
+    activeClass: "bg-muted",
     bars: 0,
   },
 } as const
@@ -34,7 +34,7 @@ const categoryConfig = {
 function Indicator({ number }: { number: number }) {
   const category = getCategory(number)
   const config = categoryConfig[category]
-  const inactiveClass = "bg-gray-300 dark:bg-gray-800"
+  const inactiveClass = "bg-muted"
 
   return (
     <div className="flex gap-0.5">
@@ -74,14 +74,14 @@ const metrics: Metric[] = [
 function MetricCard({ metric }: { metric: Metric }) {
   return (
     <div>
-      <dt className="text-sm text-gray-500 dark:text-gray-500">
+      <dt className="text-sm text-muted-foreground">
         {metric.label}
       </dt>
       <dd className="mt-1.5 flex items-center gap-2">
         <Indicator number={metric.value} />
-        <p className="text-lg font-semibold text-gray-900 dark:text-gray-50">
+        <p className="text-lg font-semibold text-foreground">
           {metric.percentage}{" "}
-          <span className="font-medium text-gray-400 dark:text-gray-600">
+          <span className="font-medium text-muted-foreground dark:text-muted-foreground">
             - {metric.fraction}
           </span>
         </p>
@@ -93,7 +93,7 @@ function MetricCard({ metric }: { metric: Metric }) {
 export function MetricsCards() {
   return (
     <>
-      <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-50">
+      <h1 className="text-lg font-semibold text-foreground">
         Overview
       </h1>
       <dl className="mt-6 flex flex-wrap items-center gap-x-12 gap-y-8">
