@@ -411,12 +411,11 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="flex w-full flex-col gap-10 p-6 lg:p-8">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
-        <p className="mt-2 text-base text-gray-600 dark:text-gray-400">
-          Full-width charts stacked top to bottom. Each chart has its own
-          filters.
+    <div className="flex w-full flex-col gap-8 p-6 md:p-8 max-w-7xl mx-auto">
+      <div className="border-b border-border/60 pb-5">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground font-serif">Fleet Analytics & Trends</h1>
+        <p className="text-xs text-muted-foreground mt-1">
+          Historical asset ROI, engine fuel efficiency distribution, and inter-depot cargo flow analysis.
         </p>
       </div>
 
