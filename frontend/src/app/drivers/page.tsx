@@ -136,17 +136,20 @@ export default function DriversPage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/60 pb-5">
         <div>
-          <h1 className="text-2xl font-bold">Drivers Management</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
-            Manage your drivers here.
+          <h1 className="text-2xl font-bold tracking-tight text-foreground font-serif">Drivers & Compliance</h1>
+          <p className="text-xs text-muted-foreground mt-1">
+            Commercial license verification, driver shift availability, duty status, and compliance safety records.
           </p>
         </div>
         {canAddDriver && (
-          <Button onClick={() => setShowAddForm(!showAddForm)}>
-            {showAddForm ? "Cancel" : "Add Driver"}
+          <Button
+            onClick={() => setShowAddForm(!showAddForm)}
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            {showAddForm ? "Close Form" : "Add New Driver"}
           </Button>
         )}
       </div>
