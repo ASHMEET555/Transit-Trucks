@@ -3,6 +3,7 @@ package app
 import (
 	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware"
@@ -468,4 +469,80 @@ func (a *App) handleDriverSelfDashboard(w http.ResponseWriter, r *http.Request) 
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+type UtilizationPoint struct {
+	Date       string `json:"date"`
+	Dispatched int    `json:"dispatched"`
+	Completed  int    `json:"completed"`
+}
+
+type UtilizationResponse struct {
+	Days   int                `json:"days"`
+	Points []UtilizationPoint `json:"points"`
+}
+
+// GET /api/v1/dashboard/utilization?days=7 — per-day dispatch/complete counts.
+// Same role scope as /dashboard/kpis; drivers see only their own trips.
+func (a *App) handleDashboardUtilization(w http.ResponseWriter, r *http.Request) {
+	user := middleware.GetUser(r)
+	if user == nil {
+		httpx.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required.", nil)
+		return
+	}
+
+	days := 7
+	if dStr := r.URL.Query().Get("days"); dStr != "" {
+		parsed, err := strconv.Atoi(dStr)
+		if err != nil || parsed < 1 || parsed > 90 {
+			httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "days must be between 1 and 90", map[string]any{"field": "days"})
+			return
+		}
+		days = parsed
+	}
+
+	var licArg *string
+	if user.Role == rbac.RoleDriver {
+		if user.DriverLicense == "" {
+			httpx.WriteError(w, r, http.StatusForbidden, "FORBIDDEN", "User does not have an associated driver license.", nil)
+			return
+		}
+		licArg = &user.DriverLicense
+	}
+
+	query := `
+		WITH days AS (
+			SELECT (CURRENT_DATE - (g || ' day')::INTERVAL)::DATE AS day
+			FROM generate_series(0, $1::int - 1) g
+		)
+		SELECT
+			d.day::TEXT,
+			COALESCE(COUNT(*) FILTER (WHERE t.status = 'Dispatched'
+				AND (COALESCE(t.dispatched_at, t.updated_at) AT TIME ZONE 'UTC')::DATE = d.day), 0),
+			COALESCE(COUNT(*) FILTER (WHERE t.status = 'Completed'
+				AND (COALESCE(t.completed_at, t.updated_at) AT TIME ZONE 'UTC')::DATE = d.day), 0)
+		FROM days d
+		LEFT JOIN trips t ON ($2::TEXT IS NULL OR t.driver_license = $2)
+			AND ((t.status = 'Dispatched' AND (COALESCE(t.dispatched_at, t.updated_at) AT TIME ZONE 'UTC')::DATE = d.day)
+				OR (t.status = 'Completed' AND (COALESCE(t.completed_at, t.updated_at) AT TIME ZONE 'UTC')::DATE = d.day))
+		GROUP BY d.day
+		ORDER BY d.day ASC`
+
+	rs, err := a.db.Query(r.Context(), query, days, licArg)
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to compute utilization trend.", nil)
+		return
+	}
+	defer rs.Close()
+
+	points := []UtilizationPoint{}
+	for rs.Next() {
+		var p UtilizationPoint
+		if err := rs.Scan(&p.Date, &p.Dispatched, &p.Completed); err != nil {
+			continue
+		}
+		points = append(points, p)
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, UtilizationResponse{Days: days, Points: points})
 }
