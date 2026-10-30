@@ -84,3 +84,43 @@ All screenshots captured at 1440x900 desktop viewport (and 390x844 mobile viewpo
 - `npm_lint.log`: PASS (0 errors)
 - `playwright.log`: PASS (6/6 tests passing, including M31 realtime journey and design_v2 a11y & visual tests)
 - Axe Accessibility Audit: 0 serious or critical violations across Desktop & Mobile views.
+
+
+---
+
+# Step 2 Full Data Wiring & Phase 6 Integration Report
+
+## 1. DATA_PLAN.md Totals
+- **Elements Wired**: 16 (Dashboard KPIs, Driver workstation summary, 7-day utilization trend, Exceptions queue, Operations CSV export, Trips Kanban & Table, Dynamic vehicle/driver suggestion, Status transition timeline, Vehicles registry, Vehicle retirement action, Drivers registry & compliance, Driver duty actions, Finance & expense ledger, Maintenance work orders, Live telematics map, Security audit ledger, Notifications & alert actions, Settings & password rotation).
+- **Elements Labelled ("Not tracked")**: 2 (IoT vehicle speed / sensor metrics; Fuel tank levels / GPS breadcrumbs).
+- **Elements Removed**: 4 (Fictitious bus routes & stops from `transit-data.ts`, hero vanity metrics, fake testimonials, unverified driver safety scores).
+
+## 2. New Backend Endpoints & Role Matrix
+| Endpoint | Method | Allowed Roles | Scope & Filtering |
+|---|---|---|---|
+| `/api/v1/destinations/` | POST/GET | Admin, Fleet Manager (POST); All authenticated (GET) | Added nullable `latitude` (-90..90) & `longitude` (-180..180) with CHECK constraints. |
+| `/api/v1/dashboard/utilization` | GET | Admin, Fleet Manager, Safety Officer, Financial Analyst, Driver | Driver filtered to own `driver_license`. Bins dispatched & completed counts per day. |
+| `/api/v1/trips/live` | GET | Admin, Fleet Manager, Safety Officer, Financial Analyst, Driver | Driver sees own trips. Safety & Finance have `driver_license` stripped. Trips lacking coordinates omitted. |
+
+## 3. Estimated Positions: Formula & Speed Assumption
+- **Constant**: `AssumedAverageSpeedKMH = 80.0` km/h.
+- **Formula**:
+  $$\text{elapsed\_hours} = \frac{\text{now} - \text{dispatched\_at}}{3600}$$
+  $$\text{estimated\_progress} = \text{clamp}\left(\frac{\text{elapsed\_hours} \times 80}{\text{planned\_distance\_km}}, 0, 1\right)$$
+- **Disclosures**: Explicitly disclosed in API responses (`estimated_warning: "Estimated position, no GPS"`) and rendered as a floating chip + tooltip on `/live-map`.
+
+## 4. Failed / Open Items (Exact Output)
+- `gitleaks detect` flag:
+  ```
+  Finding:     t.Setenv("SESSION_SECRET", "k8n2f9a7d3h6j1m4p8r2t5w7y9b0c2e4g6"
+  Secret:      k8n2f9a7d3h6j1m4p8r2t5w7y9b0c2e4g6
+  RuleID:      generic-api-key
+  File:        backend-go/internal/config/config_test.go:12 (Commit e1cf99042335)
+  ```
+  *Note*: This is a mock 32-byte test secret in a test file from Phase 1 commit history.
+
+## 5. Decisions Covered
+- D1–D10 decisions strictly honored.
+- Route renames applied: `/fleet` → `/vehicles`, `/fuel-and-expenses` → `/finance` with backward-compatible permanent redirects.
+- Standalone `/safety` folded into `/drivers` compliance strip; `/audit` built as Admin-restricted trail.
+- Client-side CSV download preserves `sanitizeCsvCell` injection protection.
