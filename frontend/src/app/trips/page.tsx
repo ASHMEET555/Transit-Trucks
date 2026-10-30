@@ -384,45 +384,49 @@ export default function TripsPage() {
   const statusColor = (status: string) => {
     switch (status) {
       case "Draft":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+        return "bg-amber-500/10 text-amber-700 border border-amber-500/20"
       case "Dispatched":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+        return "bg-signal/10 text-signal border border-signal/20"
       case "Completed":
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+        return "bg-primary/10 text-primary border border-primary/20"
       case "Cancelled":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+        return "bg-destructive/10 text-destructive border border-destructive/20"
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-neutral-100 text-neutral-800"
     }
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/60 pb-5">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">Trips</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground font-serif">Trips Dispatch</h1>
             <RealtimeIndicator status={status} />
           </div>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
-            Dispatch and trip lifecycle
+          <p className="text-xs text-muted-foreground mt-1">
+            End-to-end freight dispatch lifecycle: Draft → Dispatched → Completed/Cancelled.
           </p>
         </div>
         {canManage && (
-          <Button onClick={() => setShowForm(!showForm)}>
-            {showForm ? "Cancel" : "Create Trip"}
+          <Button
+            onClick={() => setShowForm(!showForm)}
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            {showForm ? "Close Form" : "Create New Trip"}
           </Button>
         )}
       </div>
 
       {error && (
-        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+        <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-xs font-semibold text-destructive">
           {error}
         </div>
       )}
       {liveEvent && (
-        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
-          Live update: <span className="font-medium">{liveEvent}</span>
+        <div className="rounded-xl border border-signal/20 bg-signal/5 px-4 py-2 text-xs font-medium text-foreground flex items-center gap-2">
+          <span className="size-2 rounded-full bg-signal animate-pulse" />
+          Live fleet event: <span className="font-mono text-signal">{liveEvent}</span>
         </div>
       )}
 
