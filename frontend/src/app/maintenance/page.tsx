@@ -217,12 +217,12 @@ export default function MaintenancePage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border/60 pb-5">
         <div>
-          <h1 className="text-2xl font-bold">Maintenance Management</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
-            View and manage vehicle maintenance records here.
+          <h1 className="text-2xl font-bold tracking-tight text-foreground font-serif">Maintenance & Repairs</h1>
+          <p className="text-xs text-muted-foreground mt-1">
+            Shop work orders, defect logs, scheduled inspections, and completed repair costs.
           </p>
         </div>
         <div className="flex gap-2">
@@ -231,21 +231,22 @@ export default function MaintenancePage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="csv">CSV</SelectItem>
-              <SelectItem value="pdf">PDF</SelectItem>
+              <SelectItem value="csv">CSV Export</SelectItem>
+              <SelectItem value="pdf">PDF Report</SelectItem>
             </SelectContent>
           </Select>
           <Button variant="secondary" onClick={handleExport} disabled={!logs.length}>
-            Export
+            Download
           </Button>
           {canManage && (
             <Button
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
               onClick={() => {
                 setShowForm(!showForm)
                 setError(null)
               }}
             >
-              {showForm ? "Cancel" : "Add Record"}
+              {showForm ? "Close Form" : "Open Work Order"}
             </Button>
           )}
         </div>
