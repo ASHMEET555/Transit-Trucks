@@ -40,8 +40,10 @@ type updateDriverRequest struct {
 }
 
 type destination struct {
-	Name   string `json:"name"`
-	Region string `json:"region"`
+	Name      string   `json:"name"`
+	Region    string   `json:"region"`
+	Latitude  *float64 `json:"latitude,omitempty"`
+	Longitude *float64 `json:"longitude,omitempty"`
 }
 
 type PaginatedResponse[T any] struct {

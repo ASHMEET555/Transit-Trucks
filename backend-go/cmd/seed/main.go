@@ -72,26 +72,29 @@ func main() {
 
 	// 1. Hubs / Destinations (>= 8 hubs across regions)
 	type destRecord struct {
-		name   string
-		region string
+		name      string
+		region    string
+		latitude  float64
+		longitude float64
 	}
 	hubs := []destRecord{
-		{"New York Central Hub", "Northeast"},
-		{"Chicago Logistics Hub", "Midwest"},
-		{"Los Angeles Freight Hub", "West"},
-		{"Dallas Gateway Hub", "South"},
-		{"Atlanta Distribution Hub", "Southeast"},
-		{"Seattle Terminal", "Northwest"},
-		{"Denver Intermodal Hub", "Mountain"},
-		{"Miami Port Hub", "Southeast"},
+		{"New York Central Hub", "Northeast", 40.7128, -74.0060},
+		{"Chicago Logistics Hub", "Midwest", 41.8781, -87.6298},
+		{"Los Angeles Freight Hub", "West", 34.0522, -118.2437},
+		{"Dallas Gateway Hub", "South", 32.7767, -96.7970},
+		{"Atlanta Distribution Hub", "Southeast", 33.7490, -84.3880},
+		{"Seattle Terminal", "Northwest", 47.6062, -122.3321},
+		{"Denver Intermodal Hub", "Mountain", 39.7392, -104.9903},
+		{"Miami Port Hub", "Southeast", 25.7617, -80.1918},
 	}
 
 	for _, h := range hubs {
 		_, err = tx.Exec(ctx,
-			`INSERT INTO destinations (name, region, created_at, updated_at)
-			 VALUES ($1, $2, $3, $3)
-			 ON CONFLICT (name) DO UPDATE SET region = EXCLUDED.region`,
-			h.name, h.region, now)
+			`INSERT INTO destinations (name, region, latitude, longitude, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, $5)
+			 ON CONFLICT (name) DO UPDATE SET region = EXCLUDED.region,
+			   latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude`,
+			h.name, h.region, h.latitude, h.longitude, now)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error inserting destination %s: %v\n", h.name, err)
 			os.Exit(1)

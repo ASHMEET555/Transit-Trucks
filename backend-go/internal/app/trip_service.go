@@ -396,7 +396,7 @@ func (a *App) handleDispatchTrip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	startOdo := res.Vehicle.Odometer
-	_, err = tx.Exec(ctx, `UPDATE trips SET status = 'Dispatched', start_odometer = $1, updated_at = now() WHERE id = $2`, startOdo, tripID)
+	_, err = tx.Exec(ctx, `UPDATE trips SET status = 'Dispatched', start_odometer = $1, dispatched_at = now(), updated_at = now() WHERE id = $2`, startOdo, tripID)
 	if err != nil {
 		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
