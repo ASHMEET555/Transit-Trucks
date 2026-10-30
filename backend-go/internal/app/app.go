@@ -313,6 +313,7 @@ func (a *App) routes() {
 		a.registerRoute("POST", prefix, []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleCreateTrip)
 	}
 	a.registerRoute("GET", "/api/v1/trips/{id}", rbac.AnyAuthenticated, false, a.handleGetTrip)
+	a.registerRoute("GET", "/api/v1/trips/live", rbac.AnyAuthenticated, false, a.handleLiveTrips)
 	a.registerRoute("POST", "/api/v1/trips/{id}/dispatch", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleDispatchTrip)
 	a.registerRoute("POST", "/api/v1/trips/{id}/complete", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleCompleteTrip)
 	a.registerRoute("PUT", "/api/v1/trips/{id}/complete", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleCompleteTrip)
@@ -346,6 +347,7 @@ func (a *App) routes() {
 	dashboardRoles := []string{rbac.RoleAdmin, rbac.RoleFleetManager, rbac.RoleFinancialAnalyst, rbac.RoleSafetyOfficer}
 	exportRoles := []string{rbac.RoleAdmin, rbac.RoleFleetManager, rbac.RoleFinancialAnalyst}
 	a.registerRoute("GET", "/api/v1/dashboard/kpis", dashboardRoles, false, a.handleDashboardKPIs)
+	a.registerRoute("GET", "/api/v1/dashboard/utilization", append(append([]string{}, dashboardRoles...), rbac.RoleDriver), false, a.handleDashboardUtilization)
 	a.registerRoute("GET", "/api/v1/dashboard/me", []string{rbac.RoleDriver}, false, a.handleDriverSelfDashboard)
 	a.registerRoute("GET", "/api/v1/dashboard/export.csv", exportRoles, false, a.handleDashboardExportCSV)
 
@@ -1626,7 +1628,7 @@ func (a *App) destinations(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query().Get("q")
 	query := `
-		SELECT name, region
+		SELECT name, region, latitude, longitude
 		FROM destinations
 		WHERE ($1::text = '' OR name > $1)
 		  AND ($2::text = '' OR (name ILIKE '%' || $2 || '%' OR region ILIKE '%' || $2 || '%'))
@@ -1666,13 +1668,25 @@ func (a *App) createDestination(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "region is required", map[string]any{"field": "region"})
 		return
 	}
+	if (x.Latitude == nil) != (x.Longitude == nil) {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "latitude and longitude must both be set or both be empty", map[string]any{"field": "latitude"})
+		return
+	}
+	if x.Latitude != nil && (*x.Latitude < -90 || *x.Latitude > 90) {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "latitude must be between -90 and 90", map[string]any{"field": "latitude"})
+		return
+	}
+	if x.Longitude != nil && (*x.Longitude < -180 || *x.Longitude > 180) {
+		httpx.WriteError(w, r, http.StatusUnprocessableEntity, "VALIDATION_FAILED", "longitude must be between -180 and 180", map[string]any{"field": "longitude"})
+		return
+	}
 	var n int
 	a.db.QueryRow(r.Context(), "SELECT count(*) FROM destinations WHERE name=$1", x.Name).Scan(&n)
 	if n > 0 {
 		httpx.WriteError(w, r, http.StatusConflict, "DESTINATION_EXISTS", "Destination name must be unique.", nil)
 		return
 	}
-	_, e := a.db.Exec(r.Context(), "INSERT INTO destinations (name, region) VALUES ($1, $2)", x.Name, x.Region)
+	_, e := a.db.Exec(r.Context(), "INSERT INTO destinations (name, region, latitude, longitude) VALUES ($1, $2, $3, $4)", x.Name, x.Region, x.Latitude, x.Longitude)
 	if e != nil {
 		status, code, msg := httpx.MapDBError(e, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
