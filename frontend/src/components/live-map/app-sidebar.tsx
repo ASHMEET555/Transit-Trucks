@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Building2, CircleUser, FileSpreadsheet, House, LogOut, MapPinned, Settings, Truck, Users, Wrench } from "lucide-react"
+import { Building2, CircleUser, FileSpreadsheet, House, LogOut, MapPinned, Settings, Truck, Users, Wrench, ShieldCheck, Bell } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface SidebarItem {
@@ -13,11 +13,13 @@ const ALL_ITEMS: SidebarItem[] = [
   { label: "Overview", icon: House, href: "/dashboard" },
   { label: "Live map", icon: MapPinned, href: "/live-map" },
   { label: "Trips", icon: Building2, href: "/trips" },
-  { label: "Vehicles", icon: Truck, href: "/fleet" },
+  { label: "Vehicles", icon: Truck, href: "/vehicles" },
   { label: "Drivers", icon: Users, href: "/drivers" },
   { label: "Maintenance", icon: Wrench, href: "/maintenance" },
-  { label: "Expenses", icon: FileSpreadsheet, href: "/fuel-and-expenses" },
+  { label: "Finance", icon: FileSpreadsheet, href: "/finance" },
   { label: "Analytics", icon: CircleUser, href: "/analytics" },
+  { label: "Audit", icon: ShieldCheck, href: "/audit" },
+  { label: "Notifications", icon: Bell, href: "/notifications" },
   { label: "Settings", icon: Settings, href: "/settings" },
 ]
 
@@ -26,15 +28,15 @@ export function getSidebarItemsForRole(role: string): SidebarItem[] {
     case "Admin":
       return ALL_ITEMS
     case "Fleet Manager":
-      return ALL_ITEMS.filter((i) => i.href !== "/analytics")
+      return ALL_ITEMS.filter((i) => !["/analytics", "/audit"].includes(i.href))
     case "Driver":
-      return ALL_ITEMS.filter((i) => ["/dashboard", "/live-map", "/trips"].includes(i.href))
+      return ALL_ITEMS.filter((i) => ["/dashboard", "/live-map", "/trips", "/settings"].includes(i.href))
     case "Safety Officer":
-      return ALL_ITEMS.filter((i) => ["/dashboard", "/live-map", "/fleet", "/drivers", "/maintenance"].includes(i.href))
+      return ALL_ITEMS.filter((i) => ["/dashboard", "/live-map", "/vehicles", "/drivers", "/maintenance", "/notifications", "/settings"].includes(i.href))
     case "Financial Analyst":
-      return ALL_ITEMS.filter((i) => ["/dashboard", "/live-map", "/trips", "/fuel-and-expenses", "/analytics"].includes(i.href))
+      return ALL_ITEMS.filter((i) => ["/dashboard", "/live-map", "/trips", "/finance", "/analytics", "/settings"].includes(i.href))
     default:
-      return ALL_ITEMS.filter((i) => ["/dashboard", "/live-map"].includes(i.href))
+      return ALL_ITEMS.filter((i) => ["/dashboard", "/live-map", "/settings"].includes(i.href))
   }
 }
 

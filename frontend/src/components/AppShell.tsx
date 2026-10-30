@@ -2,6 +2,7 @@
 
 import { useProfile } from "@/lib/ProfileContext"
 import { usePathname, useRouter } from "next/navigation"
+import Link from "next/link"
 import { useEffect } from "react"
 import { AppSidebar } from "@/components/live-map/app-sidebar"
 import { Bell, Search } from "lucide-react"
@@ -65,14 +66,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
+            <Link
+              href="/notifications"
               aria-label="Notifications"
               className="relative grid size-10 place-items-center rounded-xl border border-border bg-card text-foreground transition-colors hover:bg-muted"
             >
               <Bell className="size-4" aria-hidden="true" />
               <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-signal" aria-hidden="true" />
-            </button>
+            </Link>
 
             <div className="flex items-center gap-3 rounded-xl border border-border bg-card py-1.5 pl-3 pr-2">
               <div className="hidden text-right text-xs sm:block">
