@@ -896,6 +896,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/trips/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List dispatched trips with map coordinates and estimated progress (no GPS) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LiveTripsResponse"];
+                    };
+                };
+                401: components["responses"]["ErrorResponse"];
+                403: components["responses"]["ErrorResponse"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/trips/suggest": {
         parameters: {
             query?: never;
@@ -1419,6 +1456,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/dashboard/utilization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get per-day dispatched and completed trip counts */
+        get: {
+            parameters: {
+                query?: {
+                    days?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["UtilizationResponse"];
+                    };
+                };
+                401: components["responses"]["ErrorResponse"];
+                403: components["responses"]["ErrorResponse"];
+                422: components["responses"]["ErrorResponse"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dashboard/export.csv": {
         parameters: {
             query?: never;
@@ -1788,6 +1865,8 @@ export interface components {
         Destination: {
             name: string;
             region: string;
+            latitude?: number | null;
+            longitude?: number | null;
         };
         Trip: {
             id?: number;
@@ -1905,6 +1984,37 @@ export interface components {
             total_completed_trips?: number;
             total_distance?: number;
             recent_trips?: components["schemas"]["DriverTripEntry"][];
+        };
+        UtilizationPoint: {
+            date?: string;
+            dispatched?: number;
+            completed?: number;
+        };
+        UtilizationResponse: {
+            days?: number;
+            points?: components["schemas"]["UtilizationPoint"][];
+        };
+        LiveTripCoord: {
+            latitude?: number;
+            longitude?: number;
+        };
+        LiveTrip: {
+            id?: number;
+            source_name?: string;
+            destination_name?: string;
+            vehicle_reg?: string;
+            driver_license?: string | null;
+            status?: string;
+            dispatched_at?: string;
+            planned_distance?: number;
+            estimated_progress?: number;
+            origin?: components["schemas"]["LiveTripCoord"];
+            destination?: components["schemas"]["LiveTripCoord"];
+        };
+        LiveTripsResponse: {
+            items?: components["schemas"]["LiveTrip"][];
+            assumed_speed_kmh?: number;
+            estimated_warning?: string;
         };
         AuditLog: {
             id?: number;

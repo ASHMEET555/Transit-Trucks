@@ -576,6 +576,22 @@ paths:
         '404':
           $ref: '#/components/responses/ErrorResponse'
 
+  /api/v1/trips/live:
+    get:
+      summary: List dispatched trips with map coordinates and estimated progress (no GPS)
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveTripsResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+
   /api/v1/trips/suggest:
     post:
       summary: Suggest vehicle and driver
@@ -932,6 +948,33 @@ paths:
         '403':
           $ref: '#/components/responses/ErrorResponse'
 
+  /api/v1/dashboard/utilization:
+    get:
+      summary: Get per-day dispatched and completed trip counts
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 7
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UtilizationResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ErrorResponse'
+
   /api/v1/dashboard/export.csv:
     get:
       summary: Export dashboard analytics as CSV
@@ -1251,6 +1294,16 @@ components:
           type: string
         region:
           type: string
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+          nullable: true
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+          nullable: true
 
     Trip:
       type: object
@@ -1491,6 +1544,73 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DriverTripEntry'
+
+    UtilizationPoint:
+      type: object
+      properties:
+        date:
+          type: string
+        dispatched:
+          type: integer
+        completed:
+          type: integer
+
+    UtilizationResponse:
+      type: object
+      properties:
+        days:
+          type: integer
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/UtilizationPoint'
+
+    LiveTripCoord:
+      type: object
+      properties:
+        latitude:
+          type: number
+        longitude:
+          type: number
+
+    LiveTrip:
+      type: object
+      properties:
+        id:
+          type: integer
+        source_name:
+          type: string
+        destination_name:
+          type: string
+        vehicle_reg:
+          type: string
+        driver_license:
+          type: string
+          nullable: true
+        status:
+          type: string
+        dispatched_at:
+          type: string
+        planned_distance:
+          type: number
+        estimated_progress:
+          type: number
+        origin:
+          $ref: '#/components/schemas/LiveTripCoord'
+        destination:
+          $ref: '#/components/schemas/LiveTripCoord'
+
+    LiveTripsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LiveTrip'
+        assumed_speed_kmh:
+          type: number
+        estimated_warning:
+          type: string
 
     AuditLog:
       type: object

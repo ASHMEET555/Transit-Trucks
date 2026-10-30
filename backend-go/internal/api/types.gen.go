@@ -68,8 +68,10 @@ type DashboardKPIs struct {
 
 // Destination defines model for Destination.
 type Destination struct {
-	Name   string `json:"name"`
-	Region string `json:"region"`
+	Latitude  *float32 `json:"latitude"`
+	Longitude *float32 `json:"longitude"`
+	Name      string   `json:"name"`
+	Region    string   `json:"region"`
 }
 
 // Driver defines model for Driver.
@@ -148,6 +150,34 @@ type JobResult struct {
 	Warning   *int    `json:"warning,omitempty"`
 }
 
+// LiveTrip defines model for LiveTrip.
+type LiveTrip struct {
+	Destination       *LiveTripCoord `json:"destination,omitempty"`
+	DestinationName   *string        `json:"destination_name,omitempty"`
+	DispatchedAt      *string        `json:"dispatched_at,omitempty"`
+	DriverLicense     *string        `json:"driver_license"`
+	EstimatedProgress *float32       `json:"estimated_progress,omitempty"`
+	Id                *int           `json:"id,omitempty"`
+	Origin            *LiveTripCoord `json:"origin,omitempty"`
+	PlannedDistance   *float32       `json:"planned_distance,omitempty"`
+	SourceName        *string        `json:"source_name,omitempty"`
+	Status            *string        `json:"status,omitempty"`
+	VehicleReg        *string        `json:"vehicle_reg,omitempty"`
+}
+
+// LiveTripCoord defines model for LiveTripCoord.
+type LiveTripCoord struct {
+	Latitude  *float32 `json:"latitude,omitempty"`
+	Longitude *float32 `json:"longitude,omitempty"`
+}
+
+// LiveTripsResponse defines model for LiveTripsResponse.
+type LiveTripsResponse struct {
+	AssumedSpeedKmh  *float32    `json:"assumed_speed_kmh,omitempty"`
+	EstimatedWarning *string     `json:"estimated_warning,omitempty"`
+	Items            *[]LiveTrip `json:"items,omitempty"`
+}
+
 // MaintenanceLog defines model for MaintenanceLog.
 type MaintenanceLog struct {
 	Cost        *float32 `json:"cost,omitempty"`
@@ -218,6 +248,19 @@ type User struct {
 	UpdatedAt     *time.Time `json:"updated_at,omitempty"`
 }
 
+// UtilizationPoint defines model for UtilizationPoint.
+type UtilizationPoint struct {
+	Completed  *int    `json:"completed,omitempty"`
+	Date       *string `json:"date,omitempty"`
+	Dispatched *int    `json:"dispatched,omitempty"`
+}
+
+// UtilizationResponse defines model for UtilizationResponse.
+type UtilizationResponse struct {
+	Days   *int                `json:"days,omitempty"`
+	Points *[]UtilizationPoint `json:"points,omitempty"`
+}
+
 // Vehicle defines model for Vehicle.
 type Vehicle struct {
 	AcquisitionCost    float32 `json:"acquisition_cost"`
@@ -278,6 +321,11 @@ type GetApiV1DashboardExportCsvParams struct {
 	From       *string `form:"from,omitempty" json:"from,omitempty"`
 	To         *string `form:"to,omitempty" json:"to,omitempty"`
 	VehicleReg *string `form:"vehicle_reg,omitempty" json:"vehicle_reg,omitempty"`
+}
+
+// GetApiV1DashboardUtilizationParams defines parameters for GetApiV1DashboardUtilization.
+type GetApiV1DashboardUtilizationParams struct {
+	Days *int `form:"days,omitempty" json:"days,omitempty"`
 }
 
 // GetApiV1ExpensesParams defines parameters for GetApiV1Expenses.
