@@ -24,21 +24,21 @@ function getMapViewForRole(role) {
   return "operator"
 }
 
-// Sidebar route visibility per task 5
+// Sidebar route visibility per task 5 (live map folded into /dashboard)
 function getSidebarRoutesForRole(role) {
   switch (role) {
     case "Admin":
-      return ["/dashboard", "/live-map", "/trips", "/fleet", "/drivers", "/maintenance", "/fuel-and-expenses", "/analytics", "/settings"]
+      return ["/dashboard", "/trips", "/fleet", "/drivers", "/maintenance", "/fuel-and-expenses", "/analytics", "/settings"]
     case "Fleet Manager":
-      return ["/dashboard", "/live-map", "/trips", "/fleet", "/drivers", "/maintenance", "/fuel-and-expenses", "/settings"]
+      return ["/dashboard", "/trips", "/fleet", "/drivers", "/maintenance", "/fuel-and-expenses", "/settings"]
     case "Driver":
-      return ["/dashboard", "/live-map", "/trips"]
+      return ["/dashboard", "/trips"]
     case "Safety Officer":
-      return ["/dashboard", "/live-map", "/fleet", "/drivers", "/maintenance"]
+      return ["/dashboard", "/fleet", "/drivers", "/maintenance"]
     case "Financial Analyst":
-      return ["/dashboard", "/live-map", "/trips", "/fuel-and-expenses", "/analytics"]
+      return ["/dashboard", "/trips", "/fuel-and-expenses", "/analytics"]
     default:
-      return ["/dashboard", "/live-map"]
+      return ["/dashboard"]
   }
 }
 
@@ -67,7 +67,7 @@ test("Map view mapping - Only Operator and Driver view modes exist (D3)", () => 
 
 test("Sidebar route visibility - correct per role", () => {
   const adminRoutes = getSidebarRoutesForRole("Admin")
-  assert.equal(adminRoutes.length, 9)
+  assert.equal(adminRoutes.length, 8)
   assert.ok(adminRoutes.includes("/settings"))
 
   const fmRoutes = getSidebarRoutesForRole("Fleet Manager")
@@ -75,7 +75,7 @@ test("Sidebar route visibility - correct per role", () => {
   assert.ok(fmRoutes.includes("/maintenance"))
 
   const driverRoutes = getSidebarRoutesForRole("Driver")
-  assert.deepEqual(driverRoutes, ["/dashboard", "/live-map", "/trips"])
+  assert.deepEqual(driverRoutes, ["/dashboard", "/trips"])
 
   const safetyRoutes = getSidebarRoutesForRole("Safety Officer")
   assert.ok(safetyRoutes.includes("/drivers"))

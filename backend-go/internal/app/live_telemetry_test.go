@@ -416,12 +416,17 @@ func TestLiveVehicles_ScopeFreshnessETag(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Items) != 2 {
-		t.Fatalf("expected 2 live items, got %d", len(resp.Items))
-	}
+	// Seeded fixtures may add their own Dispatched trips: scope assertions
+	// to this test's vehicles instead of asserting a total count.
 	byReg := map[string]liveVehicle{}
 	for _, it := range resp.Items {
 		byReg[it.VehicleReg] = it
+	}
+	if _, ok := byReg[reg1]; !ok {
+		t.Fatalf("expected live item for %s, got %d items", reg1, len(resp.Items))
+	}
+	if _, ok := byReg[reg2]; !ok {
+		t.Fatalf("expected live item for %s, got %d items", reg2, len(resp.Items))
 	}
 	fresh := byReg[reg1]
 	if fresh.Status != "fresh" {
@@ -433,6 +438,10 @@ func TestLiveVehicles_ScopeFreshnessETag(t *testing.T) {
 	if fresh.TripID == 0 || fresh.Origin.Name == "" || fresh.Destination.Name == "" {
 		t.Fatalf("live item missing trip/origin/destination: %+v", fresh)
 	}
+	if fresh.Origin.Latitude == nil || fresh.Origin.Longitude == nil ||
+		fresh.Destination.Latitude == nil || fresh.Destination.Longitude == nil {
+		t.Fatalf("live item missing hub coordinates: %+v", fresh)
+	}
 	nopos := byReg[reg2]
 	if nopos.Status != "no_position" {
 		t.Fatalf("expected no_position status, got %s", nopos.Status)
@@ -441,13 +450,27 @@ func TestLiveVehicles_ScopeFreshnessETag(t *testing.T) {
 		t.Fatalf("expected null progress for no_position, got %+v", nopos)
 	}
 
-	// ETag: second request with If-None-Match -> 304.
+	// ETag: a repeat request with If-None-Match -> 304. age_seconds ticks
+	// once per second, so retry a few times to land inside one stable second.
 	etag := w.Header().Get("ETag")
 	if etag == "" {
 		t.Fatalf("expected ETag header on live response")
 	}
-	if w2 := get(finCookie, etag); w2.Code != http.StatusNotModified {
-		t.Fatalf("expected 304 for matching ETag, got %d", w2.Code)
+	matched := false
+	for i := 0; i < 5 && !matched; i++ {
+		if w2 := get(finCookie, etag); w2.Code == http.StatusNotModified {
+			matched = true
+		} else if w2.Code == http.StatusOK {
+			etag = w2.Header().Get("ETag")
+			if etag == "" {
+				t.Fatalf("expected ETag header on live response")
+			}
+		} else {
+			t.Fatalf("expected 304 for matching ETag, got %d", w2.Code)
+		}
+	}
+	if !matched {
+		t.Fatalf("expected 304 for matching ETag within 5 attempts")
 	}
 
 	// Driver scoping: lic1 driver sees only own trip.

@@ -124,3 +124,39 @@ func TestLoadSimConfigDefaults(t *testing.T) {
 		t.Fatalf("expected seed 42, got %d", c.Seed)
 	}
 }
+
+func TestTotalTimeWithin5Pct(t *testing.T) {
+	// Straight 10km at avg 25 m/s: OSRM duration 400 s. At 1 s sim ticks the
+	// trip must take within 5% of 400 s (ramp-up is the only overhead).
+	r := straightRoute()
+	v := &VehicleState{}
+	steps := 0
+	for !v.Arrived && steps < 10000 {
+		TickVehicle(v, &r, 1.0)
+		steps++
+	}
+	if !v.Arrived {
+		t.Fatal("expected arrival")
+	}
+	got, want := float64(steps), 400.0
+	if diff := got - want; diff < -0.05*want || diff > 0.05*want {
+		t.Fatalf("trip took %d s, want within 5%% of %.0f s", steps, want)
+	}
+}
+
+func TestSpeedNeverExceedsLimit(t *testing.T) {
+	r := straightRoute()
+	v := &VehicleState{}
+	for i := 0; i < 600 && !v.Arrived; i++ {
+		TickVehicle(v, &r, 1.0)
+		if v.SpeedMps > r.AvgMps+1e-9 {
+			t.Fatalf("speed %f exceeded limit %f at step %d", v.SpeedMps, r.AvgMps, i)
+		}
+	}
+	if !v.Arrived {
+		t.Fatal("expected arrival")
+	}
+	if rem := r.TotalM - v.DistM; rem != 0 {
+		t.Fatalf("must stop within 2 m of destination, remainder %f", rem)
+	}
+}

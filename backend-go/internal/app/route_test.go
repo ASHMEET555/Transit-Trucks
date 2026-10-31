@@ -76,7 +76,7 @@ func TestEnsureRouteCacheHit(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		pool.Exec(ctx, `DELETE FROM route_geometries WHERE origin = $1 AND destination = $2`, hubA, hubB)
+		pool.Exec(ctx, `DELETE FROM route_geometries WHERE origin_id = $1 AND destination_id = $2`, hubA, hubB)
 		pool.Exec(ctx, `DELETE FROM destinations WHERE name IN ($1, $2)`, hubA, hubB)
 	}()
 
@@ -129,7 +129,7 @@ func TestEnsureRouteCacheHit(t *testing.T) {
 		t.Fatalf("expected exactly 1 OSRM call across two dispatches, got %d", hits)
 	}
 	var provider string
-	if err := pool.QueryRow(ctx, `SELECT provider FROM route_geometries WHERE origin = $1 AND destination = $2`, hubA, hubB).Scan(&provider); err != nil || provider != "osrm" {
+	if err := pool.QueryRow(ctx, `SELECT provider FROM route_geometries WHERE origin_id = $1 AND destination_id = $2`, hubA, hubB).Scan(&provider); err != nil || provider != "osrm" {
 		t.Fatalf("expected cached provider osrm, got %q (err %v)", provider, err)
 	}
 }
@@ -149,7 +149,7 @@ func TestEnsureRouteApproximateFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		pool.Exec(ctx, `DELETE FROM route_geometries WHERE origin = $1 AND destination = $2`, hubA, hubB)
+		pool.Exec(ctx, `DELETE FROM route_geometries WHERE origin_id = $1 AND destination_id = $2`, hubA, hubB)
 		pool.Exec(ctx, `DELETE FROM destinations WHERE name IN ($1, $2)`, hubA, hubB)
 	}()
 
@@ -168,7 +168,7 @@ func TestEnsureRouteApproximateFallback(t *testing.T) {
 		t.Fatal("fallback path must report a miss on first compute")
 	}
 	var provider, poly string
-	if err := tx.QueryRow(ctx, `SELECT provider, polyline6 FROM route_geometries WHERE origin = $1 AND destination = $2`, hubA, hubB).Scan(&provider, &poly); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT provider, polyline6 FROM route_geometries WHERE origin_id = $1 AND destination_id = $2`, hubA, hubB).Scan(&provider, &poly); err != nil {
 		t.Fatal(err)
 	}
 	if provider != "approximate" {
@@ -233,7 +233,7 @@ func TestDispatchCachesRoutePair(t *testing.T) {
 		defer pool.Exec(ctx, `DELETE FROM drivers WHERE license_number = $1`, lic)
 	}
 	defer func() {
-		pool.Exec(ctx, `DELETE FROM route_geometries WHERE origin = $1 AND destination = $2`, hubA, hubB)
+		pool.Exec(ctx, `DELETE FROM route_geometries WHERE origin_id = $1 AND destination_id = $2`, hubA, hubB)
 		pool.Exec(ctx, `DELETE FROM destinations WHERE name IN ($1, $2)`, hubA, hubB)
 	}()
 
@@ -261,7 +261,7 @@ func TestDispatchCachesRoutePair(t *testing.T) {
 	}
 	var provider string
 	var count int
-	if err := pool.QueryRow(ctx, `SELECT provider, count(*) OVER () FROM route_geometries WHERE origin = $1 AND destination = $2`, hubA, hubB).Scan(&provider, &count); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT provider, count(*) OVER () FROM route_geometries WHERE origin_id = $1 AND destination_id = $2`, hubA, hubB).Scan(&provider, &count); err != nil {
 		t.Fatal(err)
 	}
 	if provider != "osrm" || count != 1 {
