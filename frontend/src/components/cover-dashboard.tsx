@@ -1,38 +1,45 @@
+"use client"
+
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { Bell, CalendarDays, LayoutGrid, LogOut, MapPinned, Search, Settings, Truck, Users, Wrench } from "lucide-react"
 import { FleetCard } from "@/components/fleet/fleet-card"
-import { coverCards, IS_SAMPLE_DATA } from "@/lib/data/sample-fleet"
+import { coverCards } from "@/lib/data/sample-fleet"
 
 const rail = [
-  { icon: LayoutGrid, label: "Overview", href: "/dashboard", active: true },
+  { icon: LayoutGrid, label: "Overview", href: "/dashboard" },
   { icon: Truck, label: "Vehicles", href: "/fleet" },
   { icon: MapPinned, label: "Live map", href: "/live-map" },
   { icon: Users, label: "Drivers", href: "/drivers" },
   { icon: Wrench, label: "Maintenance", href: "/maintenance" },
-  { icon: CalendarDays, label: "Trips", href: "/trips" },
+  { icon: CalendarDays, label: "Schedule", href: "/trips" },
 ]
 
 function Rail() {
+  const pathname = usePathname()
   return (
     <nav
       aria-label="Dashboard"
       className="hidden w-16 shrink-0 flex-col items-center gap-2 rounded-full bg-card py-3 shadow-sm ring-1 ring-foreground/5 lg:flex"
     >
-      {rail.map(({ icon: Icon, label, href, active }) => (
-        <Link
-          key={label}
-          href={href}
-          aria-label={label}
-          aria-current={active ? "page" : undefined}
-          className={
-            active
-              ? "grid size-11 place-items-center rounded-full bg-foreground text-background"
-              : "grid size-11 place-items-center rounded-full text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
-          }
-        >
-          <Icon className="size-[18px]" aria-hidden="true" />
-        </Link>
-      ))}
+      {rail.map(({ icon: Icon, label, href }) => {
+        const active = pathname === href || (href === "/dashboard" && pathname === "/")
+        return (
+          <Link
+            key={label}
+            href={href}
+            aria-label={label}
+            aria-current={active ? "page" : undefined}
+            className={
+              active
+                ? "grid size-11 place-items-center rounded-full bg-foreground text-background"
+                : "grid size-11 place-items-center rounded-full text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+            }
+          >
+            <Icon className="size-[18px]" aria-hidden="true" />
+          </Link>
+        )
+      })}
       <span className="my-2 h-px w-6 bg-border" aria-hidden="true" />
       <Link href="/settings" aria-label="Settings" className="grid size-11 place-items-center rounded-full text-foreground/70 hover:bg-muted">
         <Settings className="size-[18px]" aria-hidden="true" />
@@ -47,11 +54,6 @@ function Rail() {
 export function CoverDashboard() {
   return (
     <section id="cover" aria-labelledby="cover-title" className="rounded-[40px] bg-canvas p-3 sm:p-5 lg:p-6">
-      {IS_SAMPLE_DATA && (
-        <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-sand px-3 py-1 text-xs font-semibold text-foreground ring-1 ring-foreground/10">
-          Sample data mode
-        </div>
-      )}
       <div className="flex gap-5">
         <Rail />
         <div className="min-w-0 flex-1">

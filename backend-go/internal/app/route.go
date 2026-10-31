@@ -142,6 +142,10 @@ func computeRouteForPair(ctx context.Context, tx pgx.Tx, origin, destination str
 		return RouteResult{}, false
 	}
 	res, err := FetchRoute(ctx, osrmBaseURL(), *oLat, *oLon, *dLat, *dLon)
+	if err != nil && !strings.HasPrefix(osrmBaseURL(), "https://router.project-osrm.org") {
+		// Fallback to public demo OSRM if local dev OSRM is unreachable
+		res, err = FetchRoute(ctx, "https://router.project-osrm.org", *oLat, *oLon, *dLat, *dLon)
+	}
 	if err != nil {
 		approx := EncodePolyline6([][2]float64{{*oLat, *oLon}, {*dLat, *dLon}})
 		dist := haversineM(*oLat, *oLon, *dLat, *dLon)
