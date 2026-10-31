@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 import { CardShell } from "@/components/fleet/card-shell"
 import { IconBadge } from "./states"
 
-export function MapPanel({ children }: { children: React.ReactNode }) {
+export function MapPanel({ children, actions }: { children: React.ReactNode; actions?: React.ReactNode }) {
   const [expanded, setExpanded] = useState(false)
   const toggleRef = useRef<HTMLButtonElement>(null)
 
@@ -49,10 +49,10 @@ export function MapPanel({ children }: { children: React.ReactNode }) {
               Live positions
             </h2>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              Active trips and destinations on the road network. Markers show
-              estimated positions, no GPS source is connected.
+              Trucks on active trips and their road routes.
             </p>
           </div>
+          {actions}
           <button
             ref={toggleRef}
             type="button"

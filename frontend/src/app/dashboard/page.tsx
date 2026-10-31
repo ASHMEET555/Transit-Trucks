@@ -2,9 +2,14 @@
 
 import { TriangleAlert } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/Button"
-import { LiveFleetMap } from "@/components/map/LiveFleetMap"
+import { LiveTrucksMap } from "@/components/map/LiveTrucksMap"
+import { StatusPill } from "@/components/live/StatusPill"
+import { TripProgressCard } from "@/components/live/TripProgressCard"
+import { TruckDropdown } from "@/components/live/TruckDropdown"
 import { ApiError, apiRequest, extractItems } from "@/lib/api"
+import { useLiveVehicles } from "@/lib/live/useLiveVehicles"
 import { useProfile } from "@/lib/ProfileContext"
 import { canWrite, hasRouteAccess } from "@/lib/rbacConfig"
 import { useFleetEvents } from "@/lib/realtime/useFleetEvents"
@@ -32,12 +37,16 @@ import { MapPanel } from "./_components/map-panel"
 
 export default function DashboardPage() {
   const { currentProfile, isLoaded } = useProfile()
+  const router = useRouter()
   const role = currentProfile?.role ?? ""
   const isDriver = role === "Driver"
   const allowed = !isLoaded || hasRouteAccess(role, "dashboard")
   const canPlan = Boolean(
     currentProfile && canWrite(currentProfile.role, "trips"),
   )
+
+  const [paused, setPaused] = useState(false)
+  const live = useLiveVehicles({ enabled: !paused })
 
   const [kpis, setKpis] = useState<DashboardKPIs | null>(null)
   const [driverData, setDriverData] = useState<DriverDashboard | null>(null)
@@ -143,10 +152,49 @@ export default function DashboardPage() {
   const { status: realtimeStatus } = useFleetEvents({
     onEvent: (event) => {
       setLastRealtimeEvent(event.type)
+      if (event.type.startsWith("trip.") || event.type.startsWith("vehicle.")) {
+        live.refetch()
+      }
       load()
     },
-    onReconnect: load,
+    onReconnect: () => {
+      load()
+      live.refetch()
+    },
   })
+
+  // Truck selection lives in the URL (?truck=REG); default is the first truck.
+  const [selectedReg, setSelectedReg] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null
+    return new URLSearchParams(window.location.search).get("truck")
+  })
+
+  useEffect(() => {
+    if (selectedReg === null && live.vehicles.length > 0) {
+      setSelectedReg(live.vehicles[0].vehicle_reg)
+    }
+  }, [live.vehicles, selectedReg])
+
+  const selectTruck = useCallback(
+    (reg: string | null) => {
+      setSelectedReg(reg)
+      const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "")
+      if (reg) params.set("truck", reg)
+      else params.delete("truck")
+      router.replace(`?${params.toString()}`, { scroll: false })
+    },
+    [router],
+  )
+
+  const selectedVehicle = useMemo(
+    () => live.vehicles.find((v) => v.vehicle_reg === selectedReg) ?? live.vehicles[0] ?? null,
+    [live.vehicles, selectedReg],
+  )
+
+  const focusKey = useMemo(
+    () => `live-${selectedVehicle?.vehicle_reg ?? "all"}-${live.vehicles.length}`,
+    [selectedVehicle, live.vehicles.length],
+  )
 
   const exportCsv = useCallback(async () => {
     setExporting(true)
@@ -248,17 +296,60 @@ export default function DashboardPage() {
       )}
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        <KpiCompact kpis={kpis} />
-        <MapPanel>
-          <LiveFleetMap
-            trips={trips}
-            destinations={destinations}
-            selectedTripId={selectedTripId}
-            showRoutes
-            focusKey="dashboard"
-            onSelectTrip={setSelectedTripId}
-            onReady={() => {}}
-          />
+        <div className="flex flex-col gap-4">
+          <KpiCompact kpis={kpis} />
+          <TripProgressCard vehicle={selectedVehicle} />
+        </div>
+        <MapPanel
+          actions={
+            <div className="flex shrink-0 items-center gap-2">
+              <StatusPill
+                source={selectedVehicle?.source ?? null}
+                ageSeconds={selectedVehicle?.age_seconds ?? null}
+                hasPosition={selectedVehicle != null && selectedVehicle.latitude != null}
+                paused={paused}
+              />
+              <button
+                type="button"
+                onClick={() => setPaused((p) => !p)}
+                aria-pressed={!paused}
+                className="rounded-full bg-card px-3 py-1 text-xs font-medium ring-1 ring-foreground/10 hover:bg-muted/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
+                {paused ? "Resume live" : "Pause live"}
+              </button>
+            </div>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <TruckDropdown
+              vehicles={live.vehicles}
+              value={selectedVehicle?.vehicle_reg ?? null}
+              paused={paused}
+              onChange={(reg) => selectTruck(reg)}
+            />
+            {live.error && live.vehicles.length === 0 ? (
+              <p role="alert" className="rounded-xl border border-destructive/30 bg-card p-4 text-sm">
+                Could not load live trucks. {live.error}{" "}
+                <button type="button" onClick={live.refetch} className="font-medium underline underline-offset-2">
+                  Retry
+                </button>
+              </p>
+            ) : live.vehicles.length === 0 ? (
+              <p className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+                No trucks on active trips right now. Dispatch a trip to follow it here.
+              </p>
+            ) : (
+              <div className="h-[420px] lg:h-[520px]">
+                <LiveTrucksMap
+                  vehicles={live.vehicles}
+                  selectedReg={selectedVehicle?.vehicle_reg ?? null}
+                  focusKey={focusKey}
+                  onSelect={(reg) => selectTruck(reg)}
+                  onReady={() => {}}
+                />
+              </div>
+            )}
+          </div>
         </MapPanel>
       </div>
 

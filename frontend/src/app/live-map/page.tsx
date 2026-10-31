@@ -1,18 +1,6 @@
-"use client"
+import { redirect } from "next/navigation"
 
-import { useProfile } from "@/lib/ProfileContext"
-import { LiveMapDashboard } from "@/components/live-map/live-map-dashboard"
-
+// The standalone live map was folded into the overview dashboard.
 export default function LiveMapPage() {
-  const { currentProfile, isLoaded } = useProfile()
-
-  if (!isLoaded) {
-    return (
-      <div className="grid min-h-[420px] place-items-center rounded-3xl border border-border bg-card" role="status">
-        <p className="text-sm text-muted-foreground">Loading live map…</p>
-      </div>
-    )
-  }
-
-  return <LiveMapDashboard userRole={currentProfile?.role} />
+  redirect("/dashboard")
 }

@@ -73,6 +73,28 @@ func FetchRoute(ctx context.Context, baseURL string, fromLat, fromLon, toLat, to
 	return RouteResult{Polyline6: r.Geometry, DistanceM: r.Distance, DurationS: r.Duration, Provider: "osrm"}, nil
 }
 
+// ensureRouteBestEffort computes and caches the route for a hub pair in its
+// own short transaction, after the dispatch commit. OSRM latency therefore
+// never delays dispatch events; failures are logged and ignored.
+func (a *App) ensureRouteBestEffort(origin, destination string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	tx, err := a.db.Begin(ctx)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback(ctx)
+	if _, err := EnsureRoute(ctx, tx, origin, destination); err != nil {
+		if a.log != nil {
+			a.log.Warn("route ensure failed", "error", err)
+		}
+		return
+	}
+	if err := tx.Commit(ctx); err != nil && a.log != nil {
+		a.log.Warn("route ensure commit failed", "error", err)
+	}
+}
+
 // EnsureRoute returns the cached route for an (origin, destination) pair, or
 // computes it via OSRM and caches it. When OSRM is unreachable (or hubs lack
 // coordinates), it caches a straight-line 2-point route with
@@ -83,7 +105,7 @@ func FetchRoute(ctx context.Context, baseURL string, fromLat, fromLon, toLat, to
 func EnsureRoute(ctx context.Context, tx pgx.Tx, origin, destination string) (bool, error) {
 	var n int
 	if err := tx.QueryRow(ctx,
-		`SELECT count(*) FROM route_geometries WHERE origin = $1 AND destination = $2`,
+		`SELECT count(*) FROM route_geometries WHERE origin_id = $1 AND destination_id = $2`,
 		origin, destination).Scan(&n); err != nil {
 		return false, err
 	}
@@ -96,9 +118,9 @@ func EnsureRoute(ctx context.Context, tx pgx.Tx, origin, destination string) (bo
 		result = RouteResult{Polyline6: "", DistanceM: 0, DurationS: 0, Provider: "approximate"}
 	}
 	_, err := tx.Exec(ctx,
-		`INSERT INTO route_geometries (origin, destination, polyline6, distance_m, duration_s, provider)
+		`INSERT INTO route_geometries (origin_id, destination_id, polyline6, distance_m, duration_s, provider)
 		 VALUES ($1, $2, $3, $4, $5, $6)
-		 ON CONFLICT (origin, destination) DO NOTHING`,
+		 ON CONFLICT (origin_id, destination_id) DO NOTHING`,
 		origin, destination, result.Polyline6, result.DistanceM, result.DurationS, result.Provider)
 	if err != nil {
 		return false, err

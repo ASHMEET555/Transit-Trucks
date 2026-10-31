@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react"
 import { AppSidebar } from "@/components/live-map/app-sidebar"
 import { COMPANIES, WORKSPACES } from "@/config/workspaces"
 import { apiRequest, extractItems } from "@/lib/api"
+import { memoryGet } from "@/lib/memoryStore"
 import { Bell, Search } from "lucide-react"
 
 const AVATAR_EMOJI = ["🚚", "🛻", "🚛", "🧭", "📦", "🛣️", "⛽", "🧰"]
@@ -25,12 +26,7 @@ function sessionLabel(id: string | null, options: { id: string; name: string }[]
 }
 
 function readSession(key: string): string | null {
-  if (typeof window === "undefined") return null
-  try {
-    return window.sessionStorage.getItem(key)
-  } catch {
-    return null
-  }
+  return memoryGet(key) || null
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -284,7 +280,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 onClick={() => setProfileOpen((o) => !o)}
                 aria-expanded={profileOpen}
                 aria-haspopup="menu"
-                aria-label={`Account: ${name}, ${role}. Open account menu.`}
                 className="flex items-center gap-3 rounded-full border border-border bg-card py-1 pl-4 pr-1 transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 <span className="hidden text-right text-xs sm:block">

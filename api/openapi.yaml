@@ -1457,11 +1457,23 @@ components:
                 properties:
                   name:
                     type: string
+                  latitude:
+                    type: number
+                    nullable: true
+                  longitude:
+                    type: number
+                    nullable: true
               destination:
                 type: object
                 properties:
                   name:
                     type: string
+                  latitude:
+                    type: number
+                    nullable: true
+                  longitude:
+                    type: number
+                    nullable: true
               latitude:
                 type: number
                 nullable: true
@@ -1493,6 +1505,14 @@ components:
               progress_pct:
                 type: number
                 nullable: true
+              route_polyline:
+                type: string
+                nullable: true
+                description: Precision-6 polyline of the cached backend route
+              route_provider:
+                type: string
+                nullable: true
+                enum: [osrm, approximate]
               status:
                 type: string
                 enum: [no_position, fresh, stale, old]

@@ -12,6 +12,26 @@ const (
 	CookieAuthScopes = "CookieAuth.Scopes"
 )
 
+// Defines values for LiveVehicleListItemsRouteProvider.
+const (
+	Approximate LiveVehicleListItemsRouteProvider = "approximate"
+	Osrm        LiveVehicleListItemsRouteProvider = "osrm"
+)
+
+// Defines values for LiveVehicleListItemsStatus.
+const (
+	Fresh      LiveVehicleListItemsStatus = "fresh"
+	NoPosition LiveVehicleListItemsStatus = "no_position"
+	Old        LiveVehicleListItemsStatus = "old"
+	Stale      LiveVehicleListItemsStatus = "stale"
+)
+
+// Defines values for PositionReportSource.
+const (
+	Device    PositionReportSource = "device"
+	Simulator PositionReportSource = "simulator"
+)
+
 // Defines values for PostApiV1AuthLoginJSONBodyExpectedRole.
 const (
 	PostApiV1AuthLoginJSONBodyExpectedRoleAdmin            PostApiV1AuthLoginJSONBodyExpectedRole = "Admin"
@@ -148,6 +168,46 @@ type JobResult struct {
 	Warning   *int    `json:"warning,omitempty"`
 }
 
+// LiveVehicleList defines model for LiveVehicleList.
+type LiveVehicleList struct {
+	Items *[]struct {
+		AgeSeconds  *int `json:"age_seconds"`
+		Destination *struct {
+			Latitude  *float32 `json:"latitude"`
+			Longitude *float32 `json:"longitude"`
+			Name      *string  `json:"name,omitempty"`
+		} `json:"destination,omitempty"`
+		HeadingDeg *float32 `json:"heading_deg"`
+		Latitude   *float32 `json:"latitude"`
+		Longitude  *float32 `json:"longitude"`
+		Origin     *struct {
+			Latitude  *float32 `json:"latitude"`
+			Longitude *float32 `json:"longitude"`
+			Name      *string  `json:"name,omitempty"`
+		} `json:"origin,omitempty"`
+		ProgressM    *float32   `json:"progress_m"`
+		ProgressPct  *float32   `json:"progress_pct"`
+		Reason       *string    `json:"reason"`
+		RecordedAt   *time.Time `json:"recorded_at"`
+		RouteLengthM *float32   `json:"route_length_m"`
+
+		// RoutePolyline Precision-6 polyline of the cached backend route
+		RoutePolyline *string                            `json:"route_polyline"`
+		RouteProvider *LiveVehicleListItemsRouteProvider `json:"route_provider"`
+		Source        *string                            `json:"source"`
+		SpeedKmh      *float32                           `json:"speed_kmh"`
+		Status        *LiveVehicleListItemsStatus        `json:"status,omitempty"`
+		TripId        *int                               `json:"trip_id,omitempty"`
+		VehicleReg    *string                            `json:"vehicle_reg,omitempty"`
+	} `json:"items,omitempty"`
+}
+
+// LiveVehicleListItemsRouteProvider defines model for LiveVehicleList.Items.RouteProvider.
+type LiveVehicleListItemsRouteProvider string
+
+// LiveVehicleListItemsStatus defines model for LiveVehicleList.Items.Status.
+type LiveVehicleListItemsStatus string
+
 // MaintenanceLog defines model for MaintenanceLog.
 type MaintenanceLog struct {
 	Cost        *float32 `json:"cost,omitempty"`
@@ -175,6 +235,20 @@ type NotificationList struct {
 	Count *int            `json:"count,omitempty"`
 	Items *[]Notification `json:"items,omitempty"`
 }
+
+// PositionReport defines model for PositionReport.
+type PositionReport struct {
+	HeadingDeg float32              `json:"heading_deg"`
+	Latitude   float32              `json:"latitude"`
+	Longitude  float32              `json:"longitude"`
+	RecordedAt time.Time            `json:"recorded_at"`
+	Source     PositionReportSource `json:"source"`
+	SpeedKmh   float32              `json:"speed_kmh"`
+	VehicleReg string               `json:"vehicle_reg"`
+}
+
+// PositionReportSource defines model for PositionReport.Source.
+type PositionReportSource string
 
 // RealtimeTicket defines model for RealtimeTicket.
 type RealtimeTicket struct {
@@ -303,10 +377,21 @@ type GetApiV1FinanceSummaryParams struct {
 	VehicleReg *string `form:"vehicle_reg,omitempty" json:"vehicle_reg,omitempty"`
 }
 
+// GetApiV1FleetDriversParams defines parameters for GetApiV1FleetDrivers.
+type GetApiV1FleetDriversParams struct {
+	// LicenseExpiringWithinDays Only drivers whose license expires within N days
+	LicenseExpiringWithinDays *int `form:"license_expiring_within_days,omitempty" json:"license_expiring_within_days,omitempty"`
+}
+
 // PostApiV1InternalJobsLicenseCheckParams defines parameters for PostApiV1InternalJobsLicenseCheck.
 type PostApiV1InternalJobsLicenseCheckParams struct {
 	Days       *int   `form:"days,omitempty" json:"days,omitempty"`
 	XJobSecret string `json:"X-Job-Secret"`
+}
+
+// GetApiV1LiveVehiclesParams defines parameters for GetApiV1LiveVehicles.
+type GetApiV1LiveVehiclesParams struct {
+	IfNoneMatch *string `json:"If-None-Match,omitempty"`
 }
 
 // PutApiV1MaintenanceIdCloseJSONBody defines parameters for PutApiV1MaintenanceIdClose.
@@ -391,6 +476,9 @@ type PostApiV1MaintenanceJSONRequestBody = MaintenanceLog
 
 // PutApiV1MaintenanceIdCloseJSONRequestBody defines body for PutApiV1MaintenanceIdClose for application/json ContentType.
 type PutApiV1MaintenanceIdCloseJSONRequestBody PutApiV1MaintenanceIdCloseJSONBody
+
+// PostApiV1TelemetryPositionsJSONRequestBody defines body for PostApiV1TelemetryPositions for application/json ContentType.
+type PostApiV1TelemetryPositionsJSONRequestBody = PositionReport
 
 // PostApiV1TripsJSONRequestBody defines body for PostApiV1Trips for application/json ContentType.
 type PostApiV1TripsJSONRequestBody = Trip

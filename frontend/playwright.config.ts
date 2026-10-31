@@ -32,6 +32,7 @@ export default defineConfig({
         ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000",
         COOKIE_DOMAIN: "localhost",
         TRUSTED_PROXY_CIDRS: "127.0.0.1/32,::1/128",
+        SIM_ENABLED: "1",
       },
     },
     {

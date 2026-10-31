@@ -125,12 +125,16 @@ type liveVehicle struct {
 	ProgressM   *float64  `json:"progress_m"`
 	RouteLengthM *float64 `json:"route_length_m"`
 	ProgressPct *float64  `json:"progress_pct"`
+	RoutePolyline *string `json:"route_polyline"`
+	RouteProvider *string `json:"route_provider"`
 	Status      string    `json:"status"`
 	Reason      *string   `json:"reason,omitempty"`
 }
 
 type namedRef struct {
-	Name string `json:"name"`
+	Name      string   `json:"name"`
+	Latitude  *float64 `json:"latitude,omitempty"`
+	Longitude *float64 `json:"longitude,omitempty"`
 }
 
 func strptr(s string) *string { return &s }
@@ -145,8 +149,11 @@ func (a *App) handleLiveVehicles(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	query := `
 		SELECT t.id, t.source_name, t.destination_name, t.vehicle_reg,
+			d1.latitude, d1.longitude, d2.latitude, d2.longitude,
 			p.latitude, p.longitude, p.heading_deg, p.speed_kmh, p.recorded_at, p.source
 		FROM trips t
+		LEFT JOIN destinations d1 ON d1.name = t.source_name
+		LEFT JOIN destinations d2 ON d2.name = t.destination_name
 		LEFT JOIN LATERAL (
 			SELECT latitude, longitude, heading_deg, speed_kmh, recorded_at, source
 			FROM vehicle_positions
@@ -179,18 +186,20 @@ func (a *App) handleLiveVehicles(w http.ResponseWriter, r *http.Request) {
 		var (
 			tripID                    int64
 			src, dst, reg             string
+			srcLat, srcLon            *float64
+			dstLat, dstLon            *float64
 			lat, lon, head, spd       *float64
 			recAt                     *time.Time
 			source                    *string
 		)
-		if err := rows.Scan(&tripID, &src, &dst, &reg, &lat, &lon, &head, &spd, &recAt, &source); err != nil {
+		if err := rows.Scan(&tripID, &src, &dst, &reg, &srcLat, &srcLon, &dstLat, &dstLon, &lat, &lon, &head, &spd, &recAt, &source); err != nil {
 			continue
 		}
 		lv := liveVehicle{
 			VehicleReg:  reg,
 			TripID:      tripID,
-			Origin:      namedRef{Name: src},
-			Destination: namedRef{Name: dst},
+			Origin:      namedRef{Name: src, Latitude: srcLat, Longitude: srcLon},
+			Destination: namedRef{Name: dst, Latitude: dstLat, Longitude: dstLon},
 			Status:      "no_position",
 		}
 		if recAt != nil {
@@ -214,7 +223,10 @@ func (a *App) handleLiveVehicles(w http.ResponseWriter, r *http.Request) {
 			default:
 				lv.Status = "old"
 			}
-			lv.ProgressM, lv.RouteLengthM, lv.ProgressPct, lv.Reason = a.progressFor(ctx, src, dst, *lat, *lon)
+			lv.ProgressM, lv.RouteLengthM, lv.ProgressPct, lv.Reason = nil, nil, nil, nil
+			rp := a.progressFor(ctx, src, dst, *lat, *lon)
+			lv.ProgressM, lv.RouteLengthM, lv.ProgressPct = rp.progress, rp.length, rp.pct
+			lv.RoutePolyline, lv.RouteProvider, lv.Reason = rp.polyline, rp.provider, rp.reason
 		}
 		items = append(items, lv)
 	}
@@ -232,23 +244,34 @@ func (a *App) handleLiveVehicles(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
+// routeProgress carries the projection result plus the raw cached geometry so
+// the frontend draws the exact backend route without a second request.
+type routeProgress struct {
+	progress *float64
+	length   *float64
+	pct      *float64
+	polyline *string
+	provider *string
+	reason   *string
+}
+
 // progressFor projects a position onto the cached route polyline. On any
 // geometry/projection failure it returns nil progress with a reason and never
 // an error, so the live endpoint cannot fail because of routing data.
-func (a *App) progressFor(ctx context.Context, origin, destination string, lat, lon float64) (*float64, *float64, *float64, *string) {
-	var poly *string
+func (a *App) progressFor(ctx context.Context, origin, destination string, lat, lon float64) routeProgress {
+	var poly, provider *string
 	if err := a.db.QueryRow(ctx,
-		`SELECT polyline6 FROM route_geometries WHERE origin = $1 AND destination = $2`,
-		origin, destination).Scan(&poly); err != nil || poly == nil || *poly == "" {
-		return nil, nil, nil, strptr("no_route_geometry")
+		`SELECT polyline6, provider FROM route_geometries WHERE origin_id = $1 AND destination_id = $2`,
+		origin, destination).Scan(&poly, &provider); err != nil || poly == nil || *poly == "" {
+		return routeProgress{reason: strptr("no_route_geometry")}
 	}
 	pts, err := DecodePolyline6(*poly)
 	if err != nil || len(pts) < 2 {
-		return nil, nil, nil, strptr("invalid_route_geometry")
+		return routeProgress{polyline: poly, provider: provider, reason: strptr("invalid_route_geometry")}
 	}
 	progress, total, ok := ProjectOntoRoute(lat, lon, pts)
 	if !ok {
-		return nil, nil, nil, strptr("projection_failed")
+		return routeProgress{polyline: poly, provider: provider, reason: strptr("projection_failed")}
 	}
 	pct := 0.0
 	if total > 0 {
@@ -260,5 +283,5 @@ func (a *App) progressFor(ctx context.Context, origin, destination string, lat, 
 			pct = 0
 		}
 	}
-	return &progress, &total, &pct, nil
+	return routeProgress{progress: &progress, length: &total, pct: &pct, polyline: poly, provider: provider}
 }

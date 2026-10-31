@@ -599,7 +599,10 @@ export interface paths {
         /** List drivers */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Only drivers whose license expires within N days */
+                    license_expiring_within_days?: number;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -733,6 +736,88 @@ export interface paths {
                 404: components["responses"]["ErrorResponse"];
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fleet/drivers/{license}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Suspend driver (Safety Officer, Admin) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    license: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            message?: string;
+                        };
+                    };
+                };
+                404: components["responses"]["ErrorResponse"];
+                409: components["responses"]["ErrorResponse"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fleet/drivers/{license}/reinstate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reinstate suspended driver (Safety Officer, Admin) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    license: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            message?: string;
+                        };
+                    };
+                };
+                404: components["responses"]["ErrorResponse"];
+                409: components["responses"]["ErrorResponse"];
+            };
+        };
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -934,6 +1019,109 @@ export interface paths {
                 404: components["responses"]["ErrorResponse"];
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/telemetry/positions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ingest a vehicle position report */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PositionReport"];
+                };
+            };
+            responses: {
+                /** @description Duplicate report, no new row stored */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @example true */
+                            duplicate?: boolean;
+                        };
+                    };
+                };
+                /** @description Position stored */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @example false */
+                            duplicate?: boolean;
+                        };
+                    };
+                };
+                403: components["responses"]["ErrorResponse"];
+                404: components["responses"]["ErrorResponse"];
+                422: components["responses"]["ErrorResponse"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/live/vehicles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Live fleet board for dispatched trips */
+        get: {
+            parameters: {
+                query?: never;
+                header?: {
+                    "If-None-Match"?: string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Live vehicle positions with route progress */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LiveVehicleList"];
+                    };
+                };
+                /** @description Not modified (ETag match) */
+                304: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1809,6 +1997,51 @@ export interface components {
             suggested_driver_name?: string;
             capacity_utilization?: number;
             heuristic_score?: number;
+        };
+        PositionReport: {
+            vehicle_reg: string;
+            latitude: number;
+            longitude: number;
+            heading_deg: number;
+            speed_kmh: number;
+            /** Format: date-time */
+            recorded_at: string;
+            /** @enum {string} */
+            source: "simulator" | "device";
+        };
+        LiveVehicleList: {
+            items?: {
+                vehicle_reg?: string;
+                trip_id?: number;
+                origin?: {
+                    name?: string;
+                    latitude?: number | null;
+                    longitude?: number | null;
+                };
+                destination?: {
+                    name?: string;
+                    latitude?: number | null;
+                    longitude?: number | null;
+                };
+                latitude?: number | null;
+                longitude?: number | null;
+                heading_deg?: number | null;
+                speed_kmh?: number | null;
+                /** Format: date-time */
+                recorded_at?: string | null;
+                age_seconds?: number | null;
+                source?: string | null;
+                progress_m?: number | null;
+                route_length_m?: number | null;
+                progress_pct?: number | null;
+                /** @description Precision-6 polyline of the cached backend route */
+                route_polyline?: string | null;
+                /** @enum {string|null} */
+                route_provider?: "osrm" | "approximate" | null;
+                /** @enum {string} */
+                status?: "no_position" | "fresh" | "stale" | "old";
+                reason?: string | null;
+            }[];
         };
         MaintenanceLog: {
             id?: number;

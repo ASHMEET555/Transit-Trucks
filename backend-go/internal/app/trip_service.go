@@ -257,12 +257,6 @@ func (a *App) handleCreateTrip(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Compute and cache the route geometry for this hub pair.
-		// Routing must never fail a dispatch: errors fall back inside EnsureRoute.
-		if _, rErr := EnsureRoute(ctx, tx, req.SourceName, req.DestinationName); rErr != nil && a.log != nil {
-			a.log.Warn("route ensure failed", "error", rErr)
-		}
-
 		recordAuditLogTx(ctx, tx, "trips", fmt.Sprintf("%d", tripID), "create_and_dispatch", user.Email, map[string]any{
 			"vehicle_reg":    req.VehicleReg,
 			"driver_license": req.DriverLicense,
@@ -332,6 +326,12 @@ func (a *App) handleCreateTrip(w http.ResponseWriter, r *http.Request) {
 		status, code, msg := httpx.MapDBError(err, a.log)
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
+	}
+
+	if shouldDispatch {
+		// Route caching runs after commit so OSRM latency never delays
+		// dispatch events. Routing must never fail a dispatch.
+		a.ensureRouteBestEffort(req.SourceName, req.DestinationName)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -423,12 +423,6 @@ func (a *App) handleDispatchTrip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Compute and cache the route geometry for this hub pair.
-	// Routing must never fail a dispatch: errors fall back inside EnsureRoute.
-	if _, rErr := EnsureRoute(ctx, tx, res.Trip.SourceName, res.Trip.DestinationName); rErr != nil && a.log != nil {
-		a.log.Warn("route ensure failed", "error", rErr)
-	}
-
 	recordAuditLogTx(ctx, tx, "trips", fmt.Sprintf("%d", tripID), "dispatch", user.Email, map[string]any{
 		"vehicle_reg":    res.Trip.VehicleReg,
 		"driver_license": res.Trip.DriverLicense,
@@ -475,6 +469,11 @@ func (a *App) handleDispatchTrip(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, status, code, msg, nil)
 		return
 	}
+
+	// Route caching runs after commit so OSRM latency never delays
+	// dispatch events. Routing must never fail a dispatch.
+	src, dst := res.Trip.SourceName, res.Trip.DestinationName
+	a.ensureRouteBestEffort(src, dst)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

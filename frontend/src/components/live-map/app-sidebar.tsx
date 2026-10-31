@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Building2, CircleUser, FileSpreadsheet, House, LogOut, MapPinned, ScrollText, Settings, ShieldCheck, Truck, Users, Wrench } from "lucide-react"
+import { Building2, CircleUser, FileSpreadsheet, House, LogOut, ScrollText, Settings, ShieldCheck, Truck, Users, Wrench } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface SidebarItem {
@@ -11,7 +11,6 @@ interface SidebarItem {
 
 const ALL_ITEMS: SidebarItem[] = [
   { label: "Overview", icon: House, href: "/dashboard" },
-  { label: "Live map", icon: MapPinned, href: "/live-map" },
   { label: "Trips", icon: Building2, href: "/trips" },
   { label: "Vehicles", icon: Truck, href: "/fleet" },
   { label: "Drivers", icon: Users, href: "/drivers" },
@@ -30,13 +29,13 @@ export function getSidebarItemsForRole(role: string): SidebarItem[] {
     case "Fleet Manager":
       return ALL_ITEMS.filter((i) => i.href !== "/audit")
     case "Driver":
-      return ALL_ITEMS.filter((i) => ["/dashboard", "/live-map", "/trips"].includes(i.href))
+      return ALL_ITEMS.filter((i) => ["/dashboard", "/trips"].includes(i.href))
     case "Safety Officer":
-      return ALL_ITEMS.filter((i) => ["/dashboard", "/live-map", "/fleet", "/drivers", "/trips", "/safety"].includes(i.href))
+      return ALL_ITEMS.filter((i) => ["/dashboard", "/fleet", "/drivers", "/trips", "/safety"].includes(i.href))
     case "Financial Analyst":
-      return ALL_ITEMS.filter((i) => ["/dashboard", "/live-map", "/fleet", "/trips", "/fuel-and-expenses", "/analytics"].includes(i.href))
+      return ALL_ITEMS.filter((i) => ["/dashboard", "/fleet", "/trips", "/fuel-and-expenses", "/analytics"].includes(i.href))
     default:
-      return ALL_ITEMS.filter((i) => ["/dashboard", "/live-map"].includes(i.href))
+      return ALL_ITEMS.filter((i) => ["/dashboard"].includes(i.href))
   }
 }
 

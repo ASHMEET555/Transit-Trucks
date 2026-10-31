@@ -38,7 +38,7 @@ func pollDispatched(ctx context.Context, pool *pgxpool.Pool) ([]polledTruck, err
 		SELECT t.id, t.vehicle_reg, t.source_name, t.destination_name,
 			COALESCE(r.polyline6, ''), COALESCE(r.distance_m, 0), COALESCE(r.duration_s, 0), COALESCE(r.provider, '')
 		FROM trips t
-		LEFT JOIN route_geometries r ON r.origin = t.source_name AND r.destination = t.destination_name
+		LEFT JOIN route_geometries r ON r.origin_id = t.source_name AND r.destination_id = t.destination_name
 		WHERE t.status = 'Dispatched'
 		ORDER BY t.vehicle_reg ASC`)
 	if err != nil {

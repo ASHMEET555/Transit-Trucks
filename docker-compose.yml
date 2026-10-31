@@ -58,24 +58,25 @@ services:
   # Dev-only vehicle simulator. Runs only with the sim profile:
   #   SIM_ENABLED=1 docker compose --profile sim up simulator
   # SIM_ENABLED=1 is required so the backend accepts simulator ingest.
-  # Docs: backend-go/docs/OSRM.md and backend-go/cmd/simulator.
+  # The service is env-gated: without SIM_ENABLED=1 the container idles.
+  # Run: SIM_ENABLED=1 SIM_ADMIN_PASSWORD=... docker compose up simulator
+  # Docs: backend-go/docs/SIMULATOR.md and backend-go/docs/OSRM.md.
   simulator:
     image: golang:1.26.10
     working_dir: /src
     volumes:
       - ./backend-go:/src
-    command: go run ./cmd/simulator
+    command: sh -c 'if [ "$$SIM_ENABLED" = "1" ]; then exec go run ./cmd/simulator; else echo "simulator idle: set SIM_ENABLED=1 to run"; sleep infinity; fi'
     environment:
       BACKEND_URL: http://backend-go:8000
       POSTGRES_DSN: postgresql://transitops:transitops@postgres:5432/transitops
-      SIM_ENABLED: "1"
+      SIM_ENABLED: ${SIM_ENABLED:-0}
       OSRM_URL: http://osrm:5000
       SIM_ADMIN_EMAIL: ${SIM_ADMIN_EMAIL:-admin@transitops.com}
       SIM_ADMIN_PASSWORD: ${SIM_ADMIN_PASSWORD:-}
     depends_on:
       - backend-go
       - osrm
-    profiles: ["sim"]
 
 volumes:
   transitops_pg:
