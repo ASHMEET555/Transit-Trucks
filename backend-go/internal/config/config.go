@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -30,6 +31,11 @@ type Config struct {
 	MetricsToken      string
 	JobSecret         string
 	TrustedProxyCIDRs []*net.IPNet
+	// Live-tracking / simulator settings. All optional, no required validation.
+	SimEnabled   bool
+	OSRMURL      string
+	SimTimeScale float64
+	SimSeed      int64
 }
 
 func (c *Config) IsLocal() bool {
@@ -132,7 +138,42 @@ func Load() (*Config, error) {
 		MetricsToken:      metricsToken,
 		JobSecret:         jobSecret,
 		TrustedProxyCIDRs: trustedCIDRs,
+		SimEnabled:        os.Getenv("SIM_ENABLED") == "1",
+		OSRMURL:           firstNonEmpty(os.Getenv("OSRM_URL"), "http://localhost:5000"),
+		SimTimeScale:      parseTimeScale(os.Getenv("SIM_TIME_SCALE")),
+		SimSeed:           parseSeed(os.Getenv("SIM_SEED")),
 	}, nil
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// parseTimeScale parses SIM_TIME_SCALE, defaulting to 20 on empty/invalid.
+func parseTimeScale(raw string) float64 {
+	if strings.TrimSpace(raw) == "" {
+		return 20
+	}
+	if v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil && v > 0 {
+		return v
+	}
+	return 20
+}
+
+// parseSeed parses SIM_SEED, defaulting to 0 on empty/invalid.
+func parseSeed(raw string) int64 {
+	if strings.TrimSpace(raw) == "" {
+		return 0
+	}
+	if v, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64); err == nil {
+		return v
+	}
+	return 0
 }
 
 func isRepetitive(s string) bool {

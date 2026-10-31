@@ -320,6 +320,10 @@ func (a *App) routes() {
 	a.registerRoute("PUT", "/api/v1/trips/{id}/cancel", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleCancelTrip)
 	a.registerRoute("POST", "/api/v1/trips/suggest", []string{rbac.RoleFleetManager, rbac.RoleDriver, rbac.RoleAdmin}, false, a.handleSuggest)
 
+	// Live tracking & telemetry
+	a.registerRoute("POST", "/api/v1/telemetry/positions", []string{rbac.RoleFleetManager, rbac.RoleAdmin}, false, a.handlePostPosition)
+	a.registerRoute("GET", "/api/v1/live/vehicles", []string{rbac.RoleAdmin, rbac.RoleFleetManager, rbac.RoleSafetyOfficer, rbac.RoleFinancialAnalyst, rbac.RoleDriver}, false, a.handleLiveVehicles)
+
 	// Maintenance
 	maintReadRoles := []string{rbac.RoleAdmin, rbac.RoleFleetManager, rbac.RoleSafetyOfficer}
 	maintWriteRoles := []string{rbac.RoleAdmin, rbac.RoleFleetManager}

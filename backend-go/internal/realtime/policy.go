@@ -18,6 +18,7 @@ const (
 	EventMaintenanceClosed   = "maintenance.closed"
 	EventExpenseCreated      = "expense.created"
 	EventNotificationCreated = "notification.created"
+	EventVehiclePosition     = "vehicle.position_updated"
 )
 
 // AllEventTypes lists all standard event types in Phase 5
@@ -32,6 +33,7 @@ var AllEventTypes = []string{
 	EventMaintenanceClosed,
 	EventExpenseCreated,
 	EventNotificationCreated,
+	EventVehiclePosition,
 }
 
 // CanReceive determines whether a user with a given role and ownership status
@@ -55,6 +57,9 @@ func CanReceive(eventType, role string, ownsTrip bool) bool {
 			return ownsTrip
 		}
 		if eventType == EventDriverStatusChange {
+			return ownsTrip
+		}
+		if eventType == EventVehiclePosition {
 			return ownsTrip
 		}
 		return false
@@ -92,6 +97,7 @@ var AllowedPayloadKeys = map[string]map[string]bool{
 	EventMaintenanceClosed:   {"maintenance_id": true, "vehicle_reg": true},
 	EventExpenseCreated:      {"expense_id": true, "trip_id": true, "type": true},
 	EventNotificationCreated: {"notification_id": true, "type": true, "threshold": true},
+	EventVehiclePosition:     {"vehicle_reg": true, "trip_id": true},
 }
 
 // SanitizedClientPayload returns a copy of IDs filtered strictly against the per-event-type allowlist.
