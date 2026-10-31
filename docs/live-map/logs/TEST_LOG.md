@@ -37,6 +37,10 @@ Go 1.26.3 with 32-bit-only MinGW gcc (no `-race` support — see below).
   - each rendered route decodes to > 2 points; dropdown changes the card
   - overview screenshots at 1440px and 390px (in this dir)
   - axe: zero serious/critical violations on the overview at both widths
+  - Operational note: Playwright `reuseExistingServer` keeps the backend
+    alive across runs; a stale pre-change server on :8000 (a `go run` exe)
+    caused 404s and flakes — kill the PID listening on :8000 before
+    re-running.
 - `e2e/realtime.spec.ts` (M31) → FAILED in this environment, proven
   PRE-EXISTING and not a regression: the identical failure (driver never
   sees the dispatched trip) reproduces against a true baseline backend
