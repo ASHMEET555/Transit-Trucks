@@ -66,7 +66,7 @@ services:
     working_dir: /src
     volumes:
       - ./backend-go:/src
-    command: sh -c 'if [ "$$SIM_ENABLED" = "1" ]; then exec go run ./cmd/simulator; else echo "simulator idle: set SIM_ENABLED=1 to run"; sleep infinity; fi'
+    command: sh -c 'if [ "$$SIM_ENABLED" = "1" ]; then exec go run ./cmd/simulator; else echo simulator idle - set SIM_ENABLED=1 to run; sleep infinity; fi'
     environment:
       BACKEND_URL: http://backend-go:8000
       POSTGRES_DSN: postgresql://transitops:transitops@postgres:5432/transitops
