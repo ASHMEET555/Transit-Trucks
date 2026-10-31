@@ -45,5 +45,37 @@ services:
     depends_on:
       - backend
 
+  # Dev-only OSRM demo server (<=1rps). Prepare the extract first, see
+  # backend-go/docs/OSRM.md, and place region.osrm (+ sidecars) in ./osrm-data.
+  osrm:
+    image: osrm/osrm-backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./osrm-data:/data
+    command: osrm-routed --algorithm mld /data/region.osrm
+
+  # Dev-only vehicle simulator. Runs only with the sim profile:
+  #   SIM_ENABLED=1 docker compose --profile sim up simulator
+  # SIM_ENABLED=1 is required so the backend accepts simulator ingest.
+  # Docs: backend-go/docs/OSRM.md and backend-go/cmd/simulator.
+  simulator:
+    image: golang:1.26.10
+    working_dir: /src
+    volumes:
+      - ./backend-go:/src
+    command: go run ./cmd/simulator
+    environment:
+      BACKEND_URL: http://backend-go:8000
+      POSTGRES_DSN: postgresql://transitops:transitops@postgres:5432/transitops
+      SIM_ENABLED: "1"
+      OSRM_URL: http://osrm:5000
+      SIM_ADMIN_EMAIL: ${SIM_ADMIN_EMAIL:-admin@transitops.com}
+      SIM_ADMIN_PASSWORD: ${SIM_ADMIN_PASSWORD:-}
+    depends_on:
+      - backend-go
+      - osrm
+    profiles: ["sim"]
+
 volumes:
   transitops_pg:

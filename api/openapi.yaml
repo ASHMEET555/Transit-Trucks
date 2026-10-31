@@ -661,6 +661,66 @@ paths:
         '404':
           $ref: '#/components/responses/ErrorResponse'
 
+  /api/v1/telemetry/positions:
+    post:
+      summary: Ingest a vehicle position report
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PositionReport'
+      responses:
+        '201':
+          description: Position stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  duplicate:
+                    type: boolean
+                    example: false
+        '200':
+          description: Duplicate report, no new row stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  duplicate:
+                    type: boolean
+                    example: true
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ErrorResponse'
+
+  /api/v1/live/vehicles:
+    get:
+      summary: Live fleet board for dispatched trips
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Live vehicle positions with route progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveVehicleList'
+        '304':
+          description: Not modified (ETag match)
+
   /api/v1/trips/{id}/complete:
     put:
       summary: Complete trip
@@ -1350,6 +1410,95 @@ components:
           type: number
         heuristic_score:
           type: number
+
+    PositionReport:
+      type: object
+      required: [vehicle_reg, latitude, longitude, heading_deg, speed_kmh, recorded_at, source]
+      properties:
+        vehicle_reg:
+          type: string
+        latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        heading_deg:
+          type: number
+          minimum: 0
+          maximum: 360
+        speed_kmh:
+          type: number
+          minimum: 0
+          maximum: 200
+        recorded_at:
+          type: string
+          format: date-time
+        source:
+          type: string
+          enum: [simulator, device]
+
+    LiveVehicleList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              vehicle_reg:
+                type: string
+              trip_id:
+                type: integer
+              origin:
+                type: object
+                properties:
+                  name:
+                    type: string
+              destination:
+                type: object
+                properties:
+                  name:
+                    type: string
+              latitude:
+                type: number
+                nullable: true
+              longitude:
+                type: number
+                nullable: true
+              heading_deg:
+                type: number
+                nullable: true
+              speed_kmh:
+                type: number
+                nullable: true
+              recorded_at:
+                type: string
+                format: date-time
+                nullable: true
+              age_seconds:
+                type: integer
+                nullable: true
+              source:
+                type: string
+                nullable: true
+              progress_m:
+                type: number
+                nullable: true
+              route_length_m:
+                type: number
+                nullable: true
+              progress_pct:
+                type: number
+                nullable: true
+              status:
+                type: string
+                enum: [no_position, fresh, stale, old]
+              reason:
+                type: string
+                nullable: true
 
     MaintenanceLog:
       type: object
