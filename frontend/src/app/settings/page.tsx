@@ -30,6 +30,7 @@ import {
 } from "@/components/Drawer"
 import { CardShell } from "@/components/fleet/card-shell"
 import { ApiError, apiRequest } from "@/lib/api"
+import { memoryGet, memorySet } from "@/lib/memoryStore"
 import { useProfile } from "@/lib/ProfileContext"
 import { RBAC_CONFIG } from "@/lib/rbacConfig"
 import { EmptyNote, ForbiddenBlock } from "../dashboard/_components/states"
@@ -72,11 +73,10 @@ const SEED_USERS: ManagedUser[] = [
 ]
 
 function loadUsers(): ManagedUser[] {
-  if (typeof window === "undefined") return SEED_USERS
   try {
-    const raw = window.localStorage.getItem(USERS_STORAGE_KEY)
+    const raw = memoryGet(USERS_STORAGE_KEY)
     if (!raw) {
-      window.localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(SEED_USERS))
+      memorySet(USERS_STORAGE_KEY, JSON.stringify(SEED_USERS))
       return SEED_USERS
     }
     const parsed = JSON.parse(raw) as ManagedUser[]
@@ -128,11 +128,7 @@ export default function SettingsPage() {
 
   function persistUsers(next: ManagedUser[]) {
     setUsers(next)
-    try {
-      window.localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(next))
-    } catch {
-      // storage full or unavailable; keep in-memory copy
-    }
+    memorySet(USERS_STORAGE_KEY, JSON.stringify(next))
   }
 
   function saveUser(event: React.FormEvent) {

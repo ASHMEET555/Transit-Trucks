@@ -4,6 +4,7 @@ import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { FormEvent, useEffect, useState } from "react"
 import { ApiError, getMeRequest } from "@/lib/api"
+import { memorySet } from "@/lib/memoryStore"
 import { useProfile } from "@/lib/ProfileContext"
 import { COMPANIES, WORKSPACES } from "@/config/workspaces"
 
@@ -70,8 +71,8 @@ export default function LoginPage() {
       // Always redirect according to the verified role from /api/v1/auth/me
       const me = await getMeRequest()
       // Session display metadata only (not an access boundary)
-      sessionStorage.setItem("transitops.workspace", workspace)
-      sessionStorage.setItem("transitops.company", company)
+      memorySet("transitops.workspace", workspace)
+      memorySet("transitops.company", company)
       if (me.role === "Driver") {
         router.push("/trips")
       } else {

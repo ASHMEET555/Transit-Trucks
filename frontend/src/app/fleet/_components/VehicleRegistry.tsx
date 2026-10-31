@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/Select"
 import { Skeleton } from "@/components/Skeleton"
+import { memoryGet, memorySet } from "@/lib/memoryStore"
 import {
   Table,
   TableBody,
@@ -83,30 +84,16 @@ const SEARCH_KEY = "fleet-registry:search"
 const ALL = "All"
 
 function readStored(key: string, fallback: string): string {
-  if (typeof window === "undefined") return fallback
-  try {
-    return window.localStorage.getItem(key) ?? fallback
-  } catch {
-    return fallback
-  }
+  return memoryGet(key, fallback)
 }
 
 function readStoredBool(key: string, fallback: boolean): boolean {
-  if (typeof window === "undefined") return fallback
-  try {
-    const raw = window.localStorage.getItem(key)
-    return raw == null ? fallback : raw === "true"
-  } catch {
-    return fallback
-  }
+  const raw = memoryGet(key)
+  return raw === "" ? fallback : raw === "true"
 }
 
 function store(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value)
-  } catch {
-    // storage unavailable, filters still work for the session
-  }
+  memorySet(key, value)
 }
 
 async function fetchAllVehicles(

@@ -20,6 +20,7 @@ import {
   TableHeaderCell,
   TableRow,
 } from "@/components/Table"
+import { memoryGet, memorySet } from "@/lib/memoryStore"
 import {
   Drawer,
   DrawerBody,
@@ -177,11 +178,10 @@ const SEED_CLIENTS: Client[] = [
 ]
 
 function loadClients(): Client[] {
-  if (typeof window === "undefined") return SEED_CLIENTS
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = memoryGet(STORAGE_KEY)
     if (!raw) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_CLIENTS))
+      memorySet(STORAGE_KEY, JSON.stringify(SEED_CLIENTS))
       return SEED_CLIENTS
     }
     const parsed = JSON.parse(raw) as Client[]
@@ -241,11 +241,7 @@ export default function ClientsPage() {
 
   function persist(next: Client[]) {
     setClients(next)
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-    } catch {
-      // storage full or unavailable; keep in-memory copy
-    }
+    memorySet(STORAGE_KEY, JSON.stringify(next))
   }
 
   const filtered = useMemo(() => {
