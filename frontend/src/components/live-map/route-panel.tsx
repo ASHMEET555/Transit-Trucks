@@ -1,235 +1,359 @@
 "use client"
 
-import { CircleCheck, Clock, MapPin, Phone, UserRound, Weight } from "lucide-react"
-import {
-  etaMinutes,
-  fleets,
-  getRoute,
-  nextStop,
-  viewerProfiles,
-  type ViewerRole,
-} from "@/lib/data/transit-data"
-import type { TruckStatus, LiveTruck, TripLogEntry } from "@/lib/data/use-fleet-simulation"
+import React, { useMemo, useState } from "react"
+import { AlertCircle, Clock, Fuel, Gauge, Snowflake, Thermometer, Truck, X } from "lucide-react"
+import { DEPOTS } from "@/lib/data/transit-data"
+import type { LiveTruckItem } from "./fleet-map"
 import { cn } from "@/lib/utils"
 
-export type StatusFilter = "all" | "active" | "completed"
+export type StatusFilter = "all" | "on_route" | "delayed" | "alert" | "offline"
+export type CargoFilter = "all" | "reefer" | "dry_van"
 
 type RoutePanelProps = {
-  role: ViewerRole
-  trucks: LiveTruck[]
+  trucks: LiveTruckItem[]
   selectedTruckId: string | null
-  onSelectTruck: (id: string) => void
-  statusFilter: StatusFilter
-  onStatusFilterChange: (s: StatusFilter) => void
-  fleetFilter: string
-  onFleetFilterChange: (f: string) => void
-  log: TripLogEntry[]
+  onSelectTruck: (id: string | null) => void
 }
 
-const titles: Record<ViewerRole, { title: string; hint: string }> = {
-  operator: { title: "Live Freight Fleet", hint: "Active trucks across all depots" },
-  driver: { title: "My Dispatched Trip", hint: "Assigned vehicle and corridor stops" },
-}
+export function RoutePanel({
+  trucks,
+  selectedTruckId,
+  onSelectTruck,
+}: RoutePanelProps) {
+  const [query, setQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
+  const [depotFilter, setDepotFilter] = useState("all")
+  const [cargoFilter, setCargoFilter] = useState<CargoFilter>("all")
 
-export function RoutePanel(props: RoutePanelProps) {
-  const { role, trucks, selectedTruckId, onSelectTruck, log } = props
-  const { title, hint } = titles[role]
+  const selectedTruck = useMemo(
+    () => trucks.find((t) => t.vehicle_reg === selectedTruckId || t.id === selectedTruckId) ?? null,
+    [trucks, selectedTruckId],
+  )
+
+  const filteredTrucks = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return trucks.filter((t) => {
+      // Status filter
+      if (statusFilter === "on_route" && t.status !== "on_route") return false
+      if (statusFilter === "delayed" && t.status !== "delayed") return false
+      if (statusFilter === "alert" && (!t.alerts || t.alerts.length === 0)) return false
+      if (statusFilter === "offline" && t.status !== "no_signal" && t.status !== "offline") return false
+
+      // Depot filter
+      if (depotFilter !== "all") {
+        const matchesOrigin = t.origin?.name?.toLowerCase().includes(depotFilter.toLowerCase())
+        const matchesDest = t.destination?.name?.toLowerCase().includes(depotFilter.toLowerCase())
+        if (!matchesOrigin && !matchesDest) return false
+      }
+
+      // Cargo filter
+      const isReefer =
+        t.cargo_type === "Refrigerated" || t.cargo_type?.toLowerCase().includes("reefer")
+      if (cargoFilter === "reefer" && !isReefer) return false
+      if (cargoFilter === "dry_van" && isReefer) return false
+
+      // Search query
+      if (!q) return true
+      return (
+        t.vehicle_reg.toLowerCase().includes(q) ||
+        (t.driver_name && t.driver_name.toLowerCase().includes(q)) ||
+        (t.driver?.name && t.driver.name.toLowerCase().includes(q)) ||
+        (t.origin?.name && t.origin.name.toLowerCase().includes(q)) ||
+        (t.destination?.name && t.destination.name.toLowerCase().includes(q))
+      )
+    })
+  }, [trucks, query, statusFilter, depotFilter, cargoFilter])
 
   return (
-    <section
-      aria-label={title}
+    <aside
+      aria-label="Fleet Route Panel"
       className="flex max-h-full flex-col overflow-hidden rounded-3xl border border-border bg-card/95 shadow-xl backdrop-blur"
     >
-      <div className="flex flex-col gap-3 border-b border-border p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold">{title}</h2>
-            <p className="text-xs text-muted-foreground">{hint}</p>
+      {/* If a truck is selected, show the Dark Forest Selected-Truck Card at top */}
+      {selectedTruck ? (
+        <SelectedTruckCard
+          truck={selectedTruck}
+          onClose={() => onSelectTruck(null)}
+        />
+      ) : (
+        <div className="flex flex-col gap-3 border-b border-border p-4">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Active Fleet</h2>
+              <p className="text-xs text-muted-foreground">Real-time simulated telemetry</p>
+            </div>
+            <span className="rounded-full bg-sand px-2.5 py-0.5 text-xs font-semibold text-foreground">
+              {filteredTrucks.length} trucks
+            </span>
           </div>
-          <span className="rounded-full border border-border px-2.5 py-1 text-xs font-medium tabular-nums">
-            {trucks.length} {trucks.length === 1 ? "truck" : "trucks"}
-          </span>
-        </div>
-        {role !== "driver" && <PanelFilters {...props} />}
-      </div>
 
+          {/* Search Box */}
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search truck, driver, depot…"
+            className="w-full rounded-xl border border-border bg-background px-3 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+          />
+
+          {/* Status Filter Tabs */}
+          <div className="flex rounded-xl bg-muted p-0.5">
+            {[
+              { id: "all", label: "All" },
+              { id: "on_route", label: "On Route" },
+              { id: "delayed", label: "Delayed" },
+              { id: "alert", label: "Alert" },
+              { id: "offline", label: "Offline" },
+            ].map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setStatusFilter(f.id as StatusFilter)}
+                className={cn(
+                  "flex-1 rounded-lg py-1 text-[11px] font-medium transition-colors",
+                  statusFilter === f.id
+                    ? "bg-card font-semibold text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Dropdown Filters: Depot & Cargo Type */}
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <select
+              value={depotFilter}
+              onChange={(e) => setDepotFilter(e.target.value)}
+              className="rounded-xl border border-border bg-background px-2.5 py-1 text-xs text-foreground outline-none"
+            >
+              <option value="all">All Depots</option>
+              {DEPOTS.map((d) => (
+                <option key={d.id} value={d.city}>
+                  {d.city}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={cargoFilter}
+              onChange={(e) => setCargoFilter(e.target.value as CargoFilter)}
+              className="rounded-xl border border-border bg-background px-2.5 py-1 text-xs text-foreground outline-none"
+            >
+              <option value="all">All Cargo</option>
+              <option value="reefer">Reefer Only</option>
+              <option value="dry_van">Dry Van</option>
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Truck List */}
       <div className="flex-1 overflow-y-auto p-3">
-        {role === "driver" && trucks[0] ? (
-          <DriverTrip truck={trucks[0]} />
-        ) : trucks.length === 0 ? (
-          <p className="px-2 py-8 text-center text-sm text-muted-foreground">No trucks match these filters.</p>
+        {filteredTrucks.length === 0 ? (
+          <p className="px-2 py-8 text-center text-xs text-muted-foreground">
+            No trucks match these filters.
+          </p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {trucks.map((truck) => (
-              <li key={truck.id}>
-                <TruckCard truck={truck} role={role} selected={truck.id === selectedTruckId} onSelect={() => onSelectTruck(truck.id)} />
-              </li>
-            ))}
+            {filteredTrucks.map((truck) => {
+              const isSelected =
+                truck.vehicle_reg === selectedTruckId || truck.id === selectedTruckId
+              const isReefer =
+                truck.cargo_type === "Refrigerated" ||
+                truck.cargo_type?.toLowerCase().includes("reefer")
+              const driver = truck.driver_name || truck.driver?.name || "Driver Unassigned"
+              const loadKg = Math.round(truck.cargo_weight ?? 16500)
+              const milesRem =
+                truck.miles_remaining != null ? Math.round(truck.miles_remaining) : null
+              const delay = truck.delay_minutes ?? 0
+
+              return (
+                <li key={truck.vehicle_reg}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectTruck(truck.vehicle_reg)}
+                    className={cn(
+                      "group flex w-full flex-col gap-1.5 rounded-2xl border p-3 text-left transition-all",
+                      isSelected
+                        ? "border-primary bg-primary/5 shadow-md ring-1 ring-primary"
+                        : "border-border bg-card hover:border-primary/40 hover:bg-muted/30",
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 font-semibold text-foreground">
+                        <span>{truck.vehicle_reg}</span>
+                        {isReefer && (
+                          <span
+                            className="inline-flex items-center gap-0.5 rounded-full bg-sky-100 px-1.5 py-0.2 text-[10px] font-medium text-sky-800"
+                            title="Refrigerated"
+                          >
+                            <Snowflake className="size-2.5" /> Reefer
+                          </span>
+                        )}
+                      </div>
+                      <span
+                        className={cn(
+                          "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+                          truck.alerts && truck.alerts.length > 0
+                            ? "bg-destructive/15 text-destructive"
+                            : truck.status === "delayed"
+                              ? "bg-signal/20 text-signal-foreground"
+                              : truck.status === "on_route"
+                                ? "bg-primary/10 text-primary"
+                                : "bg-muted text-muted-foreground",
+                        )}
+                      >
+                        {truck.alerts && truck.alerts.length > 0
+                          ? truck.alerts[0].replace(/_/g, " ")
+                          : truck.status.replace(/_/g, " ")}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span className="truncate">{driver}</span>
+                      <span className="tabular-nums font-medium text-foreground">
+                        {loadKg.toLocaleString()} kg
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-0.5 text-[11px] text-muted-foreground">
+                      <span>{truck.eta ? `est. ${truck.eta}` : "ETA —"}</span>
+                      {milesRem != null && <span>{milesRem} mi remaining</span>}
+                      {delay > 0 && (
+                        <span className="font-semibold text-destructive">+{delay} min delay</span>
+                      )}
+                    </div>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         )}
-
-        {role === "operator" && log.length > 0 && (
-          <div className="mt-4 border-t border-border px-1 pt-4">
-            <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Recently completed</h3>
-            <ul className="flex flex-col gap-2" aria-live="polite">
-              {log.slice(0, 5).map((entry) => (
-                <li key={entry.id} className="flex items-center gap-2 text-sm">
-                  <CircleCheck className="size-4 text-chart-5" aria-hidden="true" />
-                  <span className="font-medium">{entry.truckCode}</span>
-                  <span className="text-muted-foreground">finished corridor {getRoute(entry.routeId).number}</span>
-                  <time className="ml-auto text-xs tabular-nums text-muted-foreground">
-                    {entry.at.toLocaleTimeString([], { minute: "2-digit", second: "2-digit" })}
-                  </time>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
       </div>
-    </section>
+    </aside>
   )
 }
 
-function PanelFilters({
-  statusFilter,
-  onStatusFilterChange,
-  fleetFilter,
-  onFleetFilterChange,
-}: RoutePanelProps) {
-  const statuses: { value: StatusFilter; label: string }[] = [
-    { value: "all", label: "All" },
-    { value: "active", label: "Active" },
-    { value: "completed", label: "Done" },
-  ]
-
-  return (
-    <div className="flex items-center gap-2">
-      <div role="group" aria-label="Filter by status" className="flex flex-1 rounded-xl bg-muted p-1">
-        {statuses.map(({ value, label }) => {
-          const active = statusFilter === value
-          return (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onStatusFilterChange(value)}
-              className={cn(
-                "flex-1 rounded-lg py-1 text-xs font-medium transition-colors",
-                active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {label}
-            </button>
-          )
-        })}
-      </div>
-
-      <select
-        value={fleetFilter}
-        onChange={(e) => onFleetFilterChange(e.target.value)}
-        aria-label="Filter by depot"
-        className="rounded-xl border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground outline-none"
-      >
-        <option value="all">All depots</option>
-        {fleets.map((f) => (
-          <option key={f.id} value={f.id}>
-            {f.name}
-          </option>
-        ))}
-      </select>
-    </div>
-  )
-}
-
-function TruckCard({
+/**
+ * Dark Forest Selected Truck Card (as specified in rule 6):
+ * Origin and destination in serif italic, progress bar at progress_pct,
+ * ETA with "est.", delay, fuel %, speed, and trailer temperature if reefer.
+ */
+function SelectedTruckCard({
   truck,
-  selected,
-  onSelect,
+  onClose,
 }: {
-  truck: LiveTruck
-  role: ViewerRole
-  selected: boolean
-  onSelect: () => void
+  truck: LiveTruckItem
+  onClose: () => void
 }) {
-  const route = getRoute(truck.routeId)
-  const upcoming = nextStop(route, truck.progress)
-  const eta = etaMinutes(route.id, truck.progress, upcoming.at)
-  const isCompleted = truck.status === "completed"
+  const isReefer =
+    truck.cargo_type === "Refrigerated" || truck.cargo_type?.toLowerCase().includes("reefer")
+  const pct = Math.min(100, Math.max(0, truck.progress_pct ?? 0))
+  const orig = truck.origin?.name?.replace(" Logistics Hub", "").replace(" Intermodal Hub", "").replace(" Gateway Hub", "").replace(" Terminal", "").replace(" Freight Depot", "").replace(" Distribution Hub", "") || "Origin"
+  const dest = truck.destination?.name?.replace(" Logistics Hub", "").replace(" Intermodal Hub", "").replace(" Gateway Hub", "").replace(" Terminal", "").replace(" Freight Depot", "").replace(" Distribution Hub", "") || "Destination"
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={selected}
-      className={cn(
-        "group flex w-full flex-col gap-2 rounded-2xl border p-3 text-left transition-all",
-        selected
-          ? "border-primary bg-primary/5 shadow-md ring-1 ring-primary"
-          : "border-border bg-card hover:border-primary/40 hover:bg-muted/40",
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-semibold text-foreground">{truck.code}</span>
-        <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-          {route.name}
-        </span>
+    <div className="relative overflow-hidden rounded-2xl bg-[#1b4332] p-4 text-[#e8f5e9] shadow-2xl">
+      <div className="flex items-center justify-between border-b border-white/10 pb-2">
+        <div className="flex items-center gap-2">
+          <Truck className="size-4 text-[#74c69d]" />
+          <span className="font-semibold tracking-wide text-white">{truck.vehicle_reg}</span>
+          <span className="rounded-full bg-white/15 px-2 py-0.5 text-[10px] font-medium tracking-wide text-[#b7e4c7]">
+            Simulated
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close truck card"
+          className="grid size-7 place-items-center rounded-full bg-white/10 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
+        >
+          <X className="size-4" />
+        </button>
       </div>
 
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <MapPin className="size-3.5 shrink-0" aria-hidden="true" />
-        <span className="truncate">Next: {upcoming.name}</span>
-        <span className="ml-auto font-medium text-foreground">
-          {isCompleted ? "Completed" : `${eta}m`}
-        </span>
-      </div>
-    </button>
-  )
-}
-
-function DriverTrip({ truck }: { truck: LiveTruck }) {
-  const route = getRoute(truck.routeId)
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="rounded-2xl border border-border bg-muted/30 p-4">
-        <p className="text-xs uppercase tracking-wider text-muted-foreground">Assigned Truck</p>
-        <p className="mt-1 text-lg font-bold">{truck.code} ({truck.plate})</p>
-        <p className="text-xs text-muted-foreground">Route: {route.name}</p>
-        <div className="mt-3 flex items-center gap-4 text-xs">
-          <span className="flex items-center gap-1.5">
-            <Weight className="size-3.5 text-muted-foreground" />
-            {(truck.cargoWeight / 1000).toFixed(1)}t cargo
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Clock className="size-3.5 text-muted-foreground" />
-            {truck.status === "completed" ? "Layover" : "In transit"}
-          </span>
+      {/* Origin & Destination in Serif Italic */}
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <div>
+          <span className="block text-[10px] uppercase tracking-wider text-[#b7e4c7]/80">From</span>
+          <span className="font-serif text-base italic font-normal text-white">{orig}</span>
+        </div>
+        <span className="text-[#74c69d]">→</span>
+        <div className="text-right">
+          <span className="block text-[10px] uppercase tracking-wider text-[#b7e4c7]/80">To</span>
+          <span className="font-serif text-base italic font-normal text-white">{dest}</span>
         </div>
       </div>
 
-      <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Corridor Stops</h3>
-        <ol className="flex flex-col gap-2">
-          {route.stops.map((s, idx) => {
-            const passed = truck.progress >= s.at
-            return (
-              <li key={s.name} className="flex items-center gap-2 text-sm">
-                <span className={cn(
-                  "grid size-5 place-items-center rounded-full text-[10px] font-bold",
-                  passed ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                )}>
-                  {idx + 1}
-                </span>
-                <span className={passed ? "line-through text-muted-foreground" : "font-medium"}>
-                  {s.name}
-                </span>
-                <span className="ml-auto text-xs text-muted-foreground">
-                  {passed ? "Passed" : `${etaMinutes(route.id, truck.progress, s.at)} min`}
-                </span>
-              </li>
-            )
-          })}
-        </ol>
+      {/* Progress Bar */}
+      <div className="mt-3">
+        <div className="flex items-center justify-between text-xs text-[#b7e4c7]">
+          <span>Progress</span>
+          <span className="font-semibold tabular-nums text-white">{Math.round(pct)}%</span>
+        </div>
+        <div className="relative mt-1 h-2 w-full overflow-hidden rounded-full bg-black/30">
+          <div
+            className="h-full rounded-full bg-[#74c69d] transition-all duration-500 ease-out"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* Telemetry Stats: ETA, Delay, Fuel, Speed, Temp */}
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <div className="flex items-center gap-1.5 rounded-lg bg-black/20 p-2">
+          <Clock className="size-3.5 text-[#74c69d]" />
+          <div>
+            <span className="block text-[10px] text-[#b7e4c7]">ETA</span>
+            <span className="font-semibold text-white">
+              {truck.eta ? `est. ${truck.eta}` : "est. —"}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 rounded-lg bg-black/20 p-2">
+          <AlertCircle className="size-3.5 text-[#ffb703]" />
+          <div>
+            <span className="block text-[10px] text-[#b7e4c7]">Delay</span>
+            <span className="font-semibold text-white">
+              {truck.delay_minutes ? `+${truck.delay_minutes} min` : "On time"}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 rounded-lg bg-black/20 p-2">
+          <Fuel className="size-3.5 text-[#74c69d]" />
+          <div>
+            <span className="block text-[10px] text-[#b7e4c7]">Fuel</span>
+            <span className="font-semibold text-white">
+              {truck.fuel_pct != null ? `${Math.round(truck.fuel_pct)}%` : "78%"}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 rounded-lg bg-black/20 p-2">
+          <Gauge className="size-3.5 text-[#74c69d]" />
+          <div>
+            <span className="block text-[10px] text-[#b7e4c7]">Speed</span>
+            <span className="font-semibold text-white">
+              {truck.speed_kmh != null ? `${Math.round(truck.speed_kmh)} km/h` : "84 km/h"}
+            </span>
+          </div>
+        </div>
+
+        {isReefer && (
+          <div className="col-span-2 flex items-center gap-2 rounded-lg bg-sky-950/60 p-2 text-sky-200">
+            <Thermometer className="size-4 text-sky-300" />
+            <div className="flex flex-1 items-center justify-between">
+              <span className="text-[11px]">Trailer Temperature</span>
+              <span className="font-bold text-white">
+                {truck.reefer_temp_c != null ? `${truck.reefer_temp_c.toFixed(1)}°C` : "-20.0°C"}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

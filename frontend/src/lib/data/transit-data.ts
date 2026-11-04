@@ -12,6 +12,30 @@ export type Route = {
   stops: Stop[]
 }
 
+export type Depot = {
+  id: string
+  name: string
+  city: string
+  coords: LatLng
+}
+
+export const DEPOTS: Depot[] = [
+  { id: "chicago", name: "Chicago Logistics Hub", city: "Chicago", coords: [41.8781, -87.6298] },
+  { id: "dallas", name: "Dallas Gateway Hub", city: "Dallas", coords: [32.7767, -96.797] },
+  { id: "atlanta", name: "Atlanta Distribution Hub", city: "Atlanta", coords: [33.749, -84.388] },
+  { id: "denver", name: "Denver Intermodal Hub", city: "Denver", coords: [39.7392, -104.9903] },
+  { id: "kc", name: "Kansas City Terminal", city: "Kansas City", coords: [39.0997, -94.5786] },
+  { id: "la", name: "Los Angeles Freight Hub", city: "Los Angeles", coords: [34.0522, -118.2437] },
+  { id: "reno", name: "Reno Hub", city: "Reno", coords: [39.5296, -119.8138] },
+  { id: "seattle", name: "Seattle Terminal", city: "Seattle", coords: [47.6062, -122.3321] },
+  // Endpoints
+  { id: "slc", name: "Salt Lake City Hub", city: "Salt Lake City", coords: [40.7608, -111.891] },
+  { id: "houston", name: "Houston Freight Depot", city: "Houston", coords: [29.7604, -95.3698] },
+  { id: "portland", name: "Portland Logistics Hub", city: "Portland", coords: [45.5152, -122.6784] },
+  { id: "nyc", name: "New York Central Hub", city: "New York", coords: [40.7128, -74.006] },
+  { id: "phoenix", name: "Phoenix Transshipment Depot", city: "Phoenix", coords: [33.4484, -112.074] },
+]
+
 export type Fleet = { id: string; name: string }
 
 export type Truck = {
@@ -23,231 +47,294 @@ export type Truck = {
   driver: { name: string; phone: string }
   capacity: number
   cargoWeight: number
-  /** Fraction of the route covered per simulated second. */
+  cargoType?: string
   speed: number
   startProgress: number
   delayed?: boolean
+  fuelPct?: number
+  reeferTempC?: number | null
 }
 
-// Map view mode: Operator or Driver
 export type ViewerRole = "operator" | "driver"
 
 export const fleets: Fleet[] = [
-  { id: "north", name: "North Depot" },
-  { id: "harbor", name: "Harbor Hub" },
+  { id: "west", name: "Western Fleet" },
+  { id: "central", name: "Central Fleet" },
+  { id: "east", name: "Eastern Fleet" },
 ]
 
 export const routes: Route[] = [
   {
     id: "r1",
-    number: 1,
-    name: "Terminal Corridor",
-    from: "Ferry Freight Terminal",
-    to: "Mission Distribution",
+    number: 80,
+    name: "Reno – Salt Lake City",
+    from: "Reno Hub",
+    to: "Salt Lake City Hub",
     path: [
-      [37.7955, -122.3937],
-      [37.7897, -122.401],
-      [37.7845, -122.4075],
-      [37.7793, -122.414],
-      [37.7752, -122.4192],
-      [37.77, -122.42],
-      [37.7648, -122.4196],
-      [37.7586, -122.4189],
+      [39.5296, -119.8138],
+      [40.8354, -117.7944],
+      [40.8324, -115.7631],
+      [40.7608, -111.891],
     ],
     stops: [
-      { name: "Ferry Terminal", at: 0 },
-      { name: "Montgomery Way", at: 0.22 },
-      { name: "Powell Yard", at: 0.42 },
-      { name: "Van Ness Depot", at: 0.64 },
-      { name: "16th Street Logistics", at: 0.84 },
-      { name: "Mission Distribution", at: 1 },
+      { name: "Reno Hub", at: 0 },
+      { name: "Winnemucca", at: 0.35 },
+      { name: "Elko Depot", at: 0.65 },
+      { name: "Salt Lake City Hub", at: 1 },
     ],
   },
   {
     id: "r2",
-    number: 2,
-    name: "Civic Logistics Loop",
-    from: "Civic Yard",
-    to: "Western Depot",
+    number: 15,
+    name: "Denver – Los Angeles",
+    from: "Denver Intermodal Hub",
+    to: "Los Angeles Freight Hub",
     path: [
-      [37.7793, -122.4193],
-      [37.7835, -122.417],
-      [37.787, -122.4225],
-      [37.7905, -122.4285],
-      [37.788, -122.434],
-      [37.7838, -122.433],
-      [37.7808, -122.4262],
-      [37.7793, -122.4193],
+      [39.7392, -104.9903],
+      [39.5501, -107.3248],
+      [38.7628, -112.0841],
+      [36.1699, -115.1398],
+      [34.0522, -118.2437],
     ],
     stops: [
-      { name: "Civic Yard", at: 0 },
-      { name: "Polk Hub", at: 0.18 },
-      { name: "Heights Way", at: 0.45 },
-      { name: "Western Logistics", at: 0.68 },
-      { name: "Valley Transfer", at: 0.86 },
-      { name: "Civic Yard", at: 1 },
+      { name: "Denver Intermodal Hub", at: 0 },
+      { name: "Grand Junction", at: 0.28 },
+      { name: "Las Vegas Transit", at: 0.72 },
+      { name: "Los Angeles Freight Hub", at: 1 },
     ],
   },
   {
     id: "r3",
-    number: 3,
-    name: "Northern Waterfront",
-    from: "North Beach Pier",
-    to: "Embarcadero Terminal",
+    number: 65,
+    name: "Chicago – Atlanta",
+    from: "Chicago Logistics Hub",
+    to: "Atlanta Distribution Hub",
     path: [
-      [37.8027, -122.4148],
-      [37.8005, -122.41],
-      [37.7975, -122.408],
-      [37.794, -122.406],
-      [37.792, -122.4],
-      [37.788, -122.396],
+      [41.8781, -87.6298],
+      [39.7684, -86.1581],
+      [38.2527, -85.7585],
+      [36.1627, -86.7816],
+      [33.749, -84.388],
     ],
     stops: [
-      { name: "North Beach Pier", at: 0 },
-      { name: "Washington Warehouse", at: 0.3 },
-      { name: "Central Dock", at: 0.6 },
-      { name: "Embarcadero Terminal", at: 1 },
+      { name: "Chicago Logistics Hub", at: 0 },
+      { name: "Indianapolis Hub", at: 0.3 },
+      { name: "Nashville Terminal", at: 0.68 },
+      { name: "Atlanta Distribution Hub", at: 1 },
     ],
   },
   {
     id: "r4",
-    number: 4,
-    name: "Industrial Corridor",
-    from: "Rail Freight Depot",
-    to: "Potrero Yard",
+    number: 45,
+    name: "Dallas – Houston",
+    from: "Dallas Gateway Hub",
+    to: "Houston Freight Depot",
     path: [
-      [37.7765, -122.3945],
-      [37.781, -122.3995],
-      [37.7765, -122.4055],
-      [37.771, -122.408],
-      [37.765, -122.402],
+      [32.7767, -96.797],
+      [31.6368, -96.1477],
+      [30.7235, -95.5508],
+      [29.7604, -95.3698],
     ],
     stops: [
-      { name: "Rail Freight Depot", at: 0 },
-      { name: "Townsend Hub", at: 0.35 },
-      { name: "Potrero Yard", at: 1 },
+      { name: "Dallas Gateway Hub", at: 0 },
+      { name: "Corsicana Depot", at: 0.28 },
+      { name: "Huntsville Yard", at: 0.65 },
+      { name: "Houston Freight Depot", at: 1 },
     ],
   },
   {
     id: "r5",
     number: 5,
-    name: "Cross-Town Transfer",
-    from: "Lower Yard",
-    to: "Southwest Depot",
+    name: "Seattle – Portland",
+    from: "Seattle Terminal",
+    to: "Portland Logistics Hub",
     path: [
-      [37.773, -122.431],
-      [37.7745, -122.425],
-      [37.772, -122.424],
-      [37.769, -122.429],
-      [37.766, -122.43],
-      [37.7625, -122.4348],
+      [47.6062, -122.3321],
+      [47.0379, -122.9007],
+      [46.1404, -122.9407],
+      [45.5152, -122.6784],
     ],
     stops: [
-      { name: "Lower Yard", at: 0 },
-      { name: "Duboce Transfer", at: 0.4 },
-      { name: "Church Hub", at: 0.7 },
-      { name: "Southwest Depot", at: 1 },
+      { name: "Seattle Terminal", at: 0 },
+      { name: "Tacoma Port", at: 0.2 },
+      { name: "Olympia Yard", at: 0.4 },
+      { name: "Portland Logistics Hub", at: 1 },
+    ],
+  },
+  {
+    id: "r6",
+    number: 35,
+    name: "Kansas City – Dallas",
+    from: "Kansas City Terminal",
+    to: "Dallas Gateway Hub",
+    path: [
+      [39.0997, -94.5786],
+      [37.6872, -97.3301],
+      [35.4676, -97.5164],
+      [32.7767, -96.797],
+    ],
+    stops: [
+      { name: "Kansas City Terminal", at: 0 },
+      { name: "Wichita Hub", at: 0.38 },
+      { name: "Oklahoma City Depot", at: 0.68 },
+      { name: "Dallas Gateway Hub", at: 1 },
+    ],
+  },
+  {
+    id: "r7",
+    number: 80,
+    name: "Chicago – New York",
+    from: "Chicago Logistics Hub",
+    to: "New York Central Hub",
+    path: [
+      [41.8781, -87.6298],
+      [41.5055, -81.6917],
+      [40.4406, -79.9959],
+      [40.7128, -74.006],
+    ],
+    stops: [
+      { name: "Chicago Logistics Hub", at: 0 },
+      { name: "Cleveland Depot", at: 0.42 },
+      { name: "Pittsburgh Terminal", at: 0.65 },
+      { name: "New York Central Hub", at: 1 },
+    ],
+  },
+  {
+    id: "r8",
+    number: 70,
+    name: "Denver – Kansas City",
+    from: "Denver Intermodal Hub",
+    to: "Kansas City Terminal",
+    path: [
+      [39.7392, -104.9903],
+      [39.3643, -101.0494],
+      [38.8794, -99.3268],
+      [39.0997, -94.5786],
+    ],
+    stops: [
+      { name: "Denver Intermodal Hub", at: 0 },
+      { name: "Colby Yard", at: 0.4 },
+      { name: "Hays Depot", at: 0.65 },
+      { name: "Kansas City Terminal", at: 1 },
+    ],
+  },
+  {
+    id: "r9",
+    number: 20,
+    name: "Atlanta – Dallas",
+    from: "Atlanta Distribution Hub",
+    to: "Dallas Gateway Hub",
+    path: [
+      [33.749, -84.388],
+      [33.5186, -86.8104],
+      [32.2988, -90.1848],
+      [32.5252, -93.7502],
+      [32.7767, -96.797],
+    ],
+    stops: [
+      { name: "Atlanta Distribution Hub", at: 0 },
+      { name: "Birmingham Hub", at: 0.22 },
+      { name: "Jackson Yard", at: 0.52 },
+      { name: "Shreveport Depot", at: 0.78 },
+      { name: "Dallas Gateway Hub", at: 1 },
+    ],
+  },
+  {
+    id: "r10",
+    number: 10,
+    name: "Los Angeles – Phoenix",
+    from: "Los Angeles Freight Hub",
+    to: "Phoenix Transshipment Depot",
+    path: [
+      [34.0522, -118.2437],
+      [33.7175, -116.2162],
+      [33.6598, -114.5964],
+      [33.4484, -112.074],
+    ],
+    stops: [
+      { name: "Los Angeles Freight Hub", at: 0 },
+      { name: "Indio Transfer", at: 0.35 },
+      { name: "Blythe Crossing", at: 0.62 },
+      { name: "Phoenix Transshipment Depot", at: 1 },
     ],
   },
 ]
 
 export const trucks: Truck[] = [
   {
-    id: "t1",
-    code: "TRK-A1",
-    plate: "KX-5417",
-    routeId: "r2",
-    fleetId: "north",
-    driver: { name: "Marcus L.", phone: "415-779-6588" },
-    capacity: 25000,
+    id: "VH-1001",
+    code: "VH-1001",
+    plate: "US-8821-TX",
+    routeId: "r1",
+    fleetId: "west",
+    driver: { name: "Marcus Vance", phone: "+1-555-1001" },
+    capacity: 24000,
     cargoWeight: 18200,
-    speed: 1 / 70,
-    startProgress: 0.35,
+    cargoType: "Refrigerated",
+    speed: 1 / 180,
+    startProgress: 0.42,
+    delayed: false,
+    fuelPct: 82,
+    reeferTempC: -20.5,
   },
   {
-    id: "t2",
-    code: "TRK-A2",
-    plate: "KX-2208",
-    routeId: "r1",
-    fleetId: "north",
-    driver: { name: "Priya N.", phone: "415-310-4421" },
-    capacity: 25000,
-    cargoWeight: 21500,
-    speed: 1 / 80,
-    startProgress: 0.12,
-  },
-  {
-    id: "t3",
-    code: "TRK-B4",
-    plate: "HB-9031",
-    routeId: "r1",
-    fleetId: "harbor",
-    driver: { name: "Diego A.", phone: "415-552-0193" },
-    capacity: 32000,
-    cargoWeight: 14800,
-    speed: 1 / 85,
-    startProgress: 0.66,
-  },
-  {
-    id: "t4",
-    code: "TRK-B7",
-    plate: "HB-4470",
-    routeId: "r3",
-    fleetId: "harbor",
-    driver: { name: "Hana S.", phone: "415-208-7765" },
-    capacity: 25000,
-    cargoWeight: 9800,
-    speed: 1 / 50,
-    startProgress: 0.86,
-  },
-  {
-    id: "t5",
-    code: "TRK-C2",
-    plate: "KX-6612",
-    routeId: "r4",
-    fleetId: "north",
-    driver: { name: "Owen B.", phone: "415-874-3302" },
-    capacity: 32000,
-    cargoWeight: 28400,
-    speed: 1 / 110,
-    startProgress: 0.48,
-    delayed: true,
-  },
-  {
-    id: "t6",
-    code: "TRK-C5",
-    plate: "HB-1184",
-    routeId: "r5",
-    fleetId: "harbor",
-    driver: { name: "Leila H.", phone: "415-617-9028" },
-    capacity: 18000,
-    cargoWeight: 8400,
-    speed: 1 / 45,
-    startProgress: 0.93,
-  },
-  {
-    id: "t7",
-    code: "TRK-A6",
-    plate: "KX-3049",
+    id: "VH-1002",
+    code: "VH-1002",
+    plate: "US-3419-CA",
     routeId: "r2",
-    fleetId: "north",
-    driver: { name: "Tom B.", phone: "415-449-1276" },
-    capacity: 25000,
-    cargoWeight: 16200,
-    speed: 1 / 75,
+    fleetId: "west",
+    driver: { name: "Elena Rostova", phone: "+1-555-1002" },
+    capacity: 22000,
+    cargoWeight: 19800,
+    cargoType: "Semi",
+    speed: 1 / 140,
+    startProgress: 0.65,
+    delayed: true,
+    fuelPct: 64,
+  },
+  {
+    id: "VH-1003",
+    code: "VH-1003",
+    plate: "US-5542-IL",
+    routeId: "r3",
+    fleetId: "central",
+    driver: { name: "Devon Reed", phone: "+1-555-1003" },
+    capacity: 26000,
+    cargoWeight: 21500,
+    cargoType: "Refrigerated",
+    speed: 1 / 160,
+    startProgress: 0.28,
+    delayed: false,
+    fuelPct: 91,
+    reeferTempC: -19.8,
+  },
+  {
+    id: "VH-1004",
+    code: "VH-1004",
+    plate: "US-9012-GA",
+    routeId: "r4",
+    fleetId: "central",
+    driver: { name: "Sarah Jenkins", phone: "+1-555-1004" },
+    capacity: 24000,
+    cargoWeight: 14200,
+    cargoType: "Dry Van",
+    speed: 1 / 120,
     startProgress: 0.82,
+    delayed: false,
+    fuelPct: 45,
   },
 ]
 
 export const viewerProfiles = {
-  operator: { name: "Dispatch Operations", subtitle: "All freight corridors" },
-  driver: { name: "Driver In-Cab View", subtitle: "Assigned TRK-A2", truckId: "t2" },
+  operator: { name: "Dispatch Operations", subtitle: "All 10 continental corridors" },
+  driver: { name: "Driver In-Cab View", subtitle: "Assigned VH-1001", truckId: "VH-1001" },
 } as const
 
-export const MAP_CENTER: LatLng = [37.7815, -122.4155]
+// Continental US Center
+export const MAP_CENTER: LatLng = [39.8283, -98.5795]
 
 export function getRoute(id: string) {
-  return routes.find((r) => r.id === id)!
+  return routes.find((r) => r.id === id) ?? routes[0]
 }
 
 function haversine([lat1, lng1]: LatLng, [lat2, lng2]: LatLng) {
@@ -271,11 +358,15 @@ const routeMetrics = new Map(
 )
 
 export function routeLength(routeId: string) {
-  return routeMetrics.get(routeId)!.length
+  return routeMetrics.get(routeId)?.length ?? 800000
 }
 
 export function positionAlong(route: Route, progress: number): { latlng: LatLng; heading: number } {
-  const { cumulative, length } = routeMetrics.get(route.id)!
+  const rm = routeMetrics.get(route.id)
+  if (!rm || rm.cumulative.length === 0) {
+    return { latlng: route.path[0] || [39.8283, -98.5795], heading: 0 }
+  }
+  const { cumulative, length } = rm
   const target = Math.min(Math.max(progress, 0), 1) * length
   let i = 1
   while (i < cumulative.length - 1 && cumulative[i] < target) i++
@@ -289,13 +380,15 @@ export function positionAlong(route: Route, progress: number): { latlng: LatLng;
 }
 
 export function traveledPath(route: Route, progress: number): LatLng[] {
-  const { cumulative, length } = routeMetrics.get(route.id)!
+  const rm = routeMetrics.get(route.id)
+  if (!rm) return route.path
+  const { cumulative, length } = rm
   const target = Math.min(Math.max(progress, 0), 1) * length
   const points = route.path.filter((_, i) => cumulative[i] < target)
   return [...points, positionAlong(route, progress).latlng]
 }
 
-const TRUCK_SPEED_MS = 8.5
+const TRUCK_SPEED_MS = 24.0 // ~86 km/h long haul speed
 
 export function etaMinutes(routeId: string, fromProgress: number, toProgress: number) {
   const meters = Math.max(toProgress - fromProgress, 0) * routeLength(routeId)

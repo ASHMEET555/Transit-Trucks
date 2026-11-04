@@ -10,12 +10,17 @@ import (
 
 // VehicleState is the in-memory kinematic state of one simulated truck.
 type VehicleState struct {
-	VehicleReg string
-	TripID     int64
-	DistM      float64 // distance travelled along the route
-	SpeedMps   float64
-	Arrived    bool
-	DwellS     float64 // remaining dwell at destination (sim seconds)
+	VehicleReg     string
+	TripID         int64
+	DistM          float64 // distance travelled along the route
+	SpeedMps       float64
+	Arrived        bool
+	DwellS         float64 // remaining dwell at destination (sim seconds)
+	FuelPct        float64
+	OdometerKm     float64
+	ReeferTempC    *float64
+	DrivingMinutes int
+	IsReefer       bool
 }
 
 // SimRoute is a decoded route with cumulative distances and an average speed.
@@ -108,13 +113,12 @@ func SpeedLimitAt(r *SimRoute, distM float64) float64 {
 const (
 	maxAccelMps2 = 1.5 // acceleration cap
 	maxBrakeMps2 = 2.5 // braking cap
-	dwellSimS    = 15 * 60
+	dwellSimS    = 35 * 60 // 35 min dwell at stops (between 30-45 min)
 )
 
 // TickVehicle advances one vehicle by dtSim simulated seconds: accelerate
 // toward the speed limit (cap 1.5 m/s^2), brake toward it (cap 2.5 m/s^2),
-// stop exactly at the destination, then dwell 15 sim-minutes. It never
-// completes trips: arrived vehicles hold position indefinitely.
+// stop exactly at the destination, then dwell 35 sim-minutes.
 func TickVehicle(v *VehicleState, r *SimRoute, dtSim float64) {
 	if v.Arrived {
 		v.SpeedMps = 0
@@ -127,12 +131,33 @@ func TickVehicle(v *VehicleState, r *SimRoute, dtSim float64) {
 	} else {
 		v.SpeedMps = math.Max(limit, v.SpeedMps-maxBrakeMps2*dtSim)
 	}
-	v.DistM += v.SpeedMps * dtSim
+	stepM := v.SpeedMps * dtSim
+	v.DistM += stepM
 	if v.DistM >= r.TotalM {
 		v.DistM = r.TotalM
 		v.SpeedMps = 0
 		v.Arrived = true
 		v.DwellS = dwellSimS
+	}
+
+	// Telemetry dynamics:
+	kmDelta := stepM / 1000.0
+	v.OdometerKm += kmDelta
+
+	if kmDelta > 0 && v.FuelPct > 5.0 {
+		litersUsed := kmDelta / 1.3
+		v.FuelPct = math.Max(5.0, v.FuelPct-(litersUsed/4.5))
+	}
+
+	if v.SpeedMps > 1.0 {
+		v.DrivingMinutes += int(dtSim / 60.0)
+	}
+
+	if v.IsReefer && v.ReeferTempC != nil {
+		cur := *v.ReeferTempC
+		target := -20.0
+		cur += (target - cur) * 0.05
+		v.ReeferTempC = &cur
 	}
 }
 

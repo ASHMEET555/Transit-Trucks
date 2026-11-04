@@ -96,12 +96,12 @@ func RouteLengthM(pts [][2]float64) float64 {
 	return total
 }
 
-// ProjectOntoRoute finds the nearest point on the polyline to (lat, lon)
+// ProjectOntoRouteWithDistance finds the nearest point on the polyline to (lat, lon)
 // using equirectangular projection per segment. Returns cumulative
-// progress in meters and total route length. ok=false when pts < 2.
-func ProjectOntoRoute(lat, lon float64, pts [][2]float64) (progressM, totalM float64, ok bool) {
+// progress in meters, total route length, and distance in meters to the nearest segment. ok=false when pts < 2.
+func ProjectOntoRouteWithDistance(lat, lon float64, pts [][2]float64) (progressM, totalM, distM float64, ok bool) {
 	if len(pts) < 2 {
-		return 0, 0, false
+		return 0, 0, 0, false
 	}
 	totalM = RouteLengthM(pts)
 	meanLat := (lat + pts[0][0]) / 2 * math.Pi / 180
@@ -131,5 +131,13 @@ func ProjectOntoRoute(lat, lon float64, pts [][2]float64) (progressM, totalM flo
 		}
 		cumulative += segLen
 	}
-	return progressM, totalM, true
+	return progressM, totalM, best, true
+}
+
+// ProjectOntoRoute finds the nearest point on the polyline to (lat, lon)
+// using equirectangular projection per segment. Returns cumulative
+// progress in meters and total route length. ok=false when pts < 2.
+func ProjectOntoRoute(lat, lon float64, pts [][2]float64) (progressM, totalM float64, ok bool) {
+	p, t, _, ok := ProjectOntoRouteWithDistance(lat, lon, pts)
+	return p, t, ok
 }

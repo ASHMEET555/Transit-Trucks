@@ -2,44 +2,63 @@
 
 import "leaflet/dist/leaflet.css"
 import L, { type Map as LeafletMap } from "leaflet"
-import { useEffect, useMemo } from "react"
-import { CircleMarker, MapContainer, Marker, Polyline, Tooltip, TileLayer, useMap } from "react-leaflet"
-import { MAP_CENTER, positionAlong, routes, traveledPath, type Route } from "@/lib/data/transit-data"
-import type { LiveTruck } from "@/lib/data/use-fleet-simulation"
+import React, { useEffect, useMemo, useState } from "react"
+import { CircleMarker, MapContainer, Marker, Polyline, Popup, Tooltip, TileLayer, useMap, useMapEvents } from "react-leaflet"
+import { DEPOTS, MAP_CENTER } from "@/lib/data/transit-data"
+import { createTruckDivIcon } from "@/components/map/truck-marker"
+import { decodePolyline6, clusterMarkers } from "@/lib/live/liveUtils.mjs"
 
-const TRUCK_SVG =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><circle cx="7" cy="18" r="2"/><path d="M9 18h6"/><circle cx="17" cy="18" r="2"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/></svg>'
-const CHECK_SVG =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
+export type LiveTruckItem = {
+  id: string
+  vehicle_reg: string
+  trip_id: number
+  driver?: { name: string; phone?: string }
+  driver_name?: string | null
+  cargo_type?: string
+  cargo_weight?: number
+  speed_kmh?: number | null
+  fuel_pct?: number | null
+  reefer_temp_c?: number | null
+  heading_deg?: number | null
+  latitude?: number | null
+  longitude?: number | null
+  progress_pct?: number | null
+  miles_remaining?: number | null
+  eta?: string | null
+  delay_minutes?: number | null
+  status: string
+  freshness?: string
+  alerts?: string[]
+  source?: string | null
+  route_polyline?: string | null
+  route_provider?: string | null
+  origin?: { name: string; latitude?: number | null; longitude?: number | null }
+  destination?: { name: string; latitude?: number | null; longitude?: number | null }
+}
 
 type FleetMapProps = {
-  fleet: LiveTruck[]
-  visibleRouteIds: string[]
+  fleet: LiveTruckItem[]
   selectedTruckId: string | null
   showRoutes: boolean
-  focusKey: string
   onSelectTruck: (id: string) => void
   onReady: (map: LeafletMap) => void
 }
 
 export default function FleetMap({
   fleet,
-  visibleRouteIds,
   selectedTruckId,
   showRoutes,
-  focusKey,
   onSelectTruck,
   onReady,
 }: FleetMapProps) {
-  const selectedTruck = fleet.find((b) => b.id === selectedTruckId) ?? null
-  const activeRouteId = selectedTruck?.routeId ?? null
-  const visibleRoutes = routes.filter((r) => visibleRouteIds.includes(r.id))
-  const focusRoutes = activeRouteId ? visibleRoutes.filter((r) => r.id === activeRouteId) : visibleRoutes
+  const selectedTruck = fleet.find((b) => b.vehicle_reg === selectedTruckId || b.id === selectedTruckId) ?? null
 
   return (
     <MapContainer
       center={MAP_CENTER}
-      zoom={14}
+      zoom={4}
+      minZoom={3}
+      maxZoom={12}
       zoomControl={false}
       scrollWheelZoom
       ref={(map) => {
@@ -52,130 +71,258 @@ export default function FleetMap({
         url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
         className="map-tiles"
       />
-      <FocusController focusKey={focusKey} routes={focusRoutes} />
 
-      {showRoutes &&
-        visibleRoutes.map((route) => (
-          <RouteLayer
-            key={route.id}
-            route={route}
-            active={route.id === activeRouteId}
-            dimmed={activeRouteId !== null && route.id !== activeRouteId}
-          />
-        ))}
-
-      {selectedTruck && showRoutes && selectedTruck.status !== "completed" && (
-        <Polyline
-          positions={traveledPath(routes.find((r) => r.id === selectedTruck.routeId)!, selectedTruck.progress)}
-          pathOptions={{ className: "route-line route-line--progress", weight: 5, lineCap: "round" }}
-          interactive={false}
-        />
-      )}
-
-      {fleet.map((truck) => (
-        <TruckMarker
-          key={truck.id}
-          truck={truck}
-          selected={truck.id === selectedTruckId}
-          onSelect={() => onSelectTruck(truck.id)}
-        />
+      {/* Depots / Hubs with permanent labels at all zoom levels */}
+      {DEPOTS.map((depot) => (
+        <DepotMarker key={depot.id} depot={depot} />
       ))}
+
+      {/* Road Routes */}
+      {showRoutes && <RoadRoutesLayer fleet={fleet} selectedTruck={selectedTruck} />}
+
+      {/* Cluster-aware Truck Markers */}
+      <ClusterAwareTrucksLayer
+        fleet={fleet}
+        selectedTruckId={selectedTruckId}
+        onSelectTruck={onSelectTruck}
+      />
     </MapContainer>
   )
 }
 
-function RouteLayer({ route, active, dimmed }: { route: Route; active: boolean; dimmed: boolean }) {
-  const badgePosition = positionAlong(route, 0.5).latlng
-  const badgeIcon = useMemo(
+function DepotMarker({ depot }: { depot: (typeof DEPOTS)[0] }) {
+  const icon = useMemo(
     () =>
       L.divIcon({
-        className: "",
-        html: `<span class="route-badge ${active ? "route-badge--active" : ""}">${route.number}</span>`,
-        iconSize: [22, 22],
-        iconAnchor: [11, 11],
+        className: "depot-hub-icon-wrap",
+        html: `
+          <div style="position:relative; display:flex; flex-direction:column; align-items:center;">
+            <div style="width:14px; height:14px; border-radius:9999px; background:#1b4332; border:2.5px solid #ffffff; box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>
+            <span style="margin-top:2px; font-size:10px; font-weight:700; color:#1b4332; background:rgba(255,255,255,0.92); padding:1px 5px; border-radius:9999px; border:1px solid rgba(27,67,50,0.2); white-space:nowrap; box-shadow:0 1px 3px rgba(0,0,0,0.12); pointer-events:none;">
+              ${depot.city}
+            </span>
+          </div>
+        `,
+        iconSize: [60, 36],
+        iconAnchor: [30, 7],
       }),
-    [route.number, active],
+    [depot.city],
   )
-  const lineClass = `route-line ${active ? "route-line--active" : ""} ${dimmed ? "route-line--dim" : ""}`
+
+  return (
+    <Marker position={depot.coords} icon={icon} interactive={false} zIndexOffset={50}>
+      <Tooltip direction="bottom" offset={[0, 10]}>
+        <div className="font-semibold text-foreground">{depot.name}</div>
+        <div className="text-xs text-muted-foreground">{depot.city} Depot</div>
+      </Tooltip>
+    </Marker>
+  )
+}
+
+function RoadRoutesLayer({
+  fleet,
+  selectedTruck,
+}: {
+  fleet: LiveTruckItem[]
+  selectedTruck: LiveTruckItem | null
+}) {
+  const renderedRoutes = useMemo(() => {
+    const map = new Map<string, { pts: [number, number][]; provider: string; active: boolean }>()
+    for (const t of fleet) {
+      if (!t.route_polyline) continue
+      const key = `${t.origin?.name ?? ""}->${t.destination?.name ?? ""}`
+      if (!map.has(key)) {
+        try {
+          const pts = decodePolyline6(t.route_polyline)
+          const active = selectedTruck?.route_polyline === t.route_polyline
+          map.set(key, { pts, provider: t.route_provider ?? "osrm", active })
+        } catch {
+          // ignore corrupted polyline
+        }
+      }
+    }
+    return Array.from(map.entries())
+  }, [fleet, selectedTruck])
 
   return (
     <>
-      <Polyline
-        positions={route.path}
-        pathOptions={{ className: lineClass, weight: active ? 4 : 3, lineJoin: "round", lineCap: "round" }}
-        interactive={false}
-      />
-      {(!dimmed || active) &&
-        route.stops.map((stop, i) => (
-          <CircleMarker
-            key={`${stop.name}-${i}`}
-            center={positionAlong(route, stop.at).latlng}
-            radius={active ? 5 : 4}
-            pathOptions={{ className: `stop-dot ${active ? "stop-dot--active" : ""}`, weight: 2, fillOpacity: 1 }}
-          >
-            <Tooltip direction="top" offset={[0, -4]}>
-              {stop.name}
-            </Tooltip>
-          </CircleMarker>
-        ))}
-      <Marker position={badgePosition} icon={badgeIcon} interactive={false} zIndexOffset={active ? 500 : 0} />
+      {renderedRoutes.map(([key, item]) => {
+        const isApprox = item.provider === "approximate"
+        const isSelected = item.active
+        return (
+          <React.Fragment key={key}>
+            <Polyline
+              positions={item.pts}
+              pathOptions={{
+                color: isSelected ? "#1b4332" : "#94a3b8",
+                weight: isSelected ? 4 : 2.5,
+                opacity: isSelected ? 0.95 : 0.45,
+                dashArray: isApprox ? "6, 8" : undefined,
+                lineJoin: "round",
+                lineCap: "round",
+              }}
+              interactive={false}
+            />
+          </React.Fragment>
+        )
+      })}
     </>
   )
 }
 
-function TruckMarker({ truck, selected, onSelect }: { truck: LiveTruck; selected: boolean; onSelect: () => void }) {
-  const route = routes.find((r) => r.id === truck.routeId)!
-  const { latlng, heading } = positionAlong(route, truck.progress)
-  const roundedHeading = Math.round(heading / 15) * 15
-  const completed = truck.status === "completed"
+function ClusterAwareTrucksLayer({
+  fleet,
+  selectedTruckId,
+  onSelectTruck,
+}: {
+  fleet: LiveTruckItem[]
+  selectedTruckId: string | null
+  onSelectTruck: (id: string) => void
+}) {
+  const map = useMap()
+  const [, setZoom] = useState(map.getZoom())
 
-  const icon = useMemo(() => {
-    const classes = [
-      "bus-marker",
-      completed && "bus-marker--completed",
-      !completed && truck.status === "delayed" && "bus-marker--delayed",
-      selected && "bus-marker--selected",
-    ]
-      .filter(Boolean)
-      .join(" ")
-    const headingEl = completed
-      ? ""
-      : `<span class="bus-marker__heading" style="rotate:${roundedHeading}deg"></span>`
-    return L.divIcon({
-      className: "",
-      html: `<div class="${classes}">${headingEl}${completed ? CHECK_SVG : TRUCK_SVG}<span class="bus-marker__label">${truck.code}</span></div>`,
-      iconSize: [34, 34],
-      iconAnchor: [17, 17],
-    })
-  }, [truck.code, truck.status, completed, selected, roundedHeading])
+  useMapEvents({
+    zoomend() {
+      setZoom(map.getZoom())
+    },
+    moveend() {
+      setZoom(map.getZoom())
+    },
+  })
+
+  // Valid trucks with coordinates
+  const placedTrucks = useMemo(
+    () =>
+      fleet.filter(
+        (t) =>
+          typeof t.latitude === "number" &&
+          typeof t.longitude === "number" &&
+          !Number.isNaN(t.latitude) &&
+          !Number.isNaN(t.longitude),
+      ),
+    [fleet],
+  )
+
+  // 40px cluster algorithm
+  const clusters = useMemo(() => {
+    return clusterMarkers(
+      placedTrucks,
+      (lat: number, lon: number) => map.latLngToLayerPoint([lat, lon]),
+      40,
+    )
+  }, [placedTrucks, map])
 
   return (
-    <Marker
-      position={latlng}
-      icon={icon}
-      zIndexOffset={selected ? 1000 : completed ? -100 : 0}
-      eventHandlers={{ click: onSelect }}
-      title={`${truck.code} on corridor ${route.number}`}
-      keyboard
-    />
+    <>
+      {clusters.map((c) => {
+        if (c.members.length === 1) {
+          const truck = c.members[0] as LiveTruckItem
+          const isSelected = truck.vehicle_reg === selectedTruckId || truck.id === selectedTruckId
+          const isReefer =
+            truck.cargo_type === "Refrigerated" ||
+            truck.cargo_type?.toLowerCase().includes("reefer")
+          const heading = truck.heading_deg ?? 0
+
+          const icon = createTruckDivIcon({
+            vehicleReg: truck.vehicle_reg,
+            headingDeg: heading,
+            status: truck.status,
+            alerts: truck.alerts,
+            selected: isSelected,
+            isReefer: isReefer,
+          })
+
+          return (
+            <Marker
+              key={truck.vehicle_reg}
+              position={[truck.latitude!, truck.longitude!]}
+              icon={icon}
+              zIndexOffset={isSelected ? 1000 : 100}
+              eventHandlers={{
+                click: () => onSelectTruck(truck.vehicle_reg),
+              }}
+            >
+              <Popup className="simulated-truck-popup" offset={[0, -18]}>
+                <div className="p-1 text-xs">
+                  <div className="flex items-center justify-between gap-3 border-b border-border pb-1 font-semibold text-foreground">
+                    <span>{truck.vehicle_reg}</span>
+                    <span className="rounded-full bg-sand px-2 py-0.5 text-[10px] font-medium text-foreground">
+                      Simulated
+                    </span>
+                  </div>
+                  <div className="mt-1.5 space-y-0.5 text-muted-foreground">
+                    <div>
+                      <span className="font-medium text-foreground">Status:</span> {truck.status}
+                    </div>
+                    {truck.speed_kmh != null && (
+                      <div>
+                        <span className="font-medium text-foreground">Speed:</span>{" "}
+                        {Math.round(truck.speed_kmh)} km/h
+                      </div>
+                    )}
+                    {truck.fuel_pct != null && (
+                      <div>
+                        <span className="font-medium text-foreground">Fuel:</span>{" "}
+                        {Math.round(truck.fuel_pct)}%
+                      </div>
+                    )}
+                    {isReefer && truck.reefer_temp_c != null && (
+                      <div>
+                        <span className="font-medium text-foreground">Trailer Temp:</span>{" "}
+                        {truck.reefer_temp_c.toFixed(1)}°C
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          )
+        }
+
+        // Multiple trucks: render cluster bubble
+        const containsSelected = c.members.some(
+          (m: LiveTruckItem) => m.vehicle_reg === selectedTruckId || m.id === selectedTruckId,
+        )
+        const clusterIcon = L.divIcon({
+          className: "truck-cluster-bubble-wrap",
+          html: `
+            <div style="
+              width:34px;
+              height:34px;
+              border-radius:9999px;
+              background:${containsSelected ? "#1b4332" : "#ffffff"};
+              color:${containsSelected ? "#ffffff" : "#1b4332"};
+              border:2.5px solid ${containsSelected ? "#ffffff" : "#1b4332"};
+              box-shadow:0 3px 10px rgba(0,0,0,0.2);
+              display:grid;
+              place-items:center;
+              font-size:12px;
+              font-weight:700;
+              cursor:pointer;
+            ">
+              ${c.members.length}
+            </div>
+          `,
+          iconSize: [34, 34],
+          iconAnchor: [17, 17],
+        })
+
+        return (
+          <Marker
+            key={c.key}
+            position={[c.lat, c.lon]}
+            icon={clusterIcon}
+            zIndexOffset={containsSelected ? 900 : 200}
+            eventHandlers={{
+              click: () => {
+                const first = c.members[0] as LiveTruckItem
+                onSelectTruck(first.vehicle_reg)
+              },
+            }}
+          />
+        )
+      })}
+    </>
   )
-}
-
-function FocusController({ focusKey, routes: focusRoutes }: { focusKey: string; routes: Route[] }) {
-  const map = useMap()
-
-  useEffect(() => {
-    if (focusRoutes.length === 0) return
-    map.invalidateSize()
-    const bounds = L.latLngBounds(focusRoutes.flatMap((r) => r.path))
-    const wide = map.getContainer().clientWidth >= 768
-    map.flyToBounds(bounds, {
-      paddingTopLeft: [wide ? 380 : 24, 72],
-      paddingBottomRight: [wide ? 80 : 24, 40],
-      duration: 0.8,
-      maxZoom: 16,
-    })
-  }, [focusKey, map, focusRoutes])
-
-  return null
 }

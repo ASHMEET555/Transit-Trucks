@@ -62,8 +62,8 @@ func TestStopAtDestinationThenDwell(t *testing.T) {
 	if v.SpeedMps != 0 {
 		t.Fatalf("speed must be 0 at destination, got %f", v.SpeedMps)
 	}
-	if v.DwellS != 15*60 {
-		t.Fatalf("expected 15 sim-min dwell, got %f", v.DwellS)
+	if v.DwellS != 35*60 {
+		t.Fatalf("expected 35 sim-min dwell, got %f", v.DwellS)
 	}
 }
 

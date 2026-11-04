@@ -59,9 +59,9 @@ export function LiveBadge({ paused, onToggle }: { paused: boolean; onToggle: () 
         {!paused && <span className="absolute inset-0 animate-ping rounded-full bg-signal opacity-60 motion-reduce:hidden" />}
         <span className={cn('relative size-2.5 rounded-full', paused ? 'bg-muted-foreground' : 'bg-signal')} />
       </span>
-      {paused ? 'Paused' : 'Live tracking'}
+      {paused ? 'Paused' : 'Simulated feed'}
       {paused ? <Play className="size-3.5" aria-hidden="true" /> : <Pause className="size-3.5" aria-hidden="true" />}
-      <span className="sr-only">{paused ? 'Resume live updates' : 'Pause live updates'}</span>
+      <span className="sr-only">{paused ? 'Resume updates' : 'Pause updates'}</span>
     </button>
   )
 }

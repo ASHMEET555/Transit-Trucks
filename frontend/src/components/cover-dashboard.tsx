@@ -2,15 +2,26 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Bell, CalendarDays, LayoutGrid, LogOut, MapPinned, Search, Settings, Truck, Users, Wrench } from "lucide-react"
+import {
+  Bell,
+  CalendarDays,
+  LayoutGrid,
+  LogOut,
+  Search,
+  Settings,
+  Truck,
+  User,
+  Users,
+  Wrench,
+} from "lucide-react"
 import { FleetCard } from "@/components/fleet/fleet-card"
 import { coverCards } from "@/lib/data/sample-fleet"
 
 const rail = [
   { icon: LayoutGrid, label: "Overview", href: "/dashboard" },
   { icon: Truck, label: "Vehicles", href: "/fleet" },
-  { icon: MapPinned, label: "Live map", href: "/live-map" },
-  { icon: Users, label: "Drivers", href: "/drivers" },
+  { icon: User, label: "Drivers", href: "/drivers" },
+  { icon: Users, label: "Clients", href: "/clients" },
   { icon: Wrench, label: "Maintenance", href: "/maintenance" },
   { icon: CalendarDays, label: "Schedule", href: "/trips" },
 ]
@@ -19,8 +30,8 @@ function Rail() {
   const pathname = usePathname()
   return (
     <nav
-      aria-label="Dashboard"
-      className="hidden w-16 shrink-0 flex-col items-center gap-2 rounded-full bg-card py-3 shadow-sm ring-1 ring-foreground/5 lg:flex"
+      aria-label="Dashboard navigation"
+      className="hidden w-16 shrink-0 flex-col items-center gap-2 rounded-full bg-card py-4 shadow-sm ring-1 ring-foreground/5 lg:flex"
     >
       {rail.map(({ icon: Icon, label, href }) => {
         const active = pathname === href || (href === "/dashboard" && pathname === "/")
@@ -32,7 +43,7 @@ function Rail() {
             aria-current={active ? "page" : undefined}
             className={
               active
-                ? "grid size-11 place-items-center rounded-full bg-foreground text-background"
+                ? "grid size-11 place-items-center rounded-full bg-foreground text-background transition-colors"
                 : "grid size-11 place-items-center rounded-full text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
             }
           >
@@ -41,10 +52,18 @@ function Rail() {
         )
       })}
       <span className="my-2 h-px w-6 bg-border" aria-hidden="true" />
-      <Link href="/settings" aria-label="Settings" className="grid size-11 place-items-center rounded-full text-foreground/70 hover:bg-muted">
+      <Link
+        href="/settings"
+        aria-label="Settings"
+        className="grid size-11 place-items-center rounded-full text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+      >
         <Settings className="size-[18px]" aria-hidden="true" />
       </Link>
-      <Link href="/login" aria-label="Log out" className="mt-auto grid size-11 place-items-center rounded-full text-foreground/70 hover:bg-muted">
+      <Link
+        href="/login"
+        aria-label="Log out"
+        className="mt-auto grid size-11 place-items-center rounded-full text-foreground/70 transition-colors hover:bg-muted hover:text-foreground"
+      >
         <LogOut className="size-[18px]" aria-hidden="true" />
       </Link>
     </nav>
@@ -78,9 +97,13 @@ export function CoverDashboard() {
                   <Search className="size-4" />
                 </span>
               </label>
-              <button type="button" aria-label="Notifications" className="grid size-12 place-items-center rounded-full bg-card shadow-sm ring-1 ring-foreground/5">
+              <Link
+                href="/notifications"
+                aria-label="Notifications"
+                className="grid size-12 place-items-center rounded-full bg-card shadow-sm ring-1 ring-foreground/5 transition-colors hover:bg-muted"
+              >
                 <Bell className="size-[18px]" aria-hidden="true" />
-              </button>
+              </Link>
             </div>
           </div>
 

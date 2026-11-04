@@ -10,14 +10,18 @@ import (
 
 // PositionInput is the validated payload for a single vehicle position report.
 type PositionInput struct {
-	VehicleReg  string
-	Latitude    float64
-	Longitude   float64
-	HeadingDeg  float64
-	SpeedKmh    float64
-	RecordedAt  time.Time
-	Source      string
-	AllowDevice bool // service-level test flag; the HTTP layer never sets this
+	VehicleReg     string
+	Latitude       float64
+	Longitude      float64
+	HeadingDeg     float64
+	SpeedKmh       float64
+	RecordedAt     time.Time
+	Source         string
+	AllowDevice    bool // service-level test flag; the HTTP layer never sets this
+	FuelPct        *float64
+	OdometerKm     *float64
+	ReeferTempC    *float64
+	DrivingMinutes *int
 }
 
 // IngestError is a validation/gating failure with a stable API error code.
@@ -61,6 +65,18 @@ func IngestPosition(ctx context.Context, tx pgx.Tx, input PositionInput) (bool, 
 	if input.RecordedAt.After(now.Add(60 * time.Second)) {
 		return false, &IngestError{Code: "VALIDATION_FAILED", Message: "recorded_at is more than 60 seconds in the future", Field: "recorded_at"}
 	}
+	if input.FuelPct != nil && (*input.FuelPct < 0 || *input.FuelPct > 100) {
+		return false, &IngestError{Code: "VALIDATION_FAILED", Message: "fuel_pct must be between 0 and 100", Field: "fuel_pct"}
+	}
+	if input.OdometerKm != nil && *input.OdometerKm < 0 {
+		return false, &IngestError{Code: "VALIDATION_FAILED", Message: "odometer_km must be >= 0", Field: "odometer_km"}
+	}
+	if input.ReeferTempC != nil && (*input.ReeferTempC < -50 || *input.ReeferTempC > 50) {
+		return false, &IngestError{Code: "VALIDATION_FAILED", Message: "reefer_temp_c must be between -50 and 50", Field: "reefer_temp_c"}
+	}
+	if input.DrivingMinutes != nil && *input.DrivingMinutes < 0 {
+		return false, &IngestError{Code: "VALIDATION_FAILED", Message: "driving_minutes must be >= 0", Field: "driving_minutes"}
+	}
 
 	var exists bool
 	if err := tx.QueryRow(ctx,
@@ -73,10 +89,10 @@ func IngestPosition(ctx context.Context, tx pgx.Tx, input PositionInput) (bool, 
 	}
 
 	if _, err := tx.Exec(ctx,
-		`INSERT INTO vehicle_positions (vehicle_reg, latitude, longitude, heading_deg, speed_kmh, recorded_at, source)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		`INSERT INTO vehicle_positions (vehicle_reg, latitude, longitude, heading_deg, speed_kmh, recorded_at, source, fuel_pct, odometer_km, reefer_temp_c, driving_minutes)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		input.VehicleReg, input.Latitude, input.Longitude, input.HeadingDeg, input.SpeedKmh,
-		input.RecordedAt.UTC(), input.Source); err != nil {
+		input.RecordedAt.UTC(), input.Source, input.FuelPct, input.OdometerKm, input.ReeferTempC, input.DrivingMinutes); err != nil {
 		return false, fmt.Errorf("insert position failed: %w", err)
 	}
 

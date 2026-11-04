@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,20 +26,24 @@ import (
 )
 
 type polledTruck struct {
-	tripID                int64
-	vehicleReg            string
-	origin, destination   string
-	polyline              string
-	distanceM, durationS   float64
-	provider              string
+	tripID               int64
+	vehicleReg           string
+	origin, destination  string
+	polyline             string
+	distanceM, durationS float64
+	provider             string
+	vehicleType          string
+	odometer             float64
 }
 
 func pollDispatched(ctx context.Context, pool *pgxpool.Pool) ([]polledTruck, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT t.id, t.vehicle_reg, t.source_name, t.destination_name,
-			COALESCE(r.polyline6, ''), COALESCE(r.distance_m, 0), COALESCE(r.duration_s, 0), COALESCE(r.provider, '')
+			COALESCE(r.polyline6, ''), COALESCE(r.distance_m, 0), COALESCE(r.duration_s, 0), COALESCE(r.provider, ''),
+			COALESCE(v.type, 'Semi'), COALESCE(v.odometer, 50000)
 		FROM trips t
 		LEFT JOIN route_geometries r ON r.origin_id = t.source_name AND r.destination_id = t.destination_name
+		LEFT JOIN vehicles v ON v.registration_number = t.vehicle_reg
 		WHERE t.status = 'Dispatched'
 		ORDER BY t.vehicle_reg ASC`)
 	if err != nil {
@@ -49,7 +54,8 @@ func pollDispatched(ctx context.Context, pool *pgxpool.Pool) ([]polledTruck, err
 	for rows.Next() {
 		var tr polledTruck
 		if err := rows.Scan(&tr.tripID, &tr.vehicleReg, &tr.origin, &tr.destination,
-			&tr.polyline, &tr.distanceM, &tr.durationS, &tr.provider); err != nil {
+			&tr.polyline, &tr.distanceM, &tr.durationS, &tr.provider,
+			&tr.vehicleType, &tr.odometer); err != nil {
 			continue
 		}
 		out = append(out, tr)
@@ -87,15 +93,22 @@ func (e *loginError) Error() string { return "login failed" }
 
 func postPosition(ctx context.Context, backendURL, token string, v *VehicleState, r *SimRoute) int {
 	lat, lon, heading := PositionAt(v, r)
-	body, _ := json.Marshal(map[string]any{
-		"vehicle_reg": v.VehicleReg,
-		"latitude":    lat,
-		"longitude":   lon,
-		"heading_deg": heading,
-		"speed_kmh":   v.SpeedMps * 3.6,
-		"recorded_at": time.Now().UTC().Format(time.RFC3339),
-		"source":      "simulator",
-	})
+	payload := map[string]any{
+		"vehicle_reg":     v.VehicleReg,
+		"latitude":        lat,
+		"longitude":       lon,
+		"heading_deg":     heading,
+		"speed_kmh":       v.SpeedMps * 3.6,
+		"recorded_at":     time.Now().UTC().Format(time.RFC3339),
+		"source":          "simulator",
+		"fuel_pct":        v.FuelPct,
+		"odometer_km":     v.OdometerKm,
+		"driving_minutes": v.DrivingMinutes,
+	}
+	if v.IsReefer && v.ReeferTempC != nil {
+		payload["reefer_temp_c"] = *v.ReeferTempC
+	}
+	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, backendURL+"/api/v1/telemetry/positions", bytes.NewReader(body))
 	if err != nil {
 		return -1
@@ -168,7 +181,22 @@ func main() {
 				if off >= r.TotalM {
 					off = 0
 				}
-				states[tr.vehicleReg] = &VehicleState{VehicleReg: tr.vehicleReg, TripID: tr.tripID, DistM: off}
+				isReefer := strings.Contains(strings.ToLower(tr.vehicleType), "reefer") || tr.vehicleType == "Refrigerated"
+				var rTemp *float64
+				if isReefer {
+					tVal := -20.0
+					rTemp = &tVal
+				}
+				states[tr.vehicleReg] = &VehicleState{
+					VehicleReg:     tr.vehicleReg,
+					TripID:         tr.tripID,
+					DistM:          off,
+					FuelPct:        78.0,
+					OdometerKm:     tr.odometer,
+					ReeferTempC:    rTemp,
+					DrivingMinutes: 210,
+					IsReefer:       isReefer,
+				}
 				logger.Info("tracking vehicle", "vehicle", tr.vehicleReg, "offset_m", off)
 			}
 		}
@@ -181,7 +209,7 @@ func main() {
 	}
 	refresh()
 
-	tick := time.NewTicker(time.Second)
+	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
 	poll := time.NewTicker(10 * time.Second)
 	defer poll.Stop()
@@ -193,7 +221,7 @@ func main() {
 		case <-poll.C:
 			refresh()
 		case <-tick.C:
-			dtSim := cfg.TimeScale // physics tick 1s x SIM_TIME_SCALE
+			dtSim := cfg.TimeScale * 2 // physics tick 2s x SIM_TIME_SCALE
 			for reg, v := range states {
 				r := routes[reg]
 				TickVehicle(v, r, dtSim)

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/ASHMEET555/Transit-Trucks/backend-go/internal/middleware"
@@ -22,13 +23,17 @@ func simEnabled() bool {
 }
 
 type positionRequest struct {
-	VehicleReg  string    `json:"vehicle_reg"`
-	Latitude    float64   `json:"latitude"`
-	Longitude   float64   `json:"longitude"`
-	HeadingDeg  float64   `json:"heading_deg"`
-	SpeedKmh    float64   `json:"speed_kmh"`
-	RecordedAt  time.Time `json:"recorded_at"`
-	Source      string    `json:"source"`
+	VehicleReg     string    `json:"vehicle_reg"`
+	Latitude       float64   `json:"latitude"`
+	Longitude      float64   `json:"longitude"`
+	HeadingDeg     float64   `json:"heading_deg"`
+	SpeedKmh       float64   `json:"speed_kmh"`
+	RecordedAt     time.Time `json:"recorded_at"`
+	Source         string    `json:"source"`
+	FuelPct        *float64  `json:"fuel_pct,omitempty"`
+	OdometerKm     *float64  `json:"odometer_km,omitempty"`
+	ReeferTempC    *float64  `json:"reefer_temp_c,omitempty"`
+	DrivingMinutes *int      `json:"driving_minutes,omitempty"`
 }
 
 func (a *App) handlePostPosition(w http.ResponseWriter, r *http.Request) {
@@ -69,13 +74,17 @@ func (a *App) handlePostPosition(w http.ResponseWriter, r *http.Request) {
 	}
 
 	duplicate, err := IngestPosition(ctx, tx, PositionInput{
-		VehicleReg: req.VehicleReg,
-		Latitude:   req.Latitude,
-		Longitude:  req.Longitude,
-		HeadingDeg: req.HeadingDeg,
-		SpeedKmh:   req.SpeedKmh,
-		RecordedAt: req.RecordedAt,
-		Source:     req.Source,
+		VehicleReg:     req.VehicleReg,
+		Latitude:       req.Latitude,
+		Longitude:      req.Longitude,
+		HeadingDeg:     req.HeadingDeg,
+		SpeedKmh:       req.SpeedKmh,
+		RecordedAt:     req.RecordedAt,
+		Source:         req.Source,
+		FuelPct:        req.FuelPct,
+		OdometerKm:     req.OdometerKm,
+		ReeferTempC:    req.ReeferTempC,
+		DrivingMinutes: req.DrivingMinutes,
 	})
 	if err != nil {
 		var ingErr *IngestError
@@ -108,27 +117,38 @@ func (a *App) handlePostPosition(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"duplicate": false})
 }
 
-// liveVehicle is one row of the live fleet board. It deliberately carries no
-// driver names or license numbers.
+// liveVehicle is one row of the live fleet board.
 type liveVehicle struct {
-	VehicleReg    string   `json:"vehicle_reg"`
-	TripID        int64    `json:"trip_id"`
-	Origin        namedRef `json:"origin"`
-	Destination   namedRef `json:"destination"`
-	Latitude    *float64  `json:"latitude"`
-	Longitude   *float64  `json:"longitude"`
-	HeadingDeg  *float64  `json:"heading_deg"`
-	SpeedKmh    *float64  `json:"speed_kmh"`
-	RecordedAt  *string   `json:"recorded_at"`
-	AgeSeconds  *int64    `json:"age_seconds"`
-	Source      *string   `json:"source"`
-	ProgressM   *float64  `json:"progress_m"`
-	RouteLengthM *float64 `json:"route_length_m"`
-	ProgressPct *float64  `json:"progress_pct"`
-	RoutePolyline *string `json:"route_polyline"`
-	RouteProvider *string `json:"route_provider"`
-	Status      string    `json:"status"`
-	Reason      *string   `json:"reason,omitempty"`
+	VehicleReg     string    `json:"vehicle_reg"`
+	TripID         int64     `json:"trip_id"`
+	Origin         namedRef  `json:"origin"`
+	Destination    namedRef  `json:"destination"`
+	Latitude       *float64  `json:"latitude"`
+	Longitude      *float64  `json:"longitude"`
+	HeadingDeg     *float64  `json:"heading_deg"`
+	SpeedKmh       *float64  `json:"speed_kmh"`
+	RecordedAt     *string   `json:"recorded_at"`
+	AgeSeconds     *int64    `json:"age_seconds"`
+	Source         *string   `json:"source"`
+	ProgressM      *float64  `json:"progress_m"`
+	RouteLengthM   *float64  `json:"route_length_m"`
+	ProgressPct    *float64  `json:"progress_pct"`
+	RoutePolyline  *string   `json:"route_polyline"`
+	RouteProvider  *string   `json:"route_provider"`
+	Status         string    `json:"status"` // on_route, at_stop, delayed, off_route, breakdown, no_signal
+	Freshness      string    `json:"freshness"` // fresh, stale, old, no_position
+	Alerts         []string  `json:"alerts"`
+	Reason         *string   `json:"reason,omitempty"`
+	DriverName     *string   `json:"driver_name,omitempty"`
+	DriverLicense  *string   `json:"driver_license,omitempty"`
+	CargoWeight    float64   `json:"cargo_weight"`
+	CargoType      string    `json:"cargo_type"`
+	ETA            string    `json:"eta"`
+	MilesRemaining float64   `json:"miles_remaining"`
+	DelayMinutes   int       `json:"delay_minutes"`
+	FuelPct        *float64  `json:"fuel_pct,omitempty"`
+	ReeferTempC    *float64  `json:"reefer_temp_c,omitempty"`
+	DrivingMinutes *int      `json:"driving_minutes,omitempty"`
 }
 
 type namedRef struct {
@@ -150,12 +170,19 @@ func (a *App) handleLiveVehicles(w http.ResponseWriter, r *http.Request) {
 	query := `
 		SELECT t.id, t.source_name, t.destination_name, t.vehicle_reg,
 			d1.latitude, d1.longitude, d2.latitude, d2.longitude,
-			p.latitude, p.longitude, p.heading_deg, p.speed_kmh, p.recorded_at, p.source
+			p.latitude, p.longitude, p.heading_deg, p.speed_kmh, p.recorded_at, p.source,
+			p.fuel_pct, p.odometer_km, p.reefer_temp_c, p.driving_minutes,
+			COALESCE(t.cargo_weight, 0), COALESCE(t.planned_distance, 0),
+			COALESCE(v.type, 'Semi'), COALESCE(v.status, 'On Trip'),
+			dr.name, dr.license_number
 		FROM trips t
 		LEFT JOIN destinations d1 ON d1.name = t.source_name
 		LEFT JOIN destinations d2 ON d2.name = t.destination_name
+		LEFT JOIN vehicles v ON v.registration_number = t.vehicle_reg
+		LEFT JOIN drivers dr ON dr.license_number = t.driver_license
 		LEFT JOIN LATERAL (
-			SELECT latitude, longitude, heading_deg, speed_kmh, recorded_at, source
+			SELECT latitude, longitude, heading_deg, speed_kmh, recorded_at, source,
+				fuel_pct, odometer_km, reefer_temp_c, driving_minutes
 			FROM vehicle_positions
 			WHERE vehicle_reg = t.vehicle_reg
 			ORDER BY recorded_at DESC
@@ -184,24 +211,50 @@ func (a *App) handleLiveVehicles(w http.ResponseWriter, r *http.Request) {
 	items := []liveVehicle{}
 	for rows.Next() {
 		var (
-			tripID                    int64
-			src, dst, reg             string
-			srcLat, srcLon            *float64
-			dstLat, dstLon            *float64
-			lat, lon, head, spd       *float64
-			recAt                     *time.Time
-			source                    *string
+			tripID              int64
+			src, dst, reg       string
+			srcLat, srcLon      *float64
+			dstLat, dstLon      *float64
+			lat, lon, head, spd *float64
+			recAt               *time.Time
+			source              *string
+			fuelPct             *float64
+			odometerKm          *float64
+			reeferTempC         *float64
+			drivingMinutes      *int
+			cargoWeight         float64
+			plannedDistance     float64
+			vType, vStatus      string
+			drName, drLic       *string
 		)
-		if err := rows.Scan(&tripID, &src, &dst, &reg, &srcLat, &srcLon, &dstLat, &dstLon, &lat, &lon, &head, &spd, &recAt, &source); err != nil {
+		if err := rows.Scan(&tripID, &src, &dst, &reg, &srcLat, &srcLon, &dstLat, &dstLon,
+			&lat, &lon, &head, &spd, &recAt, &source,
+			&fuelPct, &odometerKm, &reeferTempC, &drivingMinutes,
+			&cargoWeight, &plannedDistance,
+			&vType, &vStatus,
+			&drName, &drLic); err != nil {
 			continue
 		}
 		lv := liveVehicle{
-			VehicleReg:  reg,
-			TripID:      tripID,
-			Origin:      namedRef{Name: src, Latitude: srcLat, Longitude: srcLon},
-			Destination: namedRef{Name: dst, Latitude: dstLat, Longitude: dstLon},
-			Status:      "no_position",
+			VehicleReg:     reg,
+			TripID:         tripID,
+			Origin:         namedRef{Name: src, Latitude: srcLat, Longitude: srcLon},
+			Destination:    namedRef{Name: dst, Latitude: dstLat, Longitude: dstLon},
+			Status:         "no_signal",
+			Freshness:      "no_position",
+			Alerts:         []string{},
+			CargoWeight:    cargoWeight,
+			CargoType:      vType,
+			FuelPct:        fuelPct,
+			ReeferTempC:    reeferTempC,
+			DrivingMinutes: drivingMinutes,
 		}
+
+		if user.Role != rbac.RoleSafetyOfficer && user.Role != rbac.RoleFinancialAnalyst {
+			lv.DriverName = drName
+			lv.DriverLicense = drLic
+		}
+
 		if recAt != nil {
 			ts := recAt.UTC().Format(time.RFC3339)
 			age := int64(now.Sub(recAt.UTC()).Seconds())
@@ -217,16 +270,78 @@ func (a *App) handleLiveVehicles(w http.ResponseWriter, r *http.Request) {
 			lv.Source = source
 			switch {
 			case age < 60:
-				lv.Status = "fresh"
+				lv.Freshness = "fresh"
 			case age < 30*60:
-				lv.Status = "stale"
+				lv.Freshness = "stale"
 			default:
-				lv.Status = "old"
+				lv.Freshness = "old"
 			}
 			lv.ProgressM, lv.RouteLengthM, lv.ProgressPct, lv.Reason = nil, nil, nil, nil
 			rp := a.progressFor(ctx, src, dst, *lat, *lon)
 			lv.ProgressM, lv.RouteLengthM, lv.ProgressPct = rp.progress, rp.length, rp.pct
 			lv.RoutePolyline, lv.RouteProvider, lv.Reason = rp.polyline, rp.provider, rp.reason
+
+			var remainingM float64
+			if rp.length != nil && rp.progress != nil {
+				if *rp.length > *rp.progress {
+					remainingM = *rp.length - *rp.progress
+				}
+			} else if plannedDistance > 0 {
+				remainingM = plannedDistance * 1000
+			}
+			lv.MilesRemaining = remainingM / 1609.34
+
+			speed := 85.0
+			if spd != nil && *spd > 15 {
+				speed = *spd
+			}
+			remHours := (remainingM / 1000.0) / speed
+			etaTime := now.Add(time.Duration(remHours*3600) * time.Second)
+			lv.ETA = etaTime.Format("15:04")
+
+			plannedHours := plannedDistance / 85.0
+			if plannedHours <= 0 && rp.length != nil {
+				plannedHours = (*rp.length / 1000.0) / 85.0
+			}
+			if plannedHours > 0 && remHours > plannedHours*0.7 {
+				diffMin := int((remHours - plannedHours*0.5) * 60)
+				if diffMin > 0 {
+					lv.DelayMinutes = diffMin
+				}
+			}
+
+			if age > 1800 {
+				lv.Status = "no_signal"
+			} else if vStatus == "In Shop" || (spd != nil && *spd == 0 && fuelPct != nil && *fuelPct <= 0) {
+				lv.Status = "breakdown"
+			} else if rp.distToRoute != nil && *rp.distToRoute > 500 {
+				lv.Status = "off_route"
+			} else if spd != nil && *spd < 3.0 && (lv.ProgressPct == nil || *lv.ProgressPct < 2 || *lv.ProgressPct > 98) {
+				lv.Status = "at_stop"
+			} else if lv.DelayMinutes > 15 {
+				lv.Status = "delayed"
+			} else {
+				lv.Status = "on_route"
+			}
+
+			alerts := []string{}
+			if lv.DelayMinutes > 30 {
+				alerts = append(alerts, "late_arrival")
+			}
+			if spd != nil && *spd > 105.0 {
+				alerts = append(alerts, "speeding")
+			}
+			if fuelPct != nil && *fuelPct < 15.0 {
+				alerts = append(alerts, "low_fuel")
+			}
+			isReefer := vType == "Refrigerated" || strings.Contains(strings.ToLower(vType), "reefer")
+			if isReefer && reeferTempC != nil && *reeferTempC > -15.0 {
+				alerts = append(alerts, "reefer_temp_out_of_range")
+			}
+			if drivingMinutes != nil && *drivingMinutes >= 600 {
+				alerts = append(alerts, "hos_near_limit")
+			}
+			lv.Alerts = alerts
 		}
 		items = append(items, lv)
 	}
@@ -247,12 +362,13 @@ func (a *App) handleLiveVehicles(w http.ResponseWriter, r *http.Request) {
 // routeProgress carries the projection result plus the raw cached geometry so
 // the frontend draws the exact backend route without a second request.
 type routeProgress struct {
-	progress *float64
-	length   *float64
-	pct      *float64
-	polyline *string
-	provider *string
-	reason   *string
+	progress    *float64
+	length      *float64
+	pct         *float64
+	distToRoute *float64
+	polyline    *string
+	provider    *string
+	reason      *string
 }
 
 // progressFor projects a position onto the cached route polyline. On any
@@ -269,7 +385,7 @@ func (a *App) progressFor(ctx context.Context, origin, destination string, lat, 
 	if err != nil || len(pts) < 2 {
 		return routeProgress{polyline: poly, provider: provider, reason: strptr("invalid_route_geometry")}
 	}
-	progress, total, ok := ProjectOntoRoute(lat, lon, pts)
+	progress, total, distToRoute, ok := ProjectOntoRouteWithDistance(lat, lon, pts)
 	if !ok {
 		return routeProgress{polyline: poly, provider: provider, reason: strptr("projection_failed")}
 	}
@@ -283,5 +399,5 @@ func (a *App) progressFor(ctx context.Context, origin, destination string, lat, 
 			pct = 0
 		}
 	}
-	return routeProgress{progress: &progress, length: &total, pct: &pct, polyline: poly, provider: provider}
+	return routeProgress{progress: &progress, length: &total, pct: &pct, distToRoute: &distToRoute, polyline: poly, provider: provider}
 }

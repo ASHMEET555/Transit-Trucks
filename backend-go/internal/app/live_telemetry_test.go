@@ -129,18 +129,18 @@ func TestIngestPosition_ValidationTable(t *testing.T) {
 		input PositionInput
 		code  string
 	}{
-		{"lat low", PositionInput{reg, -91, 0, 0, 10, now, "simulator", true}, "VALIDATION_FAILED"},
-		{"lat high", PositionInput{reg, 91, 0, 0, 10, now, "simulator", true}, "VALIDATION_FAILED"},
-		{"lon low", PositionInput{reg, 0, -181, 0, 10, now, "simulator", true}, "VALIDATION_FAILED"},
-		{"lon high", PositionInput{reg, 0, 181, 0, 10, now, "simulator", true}, "VALIDATION_FAILED"},
-		{"heading low", PositionInput{reg, 0, 0, -1, 10, now, "simulator", true}, "VALIDATION_FAILED"},
-		{"heading high", PositionInput{reg, 0, 0, 361, 10, now, "simulator", true}, "VALIDATION_FAILED"},
-		{"speed high", PositionInput{reg, 0, 0, 0, 201, now, "simulator", true}, "VALIDATION_FAILED"},
-		{"speed low", PositionInput{reg, 0, 0, 0, -1, now, "simulator", true}, "VALIDATION_FAILED"},
-		{"too old", PositionInput{reg, 0, 0, 0, 10, now.Add(-11 * time.Minute), "simulator", true}, "VALIDATION_FAILED"},
-		{"too future", PositionInput{reg, 0, 0, 0, 10, now.Add(61 * time.Second), "simulator", true}, "VALIDATION_FAILED"},
-		{"bad source", PositionInput{reg, 0, 0, 0, 10, now, "gps", true}, "VALIDATION_FAILED"},
-		{"device gated", PositionInput{reg, 0, 0, 0, 10, now, "device", false}, "DEVICE_INGEST_NOT_ENABLED"},
+		{"lat low", PositionInput{reg, -91, 0, 0, 10, now, "simulator", true, nil, nil, nil, nil}, "VALIDATION_FAILED"},
+		{"lat high", PositionInput{reg, 91, 0, 0, 10, now, "simulator", true, nil, nil, nil, nil}, "VALIDATION_FAILED"},
+		{"lon low", PositionInput{reg, 0, -181, 0, 10, now, "simulator", true, nil, nil, nil, nil}, "VALIDATION_FAILED"},
+		{"lon high", PositionInput{reg, 0, 181, 0, 10, now, "simulator", true, nil, nil, nil, nil}, "VALIDATION_FAILED"},
+		{"heading low", PositionInput{reg, 0, 0, -1, 10, now, "simulator", true, nil, nil, nil, nil}, "VALIDATION_FAILED"},
+		{"heading high", PositionInput{reg, 0, 0, 361, 10, now, "simulator", true, nil, nil, nil, nil}, "VALIDATION_FAILED"},
+		{"speed high", PositionInput{reg, 0, 0, 0, 201, now, "simulator", true, nil, nil, nil, nil}, "VALIDATION_FAILED"},
+		{"speed low", PositionInput{reg, 0, 0, 0, -1, now, "simulator", true, nil, nil, nil, nil}, "VALIDATION_FAILED"},
+		{"too old", PositionInput{reg, 0, 0, 0, 10, now.Add(-11 * time.Minute), "simulator", true, nil, nil, nil, nil}, "VALIDATION_FAILED"},
+		{"too future", PositionInput{reg, 0, 0, 0, 10, now.Add(61 * time.Second), "simulator", true, nil, nil, nil, nil}, "VALIDATION_FAILED"},
+		{"bad source", PositionInput{reg, 0, 0, 0, 10, now, "gps", true, nil, nil, nil, nil}, "VALIDATION_FAILED"},
+		{"device gated", PositionInput{reg, 0, 0, 0, 10, now, "device", false, nil, nil, nil, nil}, "DEVICE_INGEST_NOT_ENABLED"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -159,14 +159,14 @@ func TestIngestPosition_ValidationTable(t *testing.T) {
 
 	// Boundaries accepted: exactly 10min old is rejected, just inside passes.
 	tx, _ := pool.Begin(ctx)
-	if _, err := IngestPosition(ctx, tx, PositionInput{reg, 41.8, -87.6, 0, 0, now.Add(-9 * time.Minute), "simulator", true}); err != nil {
+	if _, err := IngestPosition(ctx, tx, PositionInput{reg, 41.8, -87.6, 0, 0, now.Add(-9 * time.Minute), "simulator", true, nil, nil, nil, nil}); err != nil {
 		t.Fatalf("9-min-old point should pass: %v", err)
 	}
-	if _, err := IngestPosition(ctx, tx, PositionInput{reg, 41.8, -87.6, 360, 200, now.Add(59 * time.Second), "simulator", true}); err != nil {
+	if _, err := IngestPosition(ctx, tx, PositionInput{reg, 41.8, -87.6, 360, 200, now.Add(59 * time.Second), "simulator", true, nil, nil, nil, nil}); err != nil {
 		t.Fatalf("boundary point should pass: %v", err)
 	}
 	// Device source accepted with the service-level test flag.
-	if _, err := IngestPosition(ctx, tx, PositionInput{reg, 41.8, -87.6, 90, 50, now, "device", true}); err != nil {
+	if _, err := IngestPosition(ctx, tx, PositionInput{reg, 41.8, -87.6, 90, 50, now, "device", true, nil, nil, nil, nil}); err != nil {
 		t.Fatalf("device source with test flag should pass: %v", err)
 	}
 	tx.Rollback(ctx)
@@ -201,7 +201,7 @@ func TestIngestPosition_DuplicateAndPurge(t *testing.T) {
 	}()
 
 	now := time.Now().UTC().Truncate(time.Second)
-	in := PositionInput{reg, 41.8, -87.6, 90, 50, now, "simulator", true}
+	in := PositionInput{reg, 41.8, -87.6, 90, 50, now, "simulator", true, nil, nil, nil, nil}
 	tx1, _ := pool.Begin(ctx)
 	dup, err := IngestPosition(ctx, tx1, in)
 	if err != nil || dup {
@@ -231,7 +231,7 @@ func TestIngestPosition_DuplicateAndPurge(t *testing.T) {
 		VALUES ($1, 0, 0, 0, 0, $2, 'simulator')`, reg, old); err != nil {
 		t.Fatal(err)
 	}
-	fresh := PositionInput{reg, 41.8, -87.6, 90, 50, now.Add(time.Second), "simulator", true}
+	fresh := PositionInput{reg, 41.8, -87.6, 90, 50, now.Add(time.Second), "simulator", true, nil, nil, nil, nil}
 	tx3, _ := pool.Begin(ctx)
 	if _, err := IngestPosition(ctx, tx3, fresh); err != nil {
 		t.Fatal(err)
