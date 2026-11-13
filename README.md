@@ -106,7 +106,7 @@ uv run uvicorn app.main:app --reload
 ```
 
 - API: http://127.0.0.1:8000
-- Docs: http://127.0.0.1:8000/docs
+
 
 Fresh reseed: stop the server, delete `backend/database/transitops.db`, then re-run `init_db` + `seed_db`.
 
