@@ -4,7 +4,7 @@
 
 TransitOps replaces spreadsheet-driven logistics with a centralized system for fleet, drivers, dispatch, live map tracking, maintenance, fuel/expenses, and analytics. Business rules (capacity checks, status cascades, license validity, RBAC) are enforced in the API, not only in the UI.
 
-**Repository:** [Reaper-ai/TransitOps_Odoo2026](https://github.com/Reaper-ai/TransitOps_Odoo2026)
+**Repository:*
 
 ### Team
 
