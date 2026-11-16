@@ -1,4 +1,4 @@
-# Transit-Trucks
+# Transit-Trucks made with AI 
 
 **Smart Transport Operations Platform** — Odoo Hackathon 2026
 
