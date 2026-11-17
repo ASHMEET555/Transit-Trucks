@@ -1,6 +1,6 @@
 ## 🏗️ Architecture Blueprint
 
-The platform strictly decouples structural queries from route layers using an **Abstract Repository Pattern**, allowing developers to swap out storage engines (e.g., switching to PostgreSQL or MongoDB) instantly by changing a single session constructor.
+The platform strictly decouples structural queries from route layers using an **Abstract Repository Pattern**, allowing developers to swap out storage engines (e.g., switching to PostgreSQL) instantly by changing a single session constructor.
 
 ```text
 backend/
