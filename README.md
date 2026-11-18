@@ -1,4 +1,4 @@
-# TransitOps — Autonomous Fleet Intelligence & Telematics Superintelligence
+# TransitTrucks— Autonomous Fleet Intelligence & Telematics Superintelligence
 
 [![Meta Global AI Developer Hackathon](https://img.shields.io/badge/Meta_Global_AI_Developer_Hackathon-2026-0668E1?style=for-the-badge&logo=meta&logoColor=white)](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)
 [![Theme](https://img.shields.io/badge/Theme-Push_the_Frontier_%26_Build_for_Your_World-10B981?style=for-the-badge)](https://cerebralvalley.ai/e/meta-ai-developer-hackathon)
